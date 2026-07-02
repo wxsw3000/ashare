@@ -1,0 +1,35 @@
+name: Daily Data Update
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 每天 UTC 01:00 = 北京时间 09:00
+  workflow_dispatch:       # 支持手动触发
+
+jobs:
+  update-database:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run data update script
+        env:
+          DB_HOST: ${{ secrets.TIDB_HOST }}
+          DB_PORT: ${{ secrets.TIDB_PORT }}
+          DB_USER: ${{ secrets.TIDB_USER }}
+          DB_PASSWORD: ${{ secrets.TIDB_PASSWORD }}
+          DB_NAME: ${{ secrets.TIDB_DB_NAME }}
+          GITHUB_ACTIONS: true
+        run: |
+          cd MagicSTG/update
+          python update_data.py
