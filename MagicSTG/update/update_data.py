@@ -6,13 +6,21 @@ from datetime import datetime, timedelta
 import baostock as bs
 import pandas as pd
 import pymysql
-from dotenv import load_dotenv
 
-# Ensure we load the .env file from the correct location E:\ashare\MagicSTG\dbconfig\.env
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
-load_dotenv(ENV_PATH)
+# 尝试加载 .env（本地环境），如果失败则跳过（GitHub Actions 直接使用系统环境变量）
+try:
+    from dotenv import load_dotenv
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
+    if os.path.exists(ENV_PATH):
+        load_dotenv(ENV_PATH)
+        print(f"[ENV] Loaded .env from: {ENV_PATH}", flush=True)
+    else:
+        print("[ENV] No .env file found, using system environment variables", flush=True)
+except ImportError:
+    print("[ENV] python-dotenv not installed, using system environment variables", flush=True)
 
+# 从环境变量读取配置（优先使用系统环境变量，.env 作为后备）
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 DB_USER = os.getenv("DB_USER", "")
@@ -20,8 +28,47 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
+# 打印数据库配置信息（隐藏密码）
+print(f"[DB] Host: {DB_HOST}, Port: {DB_PORT}, User: {DB_USER}, Database: {DB_NAME}", flush=True)
+print(f"[DB] SSL CA: {DB_SSL_CA if DB_SSL_CA else '(not set)'}", flush=True)
+
+
 def get_connection():
     """Establishes connection to the MySQL/TiDB database server."""
+    
+    # 判断是否在 GitHub Actions 环境
+    is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
+    print(f"[ENV] GitHub Actions: {is_github_actions}", flush=True)
+    
+    # 确定 SSL CA 路径
+    if is_github_actions:
+        ssl_ca = "/etc/ssl/cert.pem"
+        print(f"[SSL] Using GitHub Actions system CA: {ssl_ca}", flush=True)
+    else:
+        ssl_ca = DB_SSL_CA
+        if ssl_ca and not os.path.exists(ssl_ca):
+            # 尝试在常见位置查找证书文件
+            filename = os.path.basename(ssl_ca)
+            for path_candidate in [
+                os.path.join(PROJECT_ROOT, 'dbconfig', filename),
+                os.path.join(PROJECT_ROOT, filename),
+            ]:
+                if os.path.exists(path_candidate):
+                    ssl_ca = path_candidate
+                    print(f"[SSL] Found certificate at: {ssl_ca}", flush=True)
+                    break
+        if ssl_ca and os.path.exists(ssl_ca):
+            print(f"[SSL] Using CA: {ssl_ca}", flush=True)
+        else:
+            print("[SSL] Warning: SSL CA certificate not found, trying system CA", flush=True)
+            # 尝试系统证书
+            if os.path.exists("/etc/ssl/cert.pem"):
+                ssl_ca = "/etc/ssl/cert.pem"
+                print(f"[SSL] Using system CA: {ssl_ca}", flush=True)
+            else:
+                ssl_ca = None
+    
+    # 基础连接参数
     conn_params = {
         "host": DB_HOST,
         "port": DB_PORT,
@@ -29,31 +76,29 @@ def get_connection():
         "password": DB_PASSWORD,
         "database": DB_NAME,
         "charset": "utf8mb4",
-        "autocommit": False,  # Explicit transactions for speed
+        "autocommit": False,
         "connect_timeout": 15,
-        "read_timeout": 60
+        "read_timeout": 60,
     }
     
-    # Configure SSL if SSL CA path is provided
-    if DB_SSL_CA:
-        resolved_ssl_ca = DB_SSL_CA
-        if not os.path.exists(resolved_ssl_ca):
-            # Try relative paths
-            filename = os.path.basename(DB_SSL_CA)
-            for path_candidate in [
-                os.path.join(PROJECT_ROOT, 'dbconfig', filename),
-                os.path.join(PROJECT_ROOT, filename),
-                os.path.join(PROJECT_ROOT, DB_SSL_CA)
-            ]:
-                if os.path.exists(path_candidate):
-                    resolved_ssl_ca = path_candidate
-                    break
-        if os.path.exists(resolved_ssl_ca):
-            conn_params["ssl"] = {"ca": resolved_ssl_ca}
-        else:
-            print(f"Warning: SSL CA certificate path '{DB_SSL_CA}' was specified but could not be resolved.", flush=True)
-            
+    # 添加 SSL 配置（TiDB Serverless 必须使用 SSL）
+    if ssl_ca and os.path.exists(ssl_ca):
+        conn_params["ssl"] = {
+            "ca": ssl_ca,
+            "verify_cert": True,
+            "verify_identity": True
+        }
+        print("[SSL] SSL enabled with certificate verification", flush=True)
+    else:
+        # 如果没有找到 CA 证书，尝试不验证证书（仅用于测试，不推荐生产环境）
+        print("[SSL] Warning: No CA certificate found, attempting connection without SSL verification", flush=True)
+        conn_params["ssl"] = {
+            "verify_cert": False,
+            "verify_identity": False
+        }
+    
     return pymysql.connect(**conn_params)
+
 
 def get_db_stock_status():
     """
@@ -79,6 +124,7 @@ def get_db_stock_status():
         conn.close()
     return status
 
+
 def get_all_stock_codes():
     """Gets A-share stock list from Baostock for new stock detection."""
     rs = bs.query_stock_basic()
@@ -90,6 +136,7 @@ def get_all_stock_codes():
         if row[4] == '1' and row[5] == '1':  # type=Stock, status=Listed
             stocks.append(row[0])
     return stocks
+
 
 def fetch_stock_kline(code, start_date, end_date, max_retries=3):
     """Queries K-line data from Baostock with retry logic."""
@@ -119,6 +166,7 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
                 return None, False
     return None, False
 
+
 def safe_int(val, default=0):
     if val is None or val == "" or pd.isna(val):
         return default
@@ -127,6 +175,7 @@ def safe_int(val, default=0):
     except (ValueError, TypeError):
         return default
 
+
 def safe_float(val, default=None):
     if val is None or val == "" or pd.isna(val):
         return default
@@ -134,6 +183,7 @@ def safe_float(val, default=None):
         return float(val)
     except (ValueError, TypeError):
         return default
+
 
 def flush_db_buffer(conn, batch_data):
     """Executes bulk insert statement on TiDB for database synchronization."""
@@ -176,6 +226,7 @@ def flush_db_buffer(conn, batch_data):
                 raise e
     return conn
 
+
 def main():
     print("=" * 70)
     print("  [UPDATE] A-share Market Data Incremental Sync (DB-only Mode)")
@@ -187,6 +238,7 @@ def main():
     for attempt in range(1, 6):
         try:
             conn = get_connection()
+            print("[DB] Database connection established successfully!", flush=True)
             break
         except Exception as e:
             print(f"Failed to connect to database (attempt {attempt}/5): {e}", flush=True)
