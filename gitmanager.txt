@@ -1,0 +1,8 @@
+  1. 关联远程仓库（把  yourusername/MagicSTG  替换为您在 GitHub 上实际创建的仓库地址）：
+    git remote add origin https://github.com/wxsw3000/ashare.git
+
+  2. 推送代码：
+    git add .
+    git commit -m "feat: initialize MagicSTG project"
+    git branch -M main
+    git push -u origin main

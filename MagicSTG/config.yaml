@@ -1,0 +1,38 @@
+# ========== 策略参数 ==========
+strategy:
+  name: "价格优先策略"
+  max_holdings: 4
+  per_stock_capital: 10000.0
+  buy_di_threshold: 0.70
+  sell_di_threshold: 0.70
+  short_ma: 5
+  long_ma: 20
+  # PE策略参数
+  pe_min: 0
+  pe_max: 500
+  # ROE策略参数
+  roe_min: 0.05
+  enable_compounding: true
+  strict_matching: false
+
+# ========== 路径配置 ==========
+paths:
+  data_dir: "data"
+  position_file: "positions/position.csv"
+  report_dir: "reports"
+
+
+# ========== 风控参数 ==========
+risk:
+  stop_loss: -15.0
+  enable_stop_loss: false
+
+# ========== 交易费用 ==========
+fee:
+  commission_rate: 0.0001
+  min_commission: 5.0
+  stamp_tax_rate: 0.0005
+
+# ========== 运行模式 ==========
+mode:
+  simulation: true

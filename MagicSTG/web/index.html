@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MagicSTG 量化策略交易看板</title>
+    <!-- Outfit Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0c16;
+            --sidebar-bg: rgba(18, 20, 38, 0.7);
+            --card-bg: rgba(26, 29, 54, 0.65);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f0f3fa;
+            --text-muted: #8e95b2;
+            --primary: #00d2c4;
+            --secondary: #8a2be2;
+            --profit: #2ebd85;
+            --loss: #df4b5e;
+            --accent: #ffb86c;
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', 'Noto Sans SC', sans-serif;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(138, 43, 226, 0.15) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(0, 210, 196, 0.12) 0px, transparent 50%);
+        }
+
+        /* Sidebar Styling */
+        .sidebar {
+            width: 260px;
+            background: var(--sidebar-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid var(--card-border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-bottom: 3rem;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .menu-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .menu-item:hover, .menu-item.active {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 3px solid var(--primary);
+        }
+
+        .menu-item.active {
+            background: rgba(0, 210, 196, 0.1);
+        }
+
+        .menu-item i {
+            font-size: 1.2rem;
+        }
+
+        /* Main Content Container */
+        .main-content {
+            margin-left: 260px;
+            flex-grow: 1;
+            padding: 2.5rem;
+            width: calc(100% - 260px);
+        }
+
+        /* Top Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .header-title h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .header-title p {
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .db-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(46, 189, 133, 0.1);
+            color: var(--profit);
+            padding: 0.5rem 1rem;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 1px solid rgba(46, 189, 133, 0.2);
+        }
+
+        /* Tabs Container */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Strategy Selector Pill Tab */
+        .strategy-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .strategy-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 0.65rem 1.5rem;
+            border-radius: 30px;
+            color: var(--text-muted);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .strategy-btn:hover, .strategy-btn.active {
+            color: var(--text-main);
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 210, 196, 0.25);
+        }
+
+        .strategy-btn.active {
+            background: rgba(0, 210, 196, 0.15);
+        }
+
+        /* Dashboard Overview Grid */
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--glass-shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--primary);
+        }
+
+        .metric-card.profit::after { background: var(--profit); }
+        .metric-card.loss::after { background: var(--loss); }
+        .metric-card.secondary::after { background: var(--secondary); }
+
+        .metric-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        .metric-sub {
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .metric-sub.up { color: var(--profit); }
+        .metric-sub.down { color: var(--loss); }
+
+        /* suggestions and holdings row */
+        .dashboard-row {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .dashboard-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.75rem;
+            box-shadow: var(--glass-shadow);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        .card-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Suggestions List */
+        .suggestions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        .suggestion-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .suggestion-item:hover {
+            transform: translateX(4px);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .suggestion-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .action-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .action-badge.buy {
+            background: rgba(46, 189, 133, 0.15);
+            color: var(--profit);
+            border: 1px solid rgba(46, 189, 133, 0.25);
+        }
+
+        .action-badge.sell {
+            background: rgba(223, 75, 94, 0.15);
+            color: var(--loss);
+            border: 1px solid rgba(223, 75, 94, 0.25);
+        }
+
+        .action-badge.missed {
+            background: rgba(255, 184, 108, 0.15);
+            color: var(--accent);
+            border: 1px solid rgba(255, 184, 108, 0.25);
+        }
+
+        .sug-code {
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        .sug-detail {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .sug-reason {
+            font-size: 0.85rem;
+            padding: 0.25rem 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            margin-top: 0.25rem;
+            display: inline-block;
+        }
+
+        /* Holdings Table */
+        .holdings-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            padding: 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            font-size: 0.9rem;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .code-cell {
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .profit-text { color: var(--profit); font-weight: 600; }
+        .loss-text { color: var(--loss); font-weight: 600; }
+
+        .no-data {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 3rem 1rem;
+            font-size: 0.95rem;
+        }
+
+        /* Backtest Tab Grid */
+        .backtest-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 1.5rem;
+        }
+
+        .backtest-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        .backtest-item {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .backtest-item:hover, .backtest-item.active {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 210, 196, 0.15);
+        }
+
+        .backtest-item.active::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--primary);
+            border-radius: 12px 0 0 12px;
+        }
+
+        .backtest-item h3 {
+            font-size: 1.05rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .backtest-item-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+        }
+
+        .backtest-badge {
+            background: rgba(138, 43, 226, 0.15);
+            color: var(--secondary);
+            border: 1px solid rgba(138, 43, 226, 0.25);
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        /* Detail Panel */
+        .backtest-detail {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .chart-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--glass-shadow);
+            height: 350px;
+            position: relative;
+        }
+
+        .backtest-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .stat-val {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .trades-log-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--glass-shadow);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .trades-log-container {
+            max-height: 320px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>MagicSTG Hub</span>
+        </div>
+        <ul class="menu-list">
+            <li class="menu-item active" onclick="switchTab('dashboard', this)">
+                <i class="fa-solid fa-chart-line"></i>
+                <span>实时策略看板</span>
+            </li>
+            <li class="menu-item" onclick="switchTab('backtest', this)">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span>历史回测分析</span>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <header>
+            <div class="header-title">
+                <h1 id="page-title">实时策略看板</h1>
+                <p id="page-sub">监控当前持仓、资金净值与最新交易建议</p>
+            </div>
+            <div class="db-status">
+                <i class="fa-solid fa-circle-check"></i>
+                <span>TiDB Cloud Connected</span>
+            </div>
+        </header>
+
+        <!-- Tab 1: Dashboard -->
+        <div id="tab-dashboard" class="tab-content active">
+            <!-- Strategy Selector Pills -->
+            <div class="strategy-selector">
+                <button class="strategy-btn active" id="btn-price" onclick="selectStrategy('price')">价格优先策略</button>
+                <button class="strategy-btn" id="btn-pe" onclick="selectStrategy('pe')">PE优先策略</button>
+            </div>
+
+            <!-- Overview Metrics Grid -->
+            <div class="overview-grid">
+                <div class="metric-card secondary">
+                    <span class="metric-title">初始分配资金</span>
+                    <span class="metric-value" id="val-init-capital">￥40,000.00</span>
+                    <span class="metric-sub"><i class="fa-solid fa-piggy-bank"></i> 4个仓位, 每仓 10,000</span>
+                </div>
+                <div class="metric-card" id="card-equity">
+                    <span class="metric-title">当前总资产 (净值)</span>
+                    <span class="metric-value" id="val-current-equity">￥40,000.00</span>
+                    <span class="metric-sub" id="sub-total-pnl"><i class="fa-solid fa-arrow-right"></i> +0.00 元</span>
+                </div>
+                <div class="metric-card" id="card-market">
+                    <span class="metric-title">持有股市值</span>
+                    <span class="metric-value" id="val-market-val">￥0.00</span>
+                    <span class="metric-sub" id="sub-cash-val"><i class="fa-solid fa-wallet"></i> 可用现金: 40,000</span>
+                </div>
+                <div class="metric-card profit">
+                    <span class="metric-title">当前持仓数量</span>
+                    <span class="metric-value" id="val-holding-count">0 / 4</span>
+                    <span class="metric-sub"><i class="fa-solid fa-folder-open"></i> 满仓额度为 4 只股票</span>
+                </div>
+            </div>
+
+            <!-- Row: Suggestions + Holdings -->
+            <div class="dashboard-row">
+                <!-- Suggestions -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-bell"></i> 今日交易信号建议</h2>
+                    </div>
+                    <div class="suggestions-list" id="suggestions-list-container">
+                        <!-- Loaded dynamically -->
+                        <div class="no-data">正在加载建议...</div>
+                    </div>
+                </div>
+
+                <!-- Holdings Table -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-briefcase"></i> 当前持仓明细</h2>
+                    </div>
+                    <div class="holdings-container">
+                        <table id="holdings-table">
+                            <thead>
+                                <tr>
+                                    <th>股票代码</th>
+                                    <th>买入日期</th>
+                                    <th>买入价格</th>
+                                    <th>当前价格</th>
+                                    <th>持有股数</th>
+                                    <th>成本总额</th>
+                                    <th>最新市值</th>
+                                    <th>持仓盈亏</th>
+                                </tr>
+                            </thead>
+                            <tbody id="holdings-table-body">
+                                <tr>
+                                    <td colspan="8" class="no-data">正在从服务器读取持仓...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Backtest Analysis -->
+        <div id="tab-backtest" class="tab-content">
+            <div class="backtest-grid">
+                <!-- Left Column: Backtest Reports list -->
+                <div class="backtest-card-container">
+                    <div class="dashboard-card" style="height: 100%;">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-list-ul"></i> 历史回测报告列表</h2>
+                        </div>
+                        <div class="backtest-list" id="backtest-reports-list">
+                            <div class="no-data">正在读取回测报告...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Detail Performance & Curve Chart -->
+                <div class="backtest-detail" id="backtest-detail-panel" style="display: none;">
+                    <!-- Key metrics boxes -->
+                    <div class="backtest-stats-grid">
+                        <div class="stat-box">
+                            <span class="stat-label">累计收益率</span>
+                            <span class="stat-val profit-text" id="stat-total-return">+0.00%</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">年化收益率</span>
+                            <span class="stat-val" id="stat-annual-return">0.00%</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">历史最大回撤</span>
+                            <span class="stat-val loss-text" id="stat-max-dd">0.00%</span>
+                        </div>
+                    </div>
+                    <div class="backtest-stats-grid" style="margin-top: -0.5rem;">
+                        <div class="stat-box">
+                            <span class="stat-label">胜率 (Win Rate)</span>
+                            <span class="stat-val" id="stat-win-rate">0.00%</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">总平仓笔数 / 总交易数</span>
+                            <span class="stat-val" id="stat-trades-count">0 / 0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">累计交易税费</span>
+                            <span class="stat-val" id="stat-total-fees">￥0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Chart Card -->
+                    <div class="chart-card">
+                        <canvas id="equityChart"></canvas>
+                    </div>
+
+                    <!-- Trade Log Card -->
+                    <div class="trades-log-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-receipt"></i> 成交明细记录 (前 100 笔)</h2>
+                        </div>
+                        <div class="trades-log-container">
+                            <table id="trades-table">
+                                <thead>
+                                    <tr>
+                                        <th>交易日期</th>
+                                        <th>代码</th>
+                                        <th>方向</th>
+                                        <th>价格</th>
+                                        <th>股数</th>
+                                        <th>手续费</th>
+                                        <th>盈亏额</th>
+                                        <th>盈亏%</th>
+                                        <th>触发原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trades-table-body">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStrategy = 'price';
+        let positionsData = {};
+        let suggestionsData = {};
+        let backtestList = [];
+        let activeBacktest = null;
+        let chartInstance = null;
+
+        // Switch sidebar tabs
+        function switchTab(tabName, element) {
+            document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+            element.classList.add('active');
+
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+
+            const pageTitle = document.getElementById('page-title');
+            const pageSub = document.getElementById('page-sub');
+
+            if (tabName === 'dashboard') {
+                pageTitle.textContent = "实时策略看板";
+                pageSub.textContent = "监控当前持仓、资金净值与最新交易建议";
+                loadDashboardData();
+            } else {
+                pageTitle.textContent = "历史回测分析";
+                pageSub.textContent = "查看本地已保存的量化历史回测报告及成交明细";
+                loadBacktestData();
+            }
+        }
+
+        // Switch strategy pill on dashboard
+        function selectStrategy(strategy) {
+            currentStrategy = strategy;
+            document.getElementById('btn-price').classList.toggle('active', strategy === 'price');
+            document.getElementById('btn-pe').classList.toggle('active', strategy === 'pe');
+            renderDashboard();
+        }
+
+        // Fetch dashboard data from APIs
+        function loadDashboardData() {
+            // Fetch positions
+            fetch('/api/positions')
+                .then(res => res.json())
+                .then(data => {
+                    positionsData = data;
+                    renderDashboard();
+                })
+                .catch(err => {
+                    console.error("Error loading positions:", err);
+                    document.getElementById('holdings-table-body').innerHTML = `
+                        <tr><td colspan="8" class="no-data" style="color:var(--loss);">加载持仓失败，请检查后端运行状态。</td></tr>
+                    `;
+                });
+
+            // Fetch suggestions
+            fetch('/api/suggestions')
+                .then(res => res.json())
+                .then(data => {
+                    suggestionsData = data;
+                    renderSuggestions();
+                })
+                .catch(err => console.error("Error loading suggestions:", err));
+        }
+
+        // Render dashboard holdings table and summary cards
+        function renderDashboard() {
+            const data = positionsData[currentStrategy];
+            if (!data) return;
+
+            // Render cards
+            document.getElementById('val-init-capital').textContent = `￥${data.summary.initial_capital.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+            document.getElementById('val-current-equity').textContent = `￥${data.summary.current_equity.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+            document.getElementById('val-market-val').textContent = `￥${data.summary.total_market_value.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+            document.getElementById('val-holding-count').textContent = `${data.summary.holding_count} / ${data.summary.max_holdings}`;
+
+            // PNL and cash indicators
+            const pnlCard = document.getElementById('card-equity');
+            const pnlSub = document.getElementById('sub-total-pnl');
+            pnlCard.className = 'metric-card';
+            if (data.summary.total_pnl > 0) {
+                pnlCard.classList.add('profit');
+                pnlSub.innerHTML = `<span class="profit-text"><i class="fa-solid fa-arrow-trend-up"></i> +${data.summary.total_pnl.toFixed(2)} 元 (+${data.summary.total_pnl_pct.toFixed(2)}%)</span>`;
+            } else if (data.summary.total_pnl < 0) {
+                pnlCard.classList.add('loss');
+                pnlSub.innerHTML = `<span class="loss-text"><i class="fa-solid fa-arrow-trend-down"></i> ${data.summary.total_pnl.toFixed(2)} 元 (${data.summary.total_pnl_pct.toFixed(2)}%)</span>`;
+            } else {
+                pnlSub.innerHTML = `<span><i class="fa-solid fa-arrow-right"></i> +0.00 元 (+0.00%)</span>`;
+            }
+
+            document.getElementById('sub-cash-val').innerHTML = `<i class="fa-solid fa-wallet"></i> 可用现金: ￥${data.cash_details.total_cash.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+
+            // Render Holdings table
+            const tbody = document.getElementById('holdings-table-body');
+            if (data.positions.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="no-data"><i class="fa-solid fa-box-open" style="font-size:2rem;margin-bottom:0.5rem;display:block;"></i>📭 当前策略无持仓</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            let rowsHtml = '';
+            data.positions.forEach(p => {
+                const pnlClass = p.pnl > 0 ? 'profit-text' : (p.pnl < 0 ? 'loss-text' : '');
+                const pnlPrefix = p.pnl > 0 ? '+' : '';
+                rowsHtml += `
+                    <tr>
+                        <td class="code-cell">${p.code}</td>
+                        <td>${p.buy_date}</td>
+                        <td>￥${p.buy_price.toFixed(2)}</td>
+                        <td>￥${p.current_price.toFixed(2)}</td>
+                        <td>${p.shares} 股</td>
+                        <td>￥${p.cost_total.toFixed(2)}</td>
+                        <td>￥${p.market_value.toFixed(2)}</td>
+                        <td class="${pnlClass}">${pnlPrefix}${p.pnl.toFixed(2)} (${p.pnl_pct.toFixed(2)}%)</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rowsHtml;
+        }
+
+        // Render Today's recommendations
+        function renderSuggestions() {
+            const list = suggestionsData[currentStrategy];
+            const container = document.getElementById('suggestions-list-container');
+
+            if (!list || list.length === 0) {
+                container.innerHTML = `
+                    <div class="no-data"><i class="fa-solid fa-circle-info" style="font-size:2rem;margin-bottom:0.5rem;display:block;"></i>📭 今日此策略无任何交易信号建议</div>
+                `;
+                return;
+            }
+
+            let html = '';
+            list.forEach(item => {
+                let badgeClass = 'buy';
+                let actionText = '买入 (BUY)';
+                if (item.action.toUpperCase() === 'SELL') {
+                    badgeClass = 'sell';
+                    actionText = '卖出 (SELL)';
+                } else if (item.reason.includes('涨停') || item.reason.includes('跌停') || item.reason.includes('资金不足')) {
+                    badgeClass = 'missed';
+                    actionText = '错过 (MISSED)';
+                }
+
+                html += `
+                    <div class="suggestion-item">
+                        <div class="suggestion-top">
+                            <span class="sug-code">${item.code}</span>
+                            <span class="action-badge ${badgeClass}">${actionText}</span>
+                        </div>
+                        <div class="sug-detail">
+                            价格: ￥${item.price.toFixed(2)} | 推荐股数: ${item.shares} 股
+                        </div>
+                        <div class="sug-reason">
+                            原因: ${item.reason}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        // Fetch Backtests List
+        function loadBacktestData() {
+            fetch('/api/backtests')
+                .then(res => res.json())
+                .then(data => {
+                    backtestList = data;
+                    renderBacktestList();
+                })
+                .catch(err => console.error("Error loading backtests:", err));
+        }
+
+        // Render left column list of backtest files
+        function renderBacktestList() {
+            const listContainer = document.getElementById('backtest-reports-list');
+            if (backtestList.length === 0) {
+                listContainer.innerHTML = `<div class="no-data">📁 E:/ashare/MagicSTG/reports/ 目录下未找到任何回测报告 (.txt)</div>`;
+                document.getElementById('backtest-detail-panel').style.display = 'none';
+                return;
+            }
+
+            let html = '';
+            backtestList.forEach((rep, idx) => {
+                const dateStr = rep.filename.replace('backtest_', '').replace('.txt', '');
+                const displayTitle = rep.strategy;
+                html += `
+                    <div class="backtest-item" id="bt-item-${idx}" onclick="selectBacktest(${idx})">
+                        <span class="backtest-badge">${rep.strategy.replace('优先策略', '')}</span>
+                        <h3 style="margin-top:0.5rem;">${displayTitle}</h3>
+                        <div class="backtest-item-meta">
+                            <span>区间: ${rep.date_range}</span>
+                            <span class="${rep.total_return >= 0 ? 'profit-text' : 'loss-text'}">${rep.total_return >= 0 ? '+' : ''}${rep.total_return}%</span>
+                        </div>
+                    </div>
+                `;
+            });
+            listContainer.innerHTML = html;
+
+            // Automatically select first backtest report
+            selectBacktest(0);
+        }
+
+        // Select a backtest to display detailed stats & chart
+        function selectBacktest(index) {
+            document.querySelectorAll('.backtest-item').forEach(item => item.classList.remove('active'));
+            const activeItem = document.getElementById('bt-item-' + index);
+            if (activeItem) activeItem.classList.add('active');
+
+            activeBacktest = backtestList[index];
+            if (!activeBacktest) return;
+
+            document.getElementById('backtest-detail-panel').style.display = 'flex';
+
+            // Fill text stats
+            const trSpan = document.getElementById('stat-total-return');
+            trSpan.textContent = `${activeBacktest.total_return >= 0 ? '+' : ''}${activeBacktest.total_return.toFixed(2)}%`;
+            trSpan.className = activeBacktest.total_return >= 0 ? 'stat-val profit-text' : 'stat-val loss-text';
+
+            document.getElementById('stat-annual-return').textContent = `${activeBacktest.annual_return.toFixed(2)}%`;
+            document.getElementById('stat-max-dd').textContent = `${activeBacktest.max_drawdown.toFixed(2)}%`;
+            document.getElementById('stat-win-rate').textContent = `${activeBacktest.win_rate.toFixed(2)}%`;
+            document.getElementById('stat-trades-count').textContent = `${activeBacktest.total_sells} / ${activeBacktest.total_buys}`;
+            document.getElementById('stat-total-fees').textContent = `￥${activeBacktest.total_fees.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+
+            // Load trade logs for chart & table
+            let typeKey = 'price';
+            if (activeBacktest.filename.includes('pe')) typeKey = 'pe';
+            if (activeBacktest.filename.includes('roe')) typeKey = 'roe';
+
+            fetch(`/api/backtest/trades/${typeKey}`)
+                .then(res => res.json())
+                .then(trades => {
+                    renderTradesTable(trades);
+                    drawEquityChart(trades, activeBacktest.initial_equity);
+                })
+                .catch(err => {
+                    console.error("Error loading trades CSV:", err);
+                    document.getElementById('trades-table-body').innerHTML = `
+                        <tr><td colspan="9" class="no-data">无历史成交明细 CSV 文件，或文件读取失败</td></tr>
+                    `;
+                });
+        }
+
+        // Render trades log table
+        function renderTradesTable(trades) {
+            const tbody = document.getElementById('trades-table-body');
+            if (!trades || trades.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="no-data">此回测无任何成交记录</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            // Display only top 100 trades for performance
+            trades.slice(0, 100).forEach(t => {
+                const actionBadge = t.action.toUpperCase() === 'BUY' ? 'action-badge buy' : 'action-badge sell';
+                const actionText = t.action.toUpperCase() === 'BUY' ? '买入' : '卖出';
+                const pnl = parseFloat(t.pnl);
+                const pnlPct = parseFloat(t.pnl_pct);
+                
+                let pnlStr = '--';
+                let pnlClass = '';
+                if (t.action.toUpperCase() === 'SELL') {
+                    pnlStr = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`;
+                    pnlClass = pnl >= 0 ? 'profit-text' : 'loss-text';
+                }
+
+                html += `
+                    <tr>
+                        <td>${t.date}</td>
+                        <td class="code-cell">${t.code}</td>
+                        <td><span class="${actionBadge}">${actionText}</span></td>
+                        <td>￥${parseFloat(t.price).toFixed(2)}</td>
+                        <td>${parseInt(t.shares)} 股</td>
+                        <td>￥${parseFloat(t.fee).toFixed(2)}</td>
+                        <td class="${pnlClass}">${pnlStr}</td>
+                        <td>${t.reason}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        }
+
+        // Plot equity curve Chart in Chart.js
+        function drawEquityChart(trades, initialEquity) {
+            if (!trades || trades.length === 0) return;
+
+            // Sort trades chronologically to build equity curve
+            const chronTrades = [...trades].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            let curEquity = initialEquity;
+            const labels = ['回测开始'];
+            const data = [100.0]; // Percentage yield starting at 100%
+            
+            // Build cumulative yield curve from trade logs
+            const dailyEquity = {};
+            chronTrades.forEach(t => {
+                if (t.action.toUpperCase() === 'SELL') {
+                    const pnl = parseFloat(t.pnl) || 0;
+                    curEquity += pnl;
+                }
+                const yieldPct = ((curEquity) / initialEquity) * 100;
+                dailyEquity[t.date] = parseFloat(yieldPct.toFixed(2));
+            });
+
+            // Extract labels (dates) and values
+            const sortedDates = Object.keys(dailyEquity).sort((a, b) => new Date(a) - new Date(b));
+            sortedDates.forEach(d => {
+                labels.push(d);
+                data.push(dailyEquity[d]);
+            });
+
+            // Destroy previous chart instance if exists
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '策略资产净值增长曲线 (%)',
+                        data: data,
+                        borderColor: '#00d2c4',
+                        backgroundColor: 'rgba(0, 210, 196, 0.05)',
+                        borderWidth: 2,
+                        pointRadius: data.length > 50 ? 0 : 3,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#8e95b2' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: '#8e95b2',
+                                maxTicksLimit: 8
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.03)' },
+                            ticks: {
+                                color: '#8e95b2',
+                                callback: function(value) { return value + '%'; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize dashboard on page load
+        window.onload = function() {
+            loadDashboardData();
+        };
+    </script>
+</body>
+</html>
