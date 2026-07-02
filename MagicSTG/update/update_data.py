@@ -20,7 +20,7 @@ try:
 except ImportError:
     print("[ENV] python-dotenv not installed, using system environment variables", flush=True)
 
-# 从环境变量读取配置（优先使用系统环境变量，.env 作为后备）
+# 从环境变量读取配置
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 DB_USER = os.getenv("DB_USER", "")
@@ -28,26 +28,18 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
-# 打印数据库配置信息（隐藏密码）
 print(f"[DB] Host: {DB_HOST}, Port: {DB_PORT}, User: {DB_USER}, Database: {DB_NAME}", flush=True)
-print(f"[DB] SSL CA: {DB_SSL_CA if DB_SSL_CA else '(not set)'}", flush=True)
 
 
 def get_connection():
     """Establishes connection to the MySQL/TiDB database server."""
-    
-    # 判断是否在 GitHub Actions 环境
     is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
-    print(f"[ENV] GitHub Actions: {is_github_actions}", flush=True)
     
-    # 确定 SSL CA 路径
     if is_github_actions:
         ssl_ca = "/etc/ssl/cert.pem"
-        print(f"[SSL] Using GitHub Actions system CA: {ssl_ca}", flush=True)
     else:
         ssl_ca = DB_SSL_CA
         if ssl_ca and not os.path.exists(ssl_ca):
-            # 尝试在常见位置查找证书文件
             filename = os.path.basename(ssl_ca)
             for path_candidate in [
                 os.path.join(PROJECT_ROOT, 'dbconfig', filename),
@@ -55,20 +47,15 @@ def get_connection():
             ]:
                 if os.path.exists(path_candidate):
                     ssl_ca = path_candidate
-                    print(f"[SSL] Found certificate at: {ssl_ca}", flush=True)
                     break
         if ssl_ca and os.path.exists(ssl_ca):
             print(f"[SSL] Using CA: {ssl_ca}", flush=True)
         else:
-            print("[SSL] Warning: SSL CA certificate not found, trying system CA", flush=True)
-            # 尝试系统证书
             if os.path.exists("/etc/ssl/cert.pem"):
                 ssl_ca = "/etc/ssl/cert.pem"
-                print(f"[SSL] Using system CA: {ssl_ca}", flush=True)
             else:
                 ssl_ca = None
     
-    # 基础连接参数
     conn_params = {
         "host": DB_HOST,
         "port": DB_PORT,
@@ -81,17 +68,13 @@ def get_connection():
         "read_timeout": 60,
     }
     
-    # 添加 SSL 配置（TiDB Serverless 必须使用 SSL）
     if ssl_ca and os.path.exists(ssl_ca):
         conn_params["ssl"] = {
             "ca": ssl_ca,
             "verify_cert": True,
             "verify_identity": True
         }
-        print("[SSL] SSL enabled with certificate verification", flush=True)
     else:
-        # 如果没有找到 CA 证书，尝试不验证证书（仅用于测试，不推荐生产环境）
-        print("[SSL] Warning: No CA certificate found, attempting connection without SSL verification", flush=True)
         conn_params["ssl"] = {
             "verify_cert": False,
             "verify_identity": False
@@ -100,18 +83,39 @@ def get_connection():
     return pymysql.connect(**conn_params)
 
 
+def ensure_bs_login():
+    """确保 Baostock 已登录，如果未登录或会话失效则重新登录"""
+    # Baostock 没有直接的"检查登录状态"API，所以尝试简单查询来验证
+    try:
+        rs = bs.query_stock_basic()
+        if rs.error_code == '0':
+            return True
+    except Exception:
+        pass
+    
+    # 登录失败或已断开，重新登录
+    print("[Baostock] Session expired or not logged in, re-logging...", flush=True)
+    try:
+        bs.logout()
+    except Exception:
+        pass
+    time.sleep(1)
+    lg = bs.login()
+    if lg.error_code != '0':
+        print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
+        return False
+    print("[Baostock] Re-login successful", flush=True)
+    return True
+
+
 def get_db_stock_status():
-    """
-    Queries the stock_kline table to find existing stock codes and their last update dates.
-    Returns a dictionary of {stock_code_with_dot: last_date_str}
-    """
+    """Queries the stock_kline table to find existing stock codes and their last update dates."""
     conn = get_connection()
     status = {}
     try:
         print("  [DB] Querying existing stocks and last update dates from stock_kline table...", flush=True)
         t0 = time.time()
         with conn.cursor() as cur:
-            # Group by stock_code and get the max date. Very fast in TiDB due to composite primary key index.
             cur.execute("SELECT stock_code, MAX(date) FROM stock_kline GROUP BY stock_code")
             rows = cur.fetchall()
             for row in rows:
@@ -127,21 +131,29 @@ def get_db_stock_status():
 
 def get_all_stock_codes():
     """Gets A-share stock list from Baostock for new stock detection."""
+    # 先确保登录
+    if not ensure_bs_login():
+        return []
     rs = bs.query_stock_basic()
     if rs.error_code != '0':
         return []
     stocks = []
     while rs.next():
         row = rs.get_row_data()
-        if row[4] == '1' and row[5] == '1':  # type=Stock, status=Listed
+        if row[4] == '1' and row[5] == '1':
             stocks.append(row[0])
     return stocks
 
 
-def fetch_stock_kline(code, start_date, end_date, max_retries=3):
-    """Queries K-line data from Baostock with retry logic."""
+def fetch_stock_kline(code, start_date, end_date, max_retries=2):
+    """Queries K-line data from Baostock with retry logic and auto-reconnect."""
     for attempt in range(max_retries):
         try:
+            # 确保登录有效
+            if not ensure_bs_login():
+                time.sleep(2)
+                continue
+            
             rs = bs.query_history_k_data_plus(
                 code,
                 "date,open,close,high,low,volume,turn,peTTM,pbMRQ",
@@ -153,13 +165,22 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
             if rs.error_code != '0':
                 if attempt < max_retries - 1:
                     time.sleep(random.uniform(2, 4))
+                    # 遇到错误码，尝试重新登录
+                    ensure_bs_login()
                     continue
                 return None, False
             data_list = []
             while rs.next():
                 data_list.append(rs.get_row_data())
             return data_list, True
-        except Exception:
+        except (BrokenPipeError, ConnectionResetError, OSError) as e:
+            print(f"  [WARN] Connection error: {e}, reconnecting...", flush=True)
+            if attempt < max_retries - 1:
+                ensure_bs_login()
+                time.sleep(random.uniform(2, 4))
+            else:
+                return None, False
+        except Exception as e:
             if attempt < max_retries - 1:
                 time.sleep(random.uniform(3, 6))
             else:
@@ -249,29 +270,30 @@ def main():
                 return
 
     # Login to Baostock
-    lg = bs.login()
-    if lg.error_code != '0':
-        print(f"Login failed: {lg.error_msg}", flush=True)
-        conn.close()
+    if not ensure_bs_login():
+        print("Baostock login failed. Exiting.", flush=True)
+        if conn:
+            conn.close()
         return
-    print("Baostock login successful", flush=True)
     
     try:
-        # Query database to get existing stock status
         db_stocks = get_db_stock_status()
         
-        # DB buffer for bulk inserts
         db_buffer = []
-        db_buffer_limit = 2000
+        db_buffer_limit = 500  # 改为 500 行提交一次
         
         total_new_rows = 0
         updated_count = 0
         fail_count = 0
         new_codes_count = 0
         
-        # [1] Detect and download new stocks (not present in database)
+        # [1] Detect and download new stocks
         print("\n[1] Detecting new stocks not present in DB...", flush=True)
         all_codes = get_all_stock_codes()
+        if not all_codes:
+            print("  [ERROR] Failed to get stock list from Baostock", flush=True)
+            return
+        
         new_codes = [c for c in all_codes if c not in db_stocks]
         
         if new_codes:
@@ -279,11 +301,10 @@ def main():
             print(f"        {', '.join(new_codes[:10])}{'...' if len(new_codes)>10 else ''}", flush=True)
             
             print("\n[2] Downloading history for new stocks (since 2020-01-01)...", flush=True)
-            for code in new_codes:
+            for idx, code in enumerate(new_codes):
                 print(f"  {code} ...", end=" ", flush=True)
                 data_list, ok = fetch_stock_kline(code, "2020-01-01", datetime.now().strftime('%Y-%m-%d'))
                 if ok and data_list:
-                    # Filter and convert to DB tuples
                     valid_rows = 0
                     for row in data_list:
                         open_val = safe_float(row[1])
@@ -292,43 +313,44 @@ def main():
                         low_val = safe_float(row[4])
                         if open_val is None or close_val is None or high_val is None or low_val is None:
                             continue
-                            
                         db_row = (
                             code.replace('.', '_'),
-                            row[0], # date
+                            row[0],
                             open_val,
                             close_val,
                             high_val,
                             low_val,
-                            safe_int(row[5], 0), # volume
-                            safe_float(row[6]), # turn
-                            safe_float(row[7]), # pe_ttm
-                            safe_float(row[8])  # pb_mrq
+                            safe_int(row[5], 0),
+                            safe_float(row[6]),
+                            safe_float(row[7]),
+                            safe_float(row[8])
                         )
                         db_buffer.append(db_row)
                         valid_rows += 1
-                        
-                    # Flush DB buffer if full
+                    
                     if len(db_buffer) >= db_buffer_limit:
                         conn = flush_db_buffer(conn, db_buffer)
                         conn.commit()
                         db_buffer = []
-                        
+                    
                     new_codes_count += 1
                     total_new_rows += valid_rows
                     print(f"[SUCCESS] {valid_rows} rows inserted into DB", flush=True)
                 else:
                     print("[FAIL]", flush=True)
+                
+                # 每 5 只新股票休息一下
+                if (idx + 1) % 5 == 0:
+                    time.sleep(random.uniform(0.5, 1))
         else:
             print("  [SUCCESS] No new stocks found.", flush=True)
         
-        # [2] Update existing stocks in database
+        # [2] Update existing stocks
         today_str = datetime.now().strftime('%Y-%m-%d')
         print(f"\n[3] Incrementally updating existing stocks in database...", flush=True)
         print("-" * 70, flush=True)
         
         for i, (code, last_date) in enumerate(db_stocks.items()):
-            # If the database last date is already today or newer, skip
             if pd.to_datetime(last_date) >= pd.to_datetime(today_str):
                 continue
                 
@@ -344,7 +366,6 @@ def main():
                 print("[SKIP] No new trading days", flush=True)
                 continue
                 
-            # Filter and convert to DB tuples
             valid_rows = 0
             for row in data_list:
                 open_val = safe_float(row[1])
@@ -353,23 +374,21 @@ def main():
                 low_val = safe_float(row[4])
                 if open_val is None or close_val is None or high_val is None or low_val is None:
                     continue
-                    
                 db_row = (
                     code.replace('.', '_'),
-                    row[0], # date
+                    row[0],
                     open_val,
                     close_val,
                     high_val,
                     low_val,
-                    safe_int(row[5], 0), # volume
-                    safe_float(row[6]), # turn
-                    safe_float(row[7]), # pe_ttm
-                    safe_float(row[8])  # pb_mrq
+                    safe_int(row[5], 0),
+                    safe_float(row[6]),
+                    safe_float(row[7]),
+                    safe_float(row[8])
                 )
                 db_buffer.append(db_row)
                 valid_rows += 1
             
-            # Flush DB buffer if full
             if len(db_buffer) >= db_buffer_limit:
                 conn = flush_db_buffer(conn, db_buffer)
                 conn.commit()
@@ -379,11 +398,10 @@ def main():
             total_new_rows += valid_rows
             print(f"[SUCCESS] Added {valid_rows} rows", flush=True)
             
-            # Add small delay to respect Baostock request limit
-            if (i + 1) % 20 == 0:
-                time.sleep(random.uniform(0.2, 0.4))
+            # 每 5 只股票休息一下（降低频率）
+            if (i + 1) % 5 == 0:
+                time.sleep(random.uniform(0.5, 1.5))
                 
-        # Flush any remaining records in the DB buffer
         if db_buffer:
             print("\nFlushing remaining updates to database...", flush=True)
             conn = flush_db_buffer(conn, db_buffer)
@@ -406,7 +424,10 @@ def main():
                 pass
         print(f"\nFatal error during runtime: {e}", flush=True)
     finally:
-        bs.logout()
+        try:
+            bs.logout()
+        except Exception:
+            pass
         if conn:
             try:
                 conn.close()
