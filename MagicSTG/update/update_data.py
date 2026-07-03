@@ -364,7 +364,7 @@ def main():
             
             for idx, code in enumerate(new_codes):
                 stock_start = time.time()
-                logger.log(f"  [{idx+1}/{len(new_codes)}] {code} ...", end="")
+                logger.log(f"  [{idx+1}/{len(new_codes)}] {code} ...")
                 data_list, ok = fetch_stock_kline(code, "2020-01-01", datetime.now().strftime('%Y-%m-%d'))
                 if ok and data_list:
                     valid_rows = 0
@@ -427,7 +427,8 @@ def main():
             start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
             
             stock_start = time.time()
-            logger.log(f"[{processed}/{total_stocks}] {code} (更新: {last_date} -> {today_str}) ...", end="")
+      
+            logger.log(f"[{processed}/{total_stocks}] {code} (更新: {last_date} -> {today_str}) ...")
             
             data_list, ok = fetch_stock_kline(code, start_date, today_str)
             if not ok or data_list is None:
