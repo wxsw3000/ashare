@@ -306,8 +306,20 @@ def main():
     logger.log(f"  今日日期: {datetime.now().strftime('%Y-%m-%d')}")
     logger.log("=" * 70)
     
-    # 记录总开始时间
     total_start = time.time()
+    
+    # ========== 关键优化：本地时间判断，决定是否需要更新 ==========
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+    yesterday_str = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    # 规则：18:00 之前预期数据到昨天，18:00 之后（含）预期数据到今天
+    if now.hour < 18:
+        expected_date = yesterday_str
+        logger.log(f"⏰ 当前时间 {now.strftime('%H:%M')} < 18:00，预期数据截止到 {expected_date}")
+    else:
+        expected_date = today_str
+        logger.log(f"⏰ 当前时间 {now.strftime('%H:%M')} >= 18:00，预期数据截止到 {expected_date}")
     
     # 建立数据库连接
     conn = None
@@ -324,7 +336,7 @@ def main():
                 logger.log("无法建立数据库连接，退出程序", "ERROR")
                 return
 
-    # 登录 Baostock
+    # 登录 Baostock（仅用于获取新股票列表，实际数据更新时才需要）
     if not ensure_bs_login():
         logger.log("Baostock 登录失败，退出程序", "ERROR")
         if conn:
@@ -332,14 +344,13 @@ def main():
         return
     
     try:
-        # 开始各步骤
+        # 查询数据库现有股票
         logger.start_step("查询数据库现有股票")
         db_stocks = get_db_stock_status()
         logger.end_step("查询数据库现有股票")
         
         db_buffer = []
-        # ========== 修改点：每 200 行提交一次 ==========
-        db_buffer_limit = 200
+        db_buffer_limit = 200  # 每 200 行提交一次
         
         total_new_rows = 0
         updated_count = 0
@@ -360,8 +371,6 @@ def main():
         # 下载新股票历史数据
         if new_codes:
             logger.start_step(f"下载 {len(new_codes)} 只新股票历史数据")
-            logger.log(f"新股票: {', '.join(new_codes[:10])}{'...' if len(new_codes)>10 else ''}")
-            
             for idx, code in enumerate(new_codes):
                 stock_start = time.time()
                 logger.log(f"  [{idx+1}/{len(new_codes)}] {code} ...")
@@ -398,9 +407,9 @@ def main():
                     new_codes_count += 1
                     total_new_rows += valid_rows
                     elapsed = time.time() - stock_start
-                    logger.log(f" [成功] {valid_rows} 行 (耗时 {elapsed:.2f}s)")
+                    logger.log(f"  [成功] {valid_rows} 行 (耗时 {elapsed:.2f}s)")
                 else:
-                    logger.log(f" [失败]", "WARN")
+                    logger.log(f"  [失败]", "WARN")
                 
                 if (idx + 1) % 20 == 0:
                     time.sleep(random.uniform(0.5, 1.0))
@@ -409,74 +418,82 @@ def main():
         else:
             logger.log("没有发现新股票")
         
-        # 更新现有股票
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        logger.log(f"\n更新现有股票 (目标日期: {today_str})...")
+        # ========== 更新现有股票（使用本地时间判断优化） ==========
+        logger.log(f"\n更新现有股票 (目标日期: {expected_date})...")
         logger.log("-" * 70)
         
-        logger.start_step("更新现有股票")
-        total_stocks = len(db_stocks)
-        processed = 0
+        # 统计需要更新的股票数量（用于进度显示）
+        need_update_count = 0
+        for code, last_date in db_stocks.items():
+            if pd.to_datetime(last_date) < pd.to_datetime(expected_date):
+                need_update_count += 1
         
-        for i, (code, last_date) in enumerate(db_stocks.items()):
-            # 如果已经是最新日期，跳过
-            if pd.to_datetime(last_date) >= pd.to_datetime(today_str):
-                continue
-                
-            processed += 1
-            start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
+        logger.log(f"需要更新的股票数量: {need_update_count} / {len(db_stocks)}")
+        
+        if need_update_count == 0:
+            logger.log("✅ 所有股票数据已是最新，无需更新")
+        else:
+            logger.start_step(f"更新现有股票 ({need_update_count} 只)")
+            processed = 0
             
-            stock_start = time.time()
-      
-            logger.log(f"[{processed}/{total_stocks}] {code} (更新: {last_date} -> {today_str}) ...")
-            
-            data_list, ok = fetch_stock_kline(code, start_date, today_str)
-            if not ok or data_list is None:
-                logger.log(" [失败]", "WARN")
-                fail_count += 1
-                continue
-            if len(data_list) == 0:
-                logger.log(" [跳过] 无新交易日", "INFO")
-                continue
-                
-            valid_rows = 0
-            for row in data_list:
-                open_val = safe_float(row[1])
-                close_val = safe_float(row[2])
-                high_val = safe_float(row[3])
-                low_val = safe_float(row[4])
-                if open_val is None or close_val is None or high_val is None or low_val is None:
+            for i, (code, last_date) in enumerate(db_stocks.items()):
+                # ========== 关键判断：使用 expected_date 而非 today_str ==========
+                if pd.to_datetime(last_date) >= pd.to_datetime(expected_date):
                     continue
-                db_row = (
-                    code.replace('.', '_'),
-                    row[0],
-                    open_val,
-                    close_val,
-                    high_val,
-                    low_val,
-                    safe_int(row[5], 0),
-                    safe_float(row[6]),
-                    safe_float(row[7]),
-                    safe_float(row[8])
-                )
-                db_buffer.append(db_row)
-                valid_rows += 1
-            
-            if len(db_buffer) >= db_buffer_limit:
-                conn = flush_db_buffer(conn, db_buffer)
-                conn.commit()
-                db_buffer = []
+                    
+                processed += 1
+                start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
                 
-            updated_count += 1
-            total_new_rows += valid_rows
-            elapsed = time.time() - stock_start
-            logger.log(f" [成功] 添加 {valid_rows} 行 (耗时 {elapsed:.2f}s)")
+                stock_start = time.time()
+                logger.log(f"[{processed}/{need_update_count}] {code} (更新: {last_date} -> {expected_date}) ...")
+                
+                data_list, ok = fetch_stock_kline(code, start_date, expected_date)
+                if not ok or data_list is None:
+                    logger.log(f"  [失败]", "WARN")
+                    fail_count += 1
+                    continue
+                if len(data_list) == 0:
+                    logger.log(f"  [跳过] 无新交易日")
+                    continue
+                    
+                valid_rows = 0
+                for row in data_list:
+                    open_val = safe_float(row[1])
+                    close_val = safe_float(row[2])
+                    high_val = safe_float(row[3])
+                    low_val = safe_float(row[4])
+                    if open_val is None or close_val is None or high_val is None or low_val is None:
+                        continue
+                    db_row = (
+                        code.replace('.', '_'),
+                        row[0],
+                        open_val,
+                        close_val,
+                        high_val,
+                        low_val,
+                        safe_int(row[5], 0),
+                        safe_float(row[6]),
+                        safe_float(row[7]),
+                        safe_float(row[8])
+                    )
+                    db_buffer.append(db_row)
+                    valid_rows += 1
+                
+                if len(db_buffer) >= db_buffer_limit:
+                    conn = flush_db_buffer(conn, db_buffer)
+                    conn.commit()
+                    db_buffer = []
+                    
+                updated_count += 1
+                total_new_rows += valid_rows
+                elapsed = time.time() - stock_start
+                logger.log(f"  [成功] 添加 {valid_rows} 行 (耗时 {elapsed:.2f}s)")
+                
+                # 每 20 只股票休息一下
+                if (i + 1) % 20 == 0:
+                    time.sleep(random.uniform(0.5, 1.5))
             
-            # 每 20 只股票休息一下
-            if (i + 1) % 20 == 0:
-                time.sleep(random.uniform(0.5, 1.5))
-        
-        logger.end_step("更新现有股票")
+            logger.end_step(f"更新现有股票 ({need_update_count} 只)")
         
         # 刷新剩余缓冲区
         if db_buffer:
@@ -489,6 +506,7 @@ def main():
         total_time = time.time() - total_start
         logger.log("=" * 70)
         logger.log("📊 数据同步摘要")
+        logger.log(f"  预期数据日期: {expected_date}")
         logger.log(f"  新增股票数量: {new_codes_count}")
         logger.log(f"  更新股票数量: {updated_count}")
         logger.log(f"  写入数据库行数: {total_new_rows}")
@@ -496,7 +514,6 @@ def main():
         logger.log(f"  总运行时间: {total_time:.2f} 秒 ({total_time/60:.2f} 分钟)")
         logger.log("=" * 70)
         
-        # 打印步骤耗时汇总
         logger.print_final_summary()
         
     except Exception as e:
