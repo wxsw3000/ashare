@@ -109,3 +109,17 @@ Thumbs.db
 *.bak
 *.orig
 *.rej
+
+# ========== 项目运行时生成的数据文件 ==========
+# JSON 数据文件
+*.json
+MagicSTG/*.json
+
+# 报告文件（txt 和 csv）
+MagicSTG/reports/*.txt
+MagicSTG/reports/*.csv
+
+# 临时脚本（如果不想提交，取消注释）
+# MagicSTG/update/fetch_roe_akshare.py
+# MagicSTG/update/update_roe.py
+# MagicSTG/utils/db_writer.py
