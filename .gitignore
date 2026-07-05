@@ -1,0 +1,111 @@
+# ========== Python 编译文件 ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ========== 虚拟环境 ==========
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+.venv
+.virtualenv
+
+# ========== 包管理 ==========
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+pip-selfcheck.json
+
+# pipenv
+Pipfile.lock
+.venv
+
+# Poetry
+poetry.lock
+.venv
+
+# ========== 测试和覆盖率 ==========
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+*.cover
+*.log
+
+# ========== 构建产物 ==========
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+
+# ========== IDE ==========
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+.idea_modules/
+*.iws
+
+# Spyder
+.spyderproject
+.spyproject
+
+# ========== Jupyter Notebook ==========
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+*.pyc
+
+# ========== 环境变量 ==========
+.env
+.env.local
+.env.*.local
+*.env
+
+# ========== 数据文件 ==========
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.tsv
+*.pkl
+*.pickle
+data/
+*.h5
+*.pth
+*.pt
+
+# ========== 日志 ==========
+*.log
+logs/
+*.pid
+
+# ========== 操作系统 ==========
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+
+# ========== 其他 ==========
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
