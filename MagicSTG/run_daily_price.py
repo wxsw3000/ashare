@@ -35,7 +35,6 @@ def load_all_data(data_dir: str):
     return load_all_data_db(limit_days=250)
 
 
-
 def get_all_dates(all_data: dict) -> list:
     all_dates = set()
     for code, df in all_data.items():
@@ -136,6 +135,10 @@ def main():
                 print(f"    📅 {date.strftime('%Y-%m-%d')}: {len(sells)} 只")
                 for code, price in sells[:5]:
                     print(f"       {code} 价格:{price:.2f}")
+                if len(sells) > 5:
+                    print(f"       ... 还有 {len(sells)-5} 只")
+        else:
+            print(f"\n  📭 检查期间没有发现卖出信号")
     
     # 生成交易决策与持仓报告并执行交易决策
     print(f"\n[5] 生成交易决策与持仓报告...")
@@ -152,6 +155,43 @@ def main():
     
     # 执行交易决策（若非模拟模式，可选择自动更新持仓）
     decision_maker.execute_decisions(decisions, confirm=not config['mode'].get('simulation', True))
+    
+    # ========== 新增：保存数据到数据库 ==========
+    print("\n[6] 保存数据到数据库...")
+    try:
+        from utils.db_writer import save_recommendations, save_positions
+        
+        # 收集买入信号
+        buy_signals = []
+        for date, buys in buy_candidates_by_date.items():
+            for code, price in buys:
+                buy_signals.append((code, price))
+        
+        # 收集卖出信号
+        sell_signals = []
+        for date, sells in sell_signals_by_date.items():
+            for code, price in sells:
+                sell_signals.append((code, price))
+        
+        # 保存推荐信号
+        if buy_signals or sell_signals:
+            save_recommendations('price', buy_signals, sell_signals, latest_date)
+        else:
+            print(f"  [DB] 📭 没有新的推荐信号需要保存")
+        
+        # 保存持仓
+        positions = position_manager.get_positions()
+        if positions:
+            save_positions('price', positions)
+        else:
+            print(f"  [DB] 📭 当前策略无持仓")
+            
+    except ImportError as e:
+        print(f"  [DB] ⚠️ db_writer 模块未找到: {e}")
+        print(f"  [DB] 数据未写入数据库，请检查 utils/db_writer.py 是否存在")
+    except Exception as e:
+        print(f"  [DB] ❌ 保存数据到数据库失败: {e}")
+    # ========== 数据库保存结束 ==========
     
     save_checkpoint(latest_date)
     print(f"\n✅ 已保存检查点: {latest_date.strftime('%Y-%m-%d')}")

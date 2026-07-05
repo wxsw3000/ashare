@@ -256,3 +256,7 @@ def load_roe_data_db():
         
     finally:
         conn.close()
+
+
+# ========== 兼容 db_writer.py 的导入 ==========
+get_db_connection = get_connection
