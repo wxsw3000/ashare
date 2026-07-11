@@ -2,8 +2,9 @@ name: Daily Data Update
 
 on:
   schedule:
-    - cron: '10 10 * * *'   # 每天 UTC 10:10 = 北京时间 18:10
-  workflow_dispatch:
+    # UTC 10:30 = 北京时间 18:30（A股已收盘，数据已更新）
+    - cron: '30 10 * * 1-5'   # 仅工作日（周一至周五）
+  workflow_dispatch:           # 保留手动触发用于调试
 
 jobs:
   update-database:
@@ -33,3 +34,4 @@ jobs:
         run: |
           cd MagicSTG/update
           python update_data.py
+          echo "✅ 数据更新完成，北京时间: $(TZ='Asia/Shanghai' date)"
