@@ -3,7 +3,7 @@
 
   2. 推送代码：
     git add .
-    git commit -m "feat: initialize MagicSTG project"
+    git commit -m "提交描述"
     git branch -M main
     git push -u origin main
 
