@@ -1,0 +1,119 @@
+CREATE TABLE `asharedb`.`stock_type`  (
+  `type_code` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '类型代码',
+  `type_name` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '类型名称',
+  `description` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '说明',
+  PRIMARY KEY (`type_code`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '证券类型枚举表' ROW_FORMAT = Compact;
+
+CREATE TABLE `asharedb`.`stock_status`  (
+  `status_code` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '状态代码',
+  `status_name` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '状态名称',
+  `description` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '说明',
+  PRIMARY KEY (`status_code`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '上市状态枚举表' ROW_FORMAT = Compact;
+
+CREATE TABLE `asharedb`.`stock_basic`  (
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '证券代码',
+  `code_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '证券名称',
+  `ipo_date` date NULL DEFAULT NULL COMMENT '上市日期',
+  `out_date` date NULL DEFAULT NULL COMMENT '退市日期',
+  `type` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '证券类型 (1:股票, 2:指数, 3:其它, 4:可转债, 5:ETF)',
+  `status` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '上市状态 (1:上市, 0:退市)',
+  `update_date` date NULL DEFAULT NULL COMMENT '最后更新时间',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`code`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '证券基本资料表' ROW_FORMAT = Compact;
+
+
+CREATE TABLE `asharedb`.`stock_industry`  (
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '证券代码',
+  `code_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '证券名称',
+  `industry` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '所属行业',
+  `industry_classification` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '行业分类标准',
+  `update_date` date NULL DEFAULT NULL COMMENT '最后更新时间',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`code`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '证券行业信息表' ROW_FORMAT = Compact;
+
+
+CREATE TABLE `asharedb`.`stock_kline_day`  (
+  `date` date NOT NULL COMMENT '交易日期',
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '股票代码 (如: sh.600000)',
+  `open` decimal(12, 4) NULL DEFAULT NULL COMMENT '开盘价',
+  `high` decimal(12, 4) NULL DEFAULT NULL COMMENT '最高价',
+  `low` decimal(12, 4) NULL DEFAULT NULL COMMENT '最低价',
+  `close` decimal(12, 4) NULL DEFAULT NULL COMMENT '收盘价',
+  `preclose` decimal(12, 4) NULL DEFAULT NULL COMMENT '前收盘价',
+  `volume` bigint NULL DEFAULT NULL COMMENT '成交量 (股)',
+  `amount` decimal(20, 4) NULL DEFAULT NULL COMMENT '成交额(元)',
+  `adjustflag` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '复权状态 (1:后复权, 2:前复权, 3:不复权)',
+  `tradestatus` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '交易状态 (1:正常, 0:停牌)',
+  `isST` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '是否ST股 (1:是, 0:否)',
+  `update_date` date NULL DEFAULT NULL COMMENT '这条记录的最后更新时间',
+  `turn` decimal(12, 6) NULL DEFAULT NULL COMMENT '换手率 (%)',
+  `pctChg` decimal(12, 6) NULL DEFAULT NULL COMMENT '涨跌幅 (%)',
+  `peTTM` decimal(20, 6) NULL DEFAULT NULL COMMENT '滚动市盈率',
+  `pbMRQ` decimal(20, 6) NULL DEFAULT NULL COMMENT '市净率',
+  `psTTM` decimal(20, 6) NULL DEFAULT NULL COMMENT '滚动市销率',
+  `pcfNcfTTM` decimal(20, 6) NULL DEFAULT NULL COMMENT '滚动市现率',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`date`, `code`) USING BTREE,
+  INDEX `idx_code`(`code` ASC) USING BTREE,
+  INDEX `idx_date`(`date` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = 'A股日线K线数据表' ROW_FORMAT = Compact;
+
+
+CREATE TABLE `asharedb`.`stock_profit_quarterly`  (
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '证券代码',
+  `stat_date` date NOT NULL COMMENT '财报统计季度最后一天',
+  `pub_date` date NULL DEFAULT NULL COMMENT '财报发布日期',
+  `roe_avg` decimal(12, 4) NULL DEFAULT NULL COMMENT '净资产收益率(平均)(%)',
+  `np_margin` decimal(12, 4) NULL DEFAULT NULL COMMENT '销售净利率(%)',
+  `gp_margin` decimal(12, 4) NULL DEFAULT NULL COMMENT '销售毛利率(%)',
+  `net_profit` decimal(20, 4) NULL DEFAULT NULL COMMENT '净利润(元)',
+  `eps_ttm` decimal(12, 4) NULL DEFAULT NULL COMMENT '每股收益',
+  `mb_revenue` decimal(20, 4) NULL DEFAULT NULL COMMENT '主营营业收入(元)',
+  `total_share` decimal(20, 4) NULL DEFAULT NULL COMMENT '总股本',
+  `liqa_share` decimal(20, 4) NULL DEFAULT NULL COMMENT '流通股本',
+  `update_date` date NULL DEFAULT NULL COMMENT '数据更新日期',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`code`, `stat_date`) USING BTREE,
+  INDEX `idx_code`(`code` ASC) USING BTREE,
+  INDEX `idx_stat_date`(`stat_date` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '季频盈利能力数据' ROW_FORMAT = Compact;
+
+
+CREATE TABLE `asharedb`.`index_kline_day`  (
+  `date` date NOT NULL COMMENT '交易日期',
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '指数代码',
+  `open` decimal(12, 4) NULL DEFAULT NULL COMMENT '开盘价',
+  `high` decimal(12, 4) NULL DEFAULT NULL COMMENT '最高价',
+  `low` decimal(12, 4) NULL DEFAULT NULL COMMENT '最低价',
+  `close` decimal(12, 4) NULL DEFAULT NULL COMMENT '收盘价',
+  `preclose` decimal(12, 4) NULL DEFAULT NULL COMMENT '前收盘价',
+  `volume` bigint NULL DEFAULT NULL COMMENT '成交量',
+  `amount` decimal(20, 4) NULL DEFAULT NULL COMMENT '成交额',
+  `pctChg` decimal(12, 6) NULL DEFAULT NULL COMMENT '涨跌幅',
+  `update_date` date NULL DEFAULT NULL COMMENT '最后更新时间',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`date`, `code`) USING BTREE,
+  INDEX `idx_code`(`code` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '指数日线K线数据表' ROW_FORMAT = Compact;
+
+CREATE TABLE `asharedb`.`stock_operation_quarterly`  (
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '证券代码',
+  `pubDate` date NULL DEFAULT NULL COMMENT '公司发布财报的日期',
+  `statDate` date NOT NULL COMMENT '财报统计季度最后一天',
+  `NRTurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '应收账款周转率(次)',
+  `NRTurnDays` decimal(20, 6) NULL DEFAULT NULL COMMENT '应收账款周转天数(天)',
+  `INVTurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '存货周转率(次)',
+  `INVTurnDays` decimal(20, 6) NULL DEFAULT NULL COMMENT '存货周转天数(天)',
+  `CATurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '流动资产周转率(次)',
+  `AssetTurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '总资产周转率(次)',
+  `year` int NOT NULL COMMENT '统计年份',
+  `quarter` int NOT NULL COMMENT '统计季度',
+  `update_date` date NULL DEFAULT NULL COMMENT '数据更新日期',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`code`, `statDate`, `year`, `quarter`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '季频营运能力数据' ROW_FORMAT = Dynamic;
+
