@@ -56,7 +56,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
     - start_date, end_date: Range for backtesting (warmup is automatically handled).
     - limit_days: Number of recent trading days to fetch for daily screening.
     - limit_to_csi300: If True, restricts the stock universe to the CSI 300 stocks
-                       present in the roe_history table (289 stocks).
+                       present in the stock_roe_history table.
                        If False (default), loads all 5135 stocks.
     """
     conn = get_connection()
@@ -100,14 +100,14 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             df = pd.read_sql(query, conn, params=params)
             
         # Scenario 2: CSI 300 Mode (limit_to_csi300=True)
-        # We fetch the codes from roe_history and execute a single IN query (very fast).
+        # We fetch the codes from stock_roe_history and execute a single IN query (very fast).
         elif limit_to_csi300:
-            print("  [DB] Retrieving CSI 300 stock codes from roe_history...", flush=True)
+            print("  [DB] Retrieving CSI 300 stock codes from stock_roe_history...", flush=True)
             with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT code FROM roe_history")
+                cur.execute("SELECT DISTINCT code FROM stock_roe_history")
                 raw_csi_codes = [r[0] for r in cur.fetchall()]
             db_codes = [c.replace('.', '_') for c in raw_csi_codes]
-            print(f"  [DB] Target universe limited to {len(db_codes)} stocks in roe_history.", flush=True)
+            print(f"  [DB] Target universe limited to {len(db_codes)} stocks in stock_roe_history.", flush=True)
             
             format_strings = ','.join(['%s'] * len(db_codes))
             query = f"""
@@ -219,7 +219,7 @@ def load_roe_data_db():
         print("  [DB] Querying ROE history data from DB...", flush=True)
         query = """
         SELECT code, stat_date, pub_date, year, quarter, roe
-        FROM roe_history
+        FROM stock_roe_history
         """
         df = pd.read_sql(query, conn)
         if df.empty:
