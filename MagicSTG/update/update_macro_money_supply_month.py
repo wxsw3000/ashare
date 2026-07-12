@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+macro_money_supply_month 货币供应量（月）数据更新脚本
+从 Baostock 拉取货币供应量月度数据
+"""
+
+import os
+import sys
+import time
+from datetime import datetime, timedelta
+import baostock as bs
+import pandas as pd
+import pymysql
+
+try:
+    from dotenv import load_dotenv
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
+    if os.path.exists(ENV_PATH):
+        load_dotenv(ENV_PATH)
+        print(f"[ENV] Loaded .env from: {ENV_PATH}", flush=True)
+except ImportError:
+    pass
+
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_USER = os.getenv("DB_USER", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_NAME = os.getenv("DB_NAME", "")
+DB_SSL_CA = os.getenv("DB_SSL_CA", "")
+
+
+def get_connection():
+    is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
+    
+    if is_github_actions:
+        ssl_ca = "/etc/ssl/cert.pem"
+    else:
+        ssl_ca = DB_SSL_CA
+        if ssl_ca and not os.path.exists(ssl_ca):
+            filename = os.path.basename(ssl_ca)
+            for path_candidate in [
+                os.path.join(PROJECT_ROOT, 'dbconfig', filename),
+                os.path.join(PROJECT_ROOT, filename),
+            ]:
+                if os.path.exists(path_candidate):
+                    ssl_ca = path_candidate
+                    break
+        if ssl_ca and os.path.exists(ssl_ca):
+            print(f"[SSL] Using CA: {ssl_ca}", flush=True)
+        else:
+            ssl_ca = "/etc/ssl/cert.pem" if os.path.exists("/etc/ssl/cert.pem") else None
+    
+    conn_params = {
+        "host": DB_HOST,
+        "port": DB_PORT,
+        "user": DB_USER,
+        "password": DB_PASSWORD,
+        "database": DB_NAME,
+        "charset": "utf8mb4",
+        "autocommit": False,
+        "connect_timeout": 15,
+        "read_timeout": 60,
+    }
+    
+    if ssl_ca and os.path.exists(ssl_ca):
+        conn_params["ssl"] = {"ca": ssl_ca, "verify_cert": True, "verify_identity": True}
+    else:
+        conn_params["ssl"] = {"verify_cert": False, "verify_identity": False}
+    
+    return pymysql.connect(**conn_params)
+
+
+def ensure_bs_login():
+    try:
+        rs = bs.query_stock_basic()
+        if rs.error_code == '0':
+            return True
+    except Exception:
+        pass
+    
+    try:
+        bs.logout()
+    except Exception:
+        pass
+    time.sleep(1)
+    lg = bs.login()
+    if lg.error_code != '0':
+        print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
+        return False
+    print("[Baostock] Login successful", flush=True)
+    return True
+
+
+def get_existing_records(conn):
+    """查询数据库中已有的(年份,月份)组合"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT stat_year, stat_month FROM macro_money_supply_month")
+            rows = cur.fetchall()
+            return {(row[0], row[1]) for row in rows}
+    except Exception as e:
+        print(f"  [DB] Query existing records failed: {e}", flush=True)
+        return set()
+
+
+def fetch_money_supply_month(start_date, end_date, max_retries=3):
+    """从 Baostock 拉取货币供应量月度数据，日期格式 YYYY-MM"""
+    for attempt in range(max_retries):
+        try:
+            if not ensure_bs_login():
+                time.sleep(2)
+                continue
+            
+            rs = bs.query_money_supply_data_month(start_date=start_date, end_date=end_date)
+            if rs.error_code != '0':
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                return None, False
+            
+            data_list = []
+            while rs.next():
+                data_list.append(rs.get_row_data())
+            return data_list, True
+            
+        except Exception as e:
+            print(f"  [WARN] Fetch error (attempt {attempt+1}/{max_retries}): {e}", flush=True)
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                return None, False
+    return None, False
+
+
+def safe_float(val, default=None):
+    if val is None or val == "" or pd.isna(val):
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def safe_int(val, default=None):
+    if val is None or val == "" or pd.isna(val):
+        return default
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return default
+
+
+def flush_db_buffer(conn, batch_data):
+    if not batch_data:
+        return conn
+    
+    sql = """
+    INSERT INTO macro_money_supply_month (
+        stat_year, stat_month, m0, m0_yoy, m0_mom, m1, m1_yoy, m1_mom, m2, m2_yoy, m2_mom
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        m0 = VALUES(m0),
+        m0_yoy = VALUES(m0_yoy),
+        m0_mom = VALUES(m0_mom),
+        m1 = VALUES(m1),
+        m1_yoy = VALUES(m1_yoy),
+        m1_mom = VALUES(m1_mom),
+        m2 = VALUES(m2),
+        m2_yoy = VALUES(m2_yoy),
+        m2_mom = VALUES(m2_mom);
+    """
+    
+    flat_args = []
+    for record in batch_data:
+        flat_args.extend(record)
+    
+    for attempt in range(1, 4):
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, flat_args)
+            return conn
+        except Exception as e:
+            print(f"  [DB ERROR] Bulk insert failed (attempt {attempt}/3): {e}", flush=True)
+            if attempt < 3:
+                time.sleep(2)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = get_connection()
+            else:
+                raise e
+    return conn
+
+
+def parse_money_supply_month_row(row):
+    """
+    字段顺序: statYear, statMonth, m0Month, m0YOY, m0ChainRelative,
+              m1Month, m1YOY, m1ChainRelative, m2Month, m2YOY, m2ChainRelative
+    """
+    stat_year = safe_int(row[0])
+    stat_month = safe_int(row[1])
+    
+    if stat_year is None or stat_month is None:
+        return None
+    
+    return (
+        stat_year,
+        stat_month,
+        safe_float(row[2]),   # m0
+        safe_float(row[3]),   # m0_yoy
+        safe_float(row[4]),   # m0_mom
+        safe_float(row[5]),   # m1
+        safe_float(row[6]),   # m1_yoy
+        safe_float(row[7]),   # m1_mom
+        safe_float(row[8]),   # m2
+        safe_float(row[9]),   # m2_yoy
+        safe_float(row[10]),  # m2_mom
+    )
+
+
+def print_summary(total_fetched, inserted_count, start_date, end_date):
+    print("=" * 70)
+    print("📊 货币供应量（月）数据同步汇总")
+    print(f"  [拉取记录数]        : {total_fetched}")
+    print(f"  [写入/更新记录数]   : {inserted_count}")
+    print(f"  [查询范围]          : {start_date} ~ {end_date}")
+    print("=" * 70, flush=True)
+
+
+def main():
+    beijing_time = datetime.utcnow() + timedelta(hours=8)
+    today_str = beijing_time.strftime('%Y-%m')
+    current_hour = beijing_time.hour
+    
+    print("=" * 70)
+    print("  [UPDATE] 货币供应量（月）数据同步 (macro_money_supply_month)")
+    print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    if current_hour >= 18:
+        end_date = today_str
+    else:
+        end_date = (beijing_time - timedelta(days=1)).strftime('%Y-%m')
+    
+    start_date = "1990-01"
+    print(f"  [查询范围] {start_date} ~ {end_date}")
+    print("=" * 70, flush=True)
+    
+    conn = None
+    for attempt in range(1, 4):
+        try:
+            conn = get_connection()
+            print("[DB] Database connection established!", flush=True)
+            break
+        except Exception as e:
+            print(f"Failed to connect (attempt {attempt}/3): {e}", flush=True)
+            if attempt < 3:
+                time.sleep(2)
+            else:
+                print("Error: Could not establish database connection. Exiting.", flush=True)
+                return
+
+    if not ensure_bs_login():
+        print("Baostock login failed. Exiting.", flush=True)
+        if conn:
+            conn.close()
+        return
+    
+    try:
+        print("\n[1] Querying existing records from database...", flush=True)
+        existing_records = get_existing_records(conn)
+        print(f"  [INFO] Found {len(existing_records)} existing records", flush=True)
+        
+        print(f"\n[2] Fetching money supply (monthly) data from Baostock ({start_date} ~ {end_date})...", flush=True)
+        data_list, ok = fetch_money_supply_month(start_date, end_date)
+        if not ok or data_list is None:
+            print("  [ERROR] Failed to fetch data", flush=True)
+            return
+        
+        print(f"  [INFO] Fetched {len(data_list)} records", flush=True)
+        
+        print("\n[3] Syncing to database...", flush=True)
+        db_buffer = []
+        db_buffer_limit = 100
+        inserted_count = 0
+        
+        for row in data_list:
+            db_row = parse_money_supply_month_row(row)
+            if db_row:
+                db_buffer.append(db_row)
+                inserted_count += 1
+            
+            if len(db_buffer) >= db_buffer_limit:
+                conn = flush_db_buffer(conn, db_buffer)
+                conn.commit()
+                db_buffer = []
+        
+        if db_buffer:
+            conn = flush_db_buffer(conn, db_buffer)
+            conn.commit()
+            db_buffer = []
+        
+        print_summary(len(data_list), inserted_count, start_date, end_date)
+        
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"\nFatal error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    main()
