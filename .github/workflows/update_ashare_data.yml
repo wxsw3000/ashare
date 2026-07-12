@@ -1,12 +1,15 @@
 name: 数据更新
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:          # 保留手动触发
+  repository_dispatch:        # 添加 API 触发
+    types:
+      - update-data           # 必须与 cron-job 的 event_type 一致
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6小时
+    timeout-minutes: 360
     
     steps:
       - uses: actions/checkout@v4
