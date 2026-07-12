@@ -1,10 +1,10 @@
 name: 数据更新
 
 on:
-  workflow_dispatch:          # 保留手动触发
-  repository_dispatch:        # 添加 API 触发
+  workflow_dispatch:
+  repository_dispatch:
     types:
-      - update-data           # 必须与 cron-job 的 event_type 一致
+      - update-data
 
 jobs:
   update:
@@ -23,12 +23,13 @@ jobs:
           pip install baostock pandas pymysql python-dotenv
       
       - name: 运行更新
+        working-directory: MagicSTG/update
         env:
           DB_HOST: ${{ secrets.TIDB_HOST }}
           DB_PORT: ${{ secrets.TIDB_PORT }}
           DB_USER: ${{ secrets.TIDB_USER }}
           DB_PASSWORD: ${{ secrets.TIDB_PASSWORD }}
           DB_NAME: ${{ secrets.TIDB_DB_NAME }}
-          DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}  # 如果没有可以留空
+          DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
         run: |
           python run_all_updates.py
