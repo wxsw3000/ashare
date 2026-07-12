@@ -24,11 +24,11 @@ jobs:
       
       - name: 运行更新
         env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_SSL_CA: ${{ secrets.DB_SSL_CA }}
+          DB_HOST: ${{ secrets.TIDB_HOST }}
+          DB_PORT: ${{ secrets.TIDB_PORT }}
+          DB_USER: ${{ secrets.TIDB_USER }}
+          DB_PASSWORD: ${{ secrets.TIDB_PASSWORD }}
+          DB_NAME: ${{ secrets.TIDB_DB_NAME }}
+          DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}  # 如果没有可以留空
         run: |
           python run_all_updates.py
