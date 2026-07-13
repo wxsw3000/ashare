@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 import pymysql
 
+sys.stdout.reconfigure(line_buffering=True)
+
 # ============================================================
 # 获取脚本所在目录
 # ============================================================
