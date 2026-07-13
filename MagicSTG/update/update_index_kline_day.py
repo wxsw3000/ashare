@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 index_kline_day 指数日线数据更新脚本
-从 stock_basic 获取所有指数（type='2'），然后从 Baostock 拉取日K线数据
+从 stock_basic 获取所有指数（type='2'），从 Baostock 拉取日K线数据
+数据范围：2020年至今
 """
 
 import os
@@ -25,14 +26,15 @@ except ImportError:
     pass
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_PORT = int(os.getenv("DB_PORT") or 3306)
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
-# 指数查询字段
 INDEX_FIELDS = "date,code,open,high,low,close,preclose,volume,amount,pctChg"
+
+START_DATE = "2020-01-01"
 
 
 def get_beijing_time():
@@ -40,7 +42,6 @@ def get_beijing_time():
 
 
 def get_connection():
-    """建立数据库连接"""
     is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
     
     if is_github_actions:
@@ -82,7 +83,6 @@ def get_connection():
 
 
 def ensure_bs_login():
-    """确保 Baostock 已登录"""
     try:
         rs = bs.query_stock_basic()
         if rs.error_code == '0':
@@ -90,6 +90,7 @@ def ensure_bs_login():
     except Exception:
         pass
     
+    print("[Baostock] Session expired or not logged in, re-logging...", flush=True)
     try:
         bs.logout()
     except Exception:
@@ -99,18 +100,29 @@ def ensure_bs_login():
     if lg.error_code != '0':
         print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
         return False
-    print("[Baostock] Login successful", flush=True)
+    print("[Baostock] Re-login successful", flush=True)
     return True
 
 
-def get_all_indices_from_db(conn):
-    """
-    从 stock_basic 获取所有指数（type='2' 且 status='1' 上市状态）
-    返回: list of code
-    """
+def check_stock_basic_has_data(conn):
     try:
         with conn.cursor() as cur:
-            # 从 stock_basic 查询所有指数，只取上市状态的
+            cur.execute("SELECT COUNT(*) FROM stock_basic")
+            count = cur.fetchone()[0]
+            if count == 0:
+                print("  [ERROR] stock_basic is empty!", flush=True)
+                print("  [HINT] Please run update_stock_basic.py first!", flush=True)
+                return False
+            print(f"  [INFO] stock_basic has {count} records", flush=True)
+            return True
+    except Exception as e:
+        print(f"  [ERROR] Failed to check stock_basic: {e}", flush=True)
+        return False
+
+
+def get_all_indices_from_db(conn):
+    try:
+        with conn.cursor() as cur:
             cur.execute("SELECT code FROM stock_basic WHERE type = '2' AND status = '1'")
             rows = cur.fetchall()
             indices = [row[0] for row in rows]
@@ -122,16 +134,12 @@ def get_all_indices_from_db(conn):
 
 
 def get_index_latest_dates(conn, codes):
-    """
-    查询各指数在 index_kline_day 表中的最新日期
-    返回: {'sh.000001': '2026-07-10', ...}
-    """
     if not codes:
         return {}
     
     result = {}
+    
     try:
-        # 检查表是否存在
         with conn.cursor() as cur:
             cur.execute("SHOW TABLES LIKE 'index_kline_day'")
             if cur.fetchone() is None:
@@ -140,7 +148,6 @@ def get_index_latest_dates(conn, codes):
                     result[code] = None
                 return result
             
-            # 检查表是否为空
             cur.execute("SELECT COUNT(*) FROM index_kline_day")
             count = cur.fetchone()[0]
             if count == 0:
@@ -148,14 +155,12 @@ def get_index_latest_dates(conn, codes):
                 for code in codes:
                     result[code] = None
                 return result
-    
     except Exception as e:
         print(f"  [WARN] Table check failed: {e}", flush=True)
         for code in codes:
             result[code] = None
         return result
     
-    # 正常查询各指数最新日期
     try:
         with conn.cursor() as cur:
             placeholders = ','.join(['%s'] * len(codes))
@@ -170,7 +175,6 @@ def get_index_latest_dates(conn, codes):
             for row in rows:
                 result[row[0]] = row[1].strftime('%Y-%m-%d') if row[1] else None
             
-            # 没有数据的指数设为 None
             for code in codes:
                 if code not in result:
                     result[code] = None
@@ -183,10 +187,6 @@ def get_index_latest_dates(conn, codes):
 
 
 def fetch_index_kline(code, start_date, end_date, max_retries=3):
-    """
-    从 Baostock 查询指数日K线数据
-    返回: (data_list, success)
-    """
     for attempt in range(max_retries):
         try:
             if not ensure_bs_login():
@@ -267,7 +267,6 @@ def build_insert_sql(table_name, fields, batch_size):
 
 
 def flush_db_buffer(conn, batch_data):
-    """批量插入指数数据"""
     if not batch_data:
         return conn
     
@@ -297,10 +296,6 @@ def flush_db_buffer(conn, batch_data):
 
 
 def parse_index_row(row, code, update_date):
-    """
-    解析 Baostock 返回的指数数据行
-    字段顺序: date, code, open, high, low, close, preclose, volume, amount, pctChg
-    """
     date_val = row[0]
     open_val = safe_float(row[2])
     high_val = safe_float(row[3])
@@ -327,7 +322,6 @@ def parse_index_row(row, code, update_date):
 
 
 def print_summary(total_indices, updated_count, skip_count, fail_count, total_rows, target_date):
-    """打印汇总信息"""
     print("=" * 70)
     print("📊 指数数据同步汇总")
     print(f"  [总指数数]          : {total_indices}")
@@ -336,6 +330,7 @@ def print_summary(total_indices, updated_count, skip_count, fail_count, total_ro
     print(f"  [写入行数]          : {total_rows}")
     print(f"  [失败]              : {fail_count}")
     print(f"  [目标日期]          : {target_date}")
+    print(f"  [数据起始]          : {START_DATE}")
     print("=" * 70, flush=True)
 
 
@@ -347,6 +342,7 @@ def main():
     print("=" * 70)
     print("  [UPDATE] 指数日线数据增量同步 (index_kline_day)")
     print(f"  [北京时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  [数据范围] {START_DATE} 至今")
     
     if current_hour >= 18:
         target_date = today_str
@@ -358,7 +354,6 @@ def main():
     update_date = today_str
     print("=" * 70, flush=True)
     
-    # 数据库连接
     conn = None
     for attempt in range(1, 4):
         try:
@@ -380,7 +375,6 @@ def main():
         return
     
     try:
-        # Step 1: 从 stock_basic 获取所有指数
         print("\n[1] Getting all indices from stock_basic...", flush=True)
         all_indices = get_all_indices_from_db(conn)
         if not all_indices:
@@ -389,13 +383,11 @@ def main():
             return
         print(f"  [INFO] Total indices: {len(all_indices)}", flush=True)
         
-        # Step 2: 查询各指数在数据库中的最新日期
         print("\n[2] Querying existing index data from database...", flush=True)
         index_status = get_index_latest_dates(conn, all_indices)
         with_data_count = len([v for v in index_status.values() if v is not None])
         print(f"  [INFO] {with_data_count} indices already have data", flush=True)
         
-        # Step 3: 更新
         print(f"\n[3] Updating indices (target: {target_date})...", flush=True)
         print("-" * 70, flush=True)
         
@@ -408,36 +400,43 @@ def main():
         
         total_indices = len(all_indices)
         processed = 0
+        start_time = time.time()
         
         for code in all_indices:
             processed += 1
             last_date = index_status.get(code)
             
-            # 判断是否需要更新
             if last_date and last_date >= target_date:
                 skip_count += 1
                 if processed % 50 == 0:
-                    print(f"  [进度] {processed}/{total_indices} (跳过: {skip_count})", flush=True)
+                    progress = (processed / total_indices) * 100
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / processed
+                    remaining = avg_time * (total_indices - processed)
+                    print(f"  [进度] {processed}/{total_indices} ({progress:.1f}%) "
+                          f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s (跳过: {skip_count})", flush=True)
                 continue
             
-            # 确定起始日期
             if last_date:
                 start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
             else:
-                start_date = "2000-01-01"
+                start_date = START_DATE
             
-            if processed % 10 == 0 or processed == 1:
-                print(f"  [{processed}/{total_indices}] {code} ({start_date} -> {target_date}) ...", end=" ", flush=True)
+            if processed % 5 == 0 or processed == 1 or processed == total_indices:
+                progress = (processed / total_indices) * 100
+                elapsed = time.time() - start_time
+                avg_time = elapsed / processed
+                remaining = avg_time * (total_indices - processed)
+                print(f"  [{processed}/{total_indices}] {code} ({progress:.1f}%) "
+                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s", flush=True)
             
             data_list, ok = fetch_index_kline(code, start_date, target_date)
             if not ok or data_list is None:
-                print(f"[FAIL] {code}", flush=True)
+                print(f"  [FAIL] {code}", flush=True)
                 fail_count += 1
                 continue
             
             if len(data_list) == 0:
-                if processed % 10 == 0:
-                    print("[SKIP] 无数据", flush=True)
                 continue
             
             valid_rows = 0
@@ -454,21 +453,16 @@ def main():
             
             updated_count += 1
             total_rows += valid_rows
-            if processed % 10 == 0:
-                print(f"[SUCCESS] {valid_rows} 行", flush=True)
             
-            # 控制请求频率
             if processed % 5 == 0:
                 time.sleep(random.uniform(0.2, 0.5))
         
-        # 刷新剩余数据
         if db_buffer:
             print("\nFlushing remaining data...", flush=True)
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
             db_buffer = []
         
-        # 打印汇总
         print_summary(total_indices, updated_count, skip_count, fail_count, total_rows, target_date)
         
     except Exception as e:

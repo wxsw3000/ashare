@@ -3,6 +3,7 @@
 """
 stock_performance_express 季频业绩快报数据更新脚本
 从 stock_basic 获取股票列表（type='1'），从 Baostock 拉取业绩快报数据
+数据范围：2020年至今
 """
 
 import os
@@ -21,25 +22,24 @@ try:
     if os.path.exists(ENV_PATH):
         load_dotenv(ENV_PATH)
         print(f"[ENV] Loaded .env from: {ENV_PATH}", flush=True)
-    else:
-        print("[ENV] No .env file found, using system environment variables", flush=True)
 except ImportError:
-    print("[ENV] python-dotenv not installed, using system environment variables", flush=True)
+    pass
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_PORT = int(os.getenv("DB_PORT") or 3306)
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
-# 业绩快报查询字段
 EXPRESS_FIELDS = (
     "code,performanceExpPubDate,performanceExpStatDate,performanceExpUpdateDate,"
     "performanceExpressTotalAsset,performanceExpressNetAsset,performanceExpressEPSChgPct,"
     "performanceExpressROEWa,performanceExpressEPSDiluted,performanceExpressGRYOY,"
     "performanceExpressOPYOY"
 )
+
+START_DATE = "2020-01-01"
 
 
 def get_beijing_time():
@@ -95,7 +95,6 @@ def ensure_bs_login():
     except Exception:
         pass
     
-    print("[Baostock] Session expired or not logged in, re-logging...", flush=True)
     try:
         bs.logout()
     except Exception:
@@ -105,12 +104,11 @@ def ensure_bs_login():
     if lg.error_code != '0':
         print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
         return False
-    print("[Baostock] Re-login successful", flush=True)
+    print("[Baostock] Login successful", flush=True)
     return True
 
 
 def check_stock_basic_has_data(conn):
-    """检查 stock_basic 表是否有数据"""
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM stock_basic")
@@ -127,10 +125,6 @@ def check_stock_basic_has_data(conn):
 
 
 def get_active_stocks_from_db(conn):
-    """
-    从 stock_basic 获取上市股票列表（type='1' 且 status='1'）
-    返回: list of codes
-    """
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT code FROM stock_basic WHERE type = '1' AND status = '1'")
@@ -144,10 +138,6 @@ def get_active_stocks_from_db(conn):
 
 
 def get_express_latest_dates(conn, codes):
-    """
-    批量查询各股票在 performance_express 表中的最新 stat_date
-    返回: {'sh.600000': '2024-12-31', ...}
-    """
     if not codes:
         return {}
     
@@ -155,7 +145,6 @@ def get_express_latest_dates(conn, codes):
     
     try:
         with conn.cursor() as cur:
-            # 检查表是否存在
             cur.execute("SHOW TABLES LIKE 'stock_performance_express'")
             if cur.fetchone() is None:
                 print("  [INFO] stock_performance_express table does not exist yet", flush=True)
@@ -163,7 +152,6 @@ def get_express_latest_dates(conn, codes):
                     result[code] = None
                 return result
             
-            # 检查表是否为空
             cur.execute("SELECT COUNT(*) FROM stock_performance_express")
             count = cur.fetchone()[0]
             if count == 0:
@@ -203,11 +191,6 @@ def get_express_latest_dates(conn, codes):
 
 
 def fetch_express_data(code, start_date, end_date, max_retries=3):
-    """
-    从 Baostock 查询业绩快报数据
-    使用 start_date 和 end_date 按发布日期范围查询
-    返回: (data_list, success)
-    """
     for attempt in range(max_retries):
         try:
             if not ensure_bs_login():
@@ -314,14 +297,6 @@ def flush_db_buffer(conn, batch_data):
 
 
 def parse_express_row(row, update_date):
-    """
-    解析 Baostock 返回的业绩快报数据行
-    字段顺序: code, performanceExpPubDate, performanceExpStatDate,
-              performanceExpUpdateDate, performanceExpressTotalAsset,
-              performanceExpressNetAsset, performanceExpressEPSChgPct,
-              performanceExpressROEWa, performanceExpressEPSDiluted,
-              performanceExpressGRYOY, performanceExpressOPYOY
-    """
     code = row[0]
     pub_date = row[1] if row[1] else None
     stat_date = row[2] if row[2] else None
@@ -331,25 +306,21 @@ def parse_express_row(row, update_date):
         return None
     
     return (
-        code,                              # code
-        stat_date,                         # stat_date
-        pub_date,                          # pub_date
-        upd_date,                          # update_date (最新披露日)
-        safe_float(row[4]),                # total_asset
-        safe_float(row[5]),                # net_asset
-        safe_float(row[6]),                # eps_chg_pct
-        safe_float(row[7]),                # roe_wa
-        safe_float(row[8]),                # eps_diluted
-        safe_float(row[9]),                # gr_yoy
-        safe_float(row[10]),               # op_yoy
+        code,
+        stat_date,
+        pub_date,
+        upd_date,
+        safe_float(row[4]),
+        safe_float(row[5]),
+        safe_float(row[6]),
+        safe_float(row[7]),
+        safe_float(row[8]),
+        safe_float(row[9]),
+        safe_float(row[10]),
     )
 
 
 def get_date_range():
-    """
-    确定查询日期范围
-    业绩快报按发布日期查询，从 2006-01-01 到目标日期
-    """
     beijing_time = get_beijing_time()
     today_str = beijing_time.strftime('%Y-%m-%d')
     current_hour = beijing_time.hour
@@ -359,10 +330,7 @@ def get_date_range():
     else:
         end_date = (beijing_time - timedelta(days=1)).strftime('%Y-%m-%d')
     
-    # 业绩快报从 2006 年开始有数据
-    start_date = "2006-01-01"
-    
-    return start_date, end_date
+    return START_DATE, end_date
 
 
 def print_summary(total_stocks, updated_count, skip_count, fail_count, total_rows, start_date, end_date):
@@ -384,14 +352,11 @@ def main():
     print("=" * 70)
     print("  [UPDATE] 季频业绩快报数据同步 (stock_performance_express)")
     print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 70, flush=True)
     
-    # 获取日期范围
     start_date, end_date = get_date_range()
-    print(f"  [查询范围] {start_date} ~ {end_date}")
+    print(f"  [数据范围] {start_date} ~ {end_date}")
     print("=" * 70, flush=True)
     
-    # 数据库连接
     conn = None
     for attempt in range(1, 4):
         try:
@@ -413,19 +378,16 @@ def main():
         return
     
     try:
-        # Step 1: 检查 stock_basic 是否有数据
         print("\n[1] Checking stock_basic...", flush=True)
         if not check_stock_basic_has_data(conn):
             return
         
-        # Step 2: 从 stock_basic 获取上市股票
         print("\n[2] Getting active stocks from stock_basic...", flush=True)
         all_stocks = get_active_stocks_from_db(conn)
         if not all_stocks:
             print("  [ERROR] No stocks found in stock_basic", flush=True)
             return
         
-        # Step 3: 查询各股票已有的最新数据
         print(f"\n[3] Querying existing express data from database for {len(all_stocks)} stocks...", flush=True)
         express_status = get_express_latest_dates(conn, all_stocks)
         with_data_count = len([v for v in express_status.values() if v is not None])
@@ -434,7 +396,6 @@ def main():
         print(f"\n[4] Updating stocks (查询范围: {start_date} ~ {end_date})...", flush=True)
         print("-" * 70, flush=True)
         
-        # Step 4: 遍历股票更新
         db_buffer = []
         db_buffer_limit = 500
         total_rows = 0
@@ -444,36 +405,41 @@ def main():
         
         total_stocks = len(all_stocks)
         processed = 0
+        start_time = time.time()
         
         for code in all_stocks:
             processed += 1
             last_date = express_status.get(code)
             
-            # 判断是否需要更新
-            # 由于业绩快报按发布日期查询，如果最新 stat_date 已接近 end_date，跳过
             if last_date:
-                # 如果最新数据已经是今年或去年，简单判断
                 last_year = pd.to_datetime(last_date).year
                 current_year = pd.to_datetime(end_date).year
                 if last_year >= current_year - 1:
-                    # 粗略判断：如果有近一年的数据，跳过（避免每次全量拉取）
                     skip_count += 1
                     if processed % 100 == 0:
-                        print(f"  [进度] {processed}/{total_stocks} (跳过: {skip_count})", flush=True)
+                        progress = (processed / total_stocks) * 100
+                        elapsed = time.time() - start_time
+                        avg_time = elapsed / processed
+                        remaining = avg_time * (total_stocks - processed)
+                        print(f"  [进度] {processed}/{total_stocks} ({progress:.1f}%) "
+                              f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s (跳过: {skip_count})", flush=True)
                     continue
             
-            if processed % 50 == 0:
-                print(f"  [{processed}/{total_stocks}] {code} ...", end=" ", flush=True)
+            if processed % 10 == 0 or processed == 1:
+                progress = (processed / total_stocks) * 100
+                elapsed = time.time() - start_time
+                avg_time = elapsed / processed
+                remaining = avg_time * (total_stocks - processed)
+                print(f"  [{processed}/{total_stocks}] {code} ({progress:.1f}%) "
+                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s", flush=True)
             
             data_list, ok = fetch_express_data(code, start_date, end_date)
             if not ok or data_list is None:
-                print(f"[FAIL] 拉取失败", flush=True)
+                print(f"  [FAIL] {code}", flush=True)
                 fail_count += 1
                 continue
             
             if len(data_list) == 0:
-                if processed % 50 == 0:
-                    print("[SKIP] 无数据", flush=True)
                 continue
             
             valid_rows = 0
@@ -491,13 +457,10 @@ def main():
             if valid_rows > 0:
                 updated_count += 1
                 total_rows += valid_rows
-                if processed % 50 == 0:
-                    print(f"[SUCCESS] {valid_rows} 行", flush=True)
             
             if processed % 10 == 0:
                 time.sleep(random.uniform(0.3, 0.8))
         
-        # 刷新剩余数据
         if db_buffer:
             print("\nFlushing remaining data...", flush=True)
             conn = flush_db_buffer(conn, db_buffer)

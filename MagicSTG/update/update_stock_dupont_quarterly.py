@@ -3,6 +3,7 @@
 """
 stock_dupont_quarterly 季频杜邦指数数据更新脚本
 从 stock_basic 获取股票列表（type='1'），从 Baostock 拉取杜邦指数数据
+数据范围：2020年至今
 """
 
 import os
@@ -25,13 +26,17 @@ except ImportError:
     pass
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_PORT = int(os.getenv("DB_PORT") or 3306)
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
-DUPONT_FIELDS = "code,pubDate,statDate,dupontROE,dupontAssetStoEquity,dupontAssetTurn,dupontPnitoni,dupontNitogr,dupontTaxBurden,dupontIntburden,dupontEbittogr"
+DUPONT_FIELDS = ("code,pubDate,statDate,dupontROE,dupontAssetStoEquity,"
+                 "dupontAssetTurn,dupontPnitoni,dupontNitogr,dupontTaxBurden,"
+                 "dupontIntburden,dupontEbittogr")
+
+START_YEAR = 2020
 
 
 def get_beijing_time():
@@ -101,7 +106,6 @@ def ensure_bs_login():
 
 
 def check_stock_basic_has_data(conn):
-    """检查 stock_basic 表是否有数据"""
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM stock_basic")
@@ -118,10 +122,6 @@ def check_stock_basic_has_data(conn):
 
 
 def get_active_stocks_from_db(conn):
-    """
-    从 stock_basic 获取上市股票列表（type='1' 且 status='1'）
-    返回: list of codes
-    """
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT code FROM stock_basic WHERE type = '1' AND status = '1'")
@@ -135,10 +135,6 @@ def get_active_stocks_from_db(conn):
 
 
 def get_dupont_latest_dates(conn, codes):
-    """
-    批量查询各股票在 dupont 表中的最新 stat_date
-    返回: {'sh.600000': '2024-12-31', ...}
-    """
     if not codes:
         return {}
     
@@ -146,7 +142,6 @@ def get_dupont_latest_dates(conn, codes):
     
     try:
         with conn.cursor() as cur:
-            # 检查表是否存在
             cur.execute("SHOW TABLES LIKE 'stock_dupont_quarterly'")
             if cur.fetchone() is None:
                 print("  [INFO] stock_dupont_quarterly table does not exist yet", flush=True)
@@ -154,7 +149,6 @@ def get_dupont_latest_dates(conn, codes):
                     result[code] = None
                 return result
             
-            # 检查表是否为空
             cur.execute("SELECT COUNT(*) FROM stock_dupont_quarterly")
             count = cur.fetchone()[0]
             if count == 0:
@@ -300,14 +294,14 @@ def parse_dupont_row(row, update_date):
         code,
         stat_date,
         pub_date,
-        safe_float(row[3]),  # dupontROE
-        safe_float(row[4]),  # dupontAssetStoEquity
-        safe_float(row[5]),  # dupontAssetTurn
-        safe_float(row[6]),  # dupontPnitoni
-        safe_float(row[7]),  # dupontNitogr
-        safe_float(row[8]),  # dupontTaxBurden
-        safe_float(row[9]),  # dupontIntburden
-        safe_float(row[10]), # dupontEbittogr
+        safe_float(row[3]),
+        safe_float(row[4]),
+        safe_float(row[5]),
+        safe_float(row[6]),
+        safe_float(row[7]),
+        safe_float(row[8]),
+        safe_float(row[9]),
+        safe_float(row[10]),
         update_date
     )
 
@@ -316,6 +310,9 @@ def get_target_quarter():
     beijing_time = get_beijing_time()
     month = beijing_time.month
     year = beijing_time.year
+    
+    if year < START_YEAR:
+        return START_YEAR, 1
     
     if month <= 2:
         return (year - 1, 3)
@@ -338,6 +335,7 @@ def print_summary(total_stocks, updated_count, skip_count, fail_count, total_row
     print(f"  [写入行数]          : {total_rows}")
     print(f"  [失败]              : {fail_count}")
     print(f"  [目标季度]          : {target_year} Q{target_quarter}")
+    print(f"  [起始年份]          : {START_YEAR}")
     print("=" * 70, flush=True)
 
 
@@ -348,6 +346,7 @@ def main():
     print("=" * 70)
     print("  [UPDATE] 季频杜邦指数数据同步 (stock_dupont_quarterly)")
     print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  [数据范围] {START_YEAR}年至今")
     print("=" * 70, flush=True)
     
     conn = None
@@ -371,30 +370,25 @@ def main():
         return
     
     try:
-        # ====== Step 1: 检查 stock_basic 是否有数据 ======
         print("\n[1] Checking stock_basic...", flush=True)
         if not check_stock_basic_has_data(conn):
             return
         
-        # ====== Step 2: 从 stock_basic 获取上市股票 ======
         print("\n[2] Getting active stocks from stock_basic...", flush=True)
         all_stocks = get_active_stocks_from_db(conn)
         if not all_stocks:
             print("  [ERROR] No stocks found in stock_basic", flush=True)
             return
         
-        # ====== Step 3: 查询各股票已有的最新数据 ======
         print(f"\n[3] Querying existing dupont data from database for {len(all_stocks)} stocks...", flush=True)
         dupont_status = get_dupont_latest_dates(conn, all_stocks)
         with_data_count = len([v for v in dupont_status.values() if v is not None])
         print(f"  [INFO] {with_data_count} stocks already have data", flush=True)
         
-        # ====== Step 4: 确定目标季度 ======
         target_year, target_quarter = get_target_quarter()
         print(f"\n[4] Target quarter: {target_year} Q{target_quarter}", flush=True)
         print("-" * 70, flush=True)
         
-        # ====== Step 5: 遍历股票更新 ======
         db_buffer = []
         db_buffer_limit = 500
         total_rows = 0
@@ -404,6 +398,7 @@ def main():
         
         total_stocks = len(all_stocks)
         processed = 0
+        start_time = time.time()
         
         for code in all_stocks:
             processed += 1
@@ -411,15 +406,22 @@ def main():
             
             if last_date:
                 last_dt = pd.to_datetime(last_date)
-                if last_dt.year > target_year or (last_dt.year == target_year and ((last_dt.month - 1) // 3 + 1) >= target_quarter):
+                last_year = last_dt.year
+                last_quarter = (last_dt.month - 1) // 3 + 1
+                if last_year > target_year or (last_year == target_year and last_quarter >= target_quarter):
                     skip_count += 1
                     if processed % 100 == 0:
-                        print(f"  [进度] {processed}/{total_stocks} (跳过: {skip_count})", flush=True)
+                        progress = (processed / total_stocks) * 100
+                        elapsed = time.time() - start_time
+                        avg_time = elapsed / processed
+                        remaining = avg_time * (total_stocks - processed)
+                        print(f"  [进度] {processed}/{total_stocks} ({progress:.1f}%) "
+                              f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s (跳过: {skip_count})", flush=True)
                     continue
             
             if last_date:
                 last_dt = pd.to_datetime(last_date)
-                start_year = last_dt.year
+                start_year = max(last_dt.year, START_YEAR)
                 start_quarter = (last_dt.month - 1) // 3 + 1
                 if start_quarter == 4:
                     start_year += 1
@@ -427,8 +429,84 @@ def main():
                 else:
                     start_quarter += 1
             else:
-                start_year = 2020
+                start_year = START_YEAR
                 start_quarter = 1
             
             if start_year > target_year or (start_year == target_year and start_quarter > target_quarter):
-               
+                skip_count += 1
+                continue
+            
+            if processed % 10 == 0 or processed == 1:
+                progress = (processed / total_stocks) * 100
+                elapsed = time.time() - start_time
+                avg_time = elapsed / processed
+                remaining = avg_time * (total_stocks - processed)
+                print(f"  [{processed}/{total_stocks}] {code} ({progress:.1f}%) "
+                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s", flush=True)
+            
+            year = start_year
+            quarter = start_quarter
+            stock_rows = 0
+            
+            while year < target_year or (year == target_year and quarter <= target_quarter):
+                data_list, ok = fetch_dupont_data(code, year, quarter)
+                if not ok or data_list is None:
+                    print(f"  [FAIL] {code} {year}Q{quarter}", flush=True)
+                    fail_count += 1
+                    break
+                
+                for row in data_list:
+                    db_row = parse_dupont_row(row, today_str)
+                    if db_row:
+                        db_buffer.append(db_row)
+                        stock_rows += 1
+                
+                if quarter == 4:
+                    year += 1
+                    quarter = 1
+                else:
+                    quarter += 1
+            
+            if stock_rows > 0:
+                updated_count += 1
+                total_rows += stock_rows
+            
+            if len(db_buffer) >= db_buffer_limit:
+                conn = flush_db_buffer(conn, db_buffer)
+                conn.commit()
+                db_buffer = []
+            
+            if processed % 10 == 0:
+                time.sleep(random.uniform(0.3, 0.8))
+        
+        if db_buffer:
+            print("\nFlushing remaining data...", flush=True)
+            conn = flush_db_buffer(conn, db_buffer)
+            conn.commit()
+            db_buffer = []
+        
+        print_summary(total_stocks, updated_count, skip_count, fail_count, total_rows, target_year, target_quarter)
+        
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"\nFatal error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    main()

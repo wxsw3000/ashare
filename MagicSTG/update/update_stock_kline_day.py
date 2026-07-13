@@ -3,10 +3,7 @@
 """
 stock_kline_day A股日K线数据更新脚本（前复权 + 除权自动检测与标记）
 从 stock_basic 获取股票列表（type='1'），从 Baostock 拉取前复权日K线数据
-核心逻辑：
-    1. 增量更新时，检测新数据 preclose 是否等于本地前一天 close
-    2. 如果不相等 → 标记 is_dividend = 1，全量重建该股票
-    3. 周/月K线通过查询 is_dividend 来判断是否需要全量重建
+数据范围：2020年至今
 """
 
 import os
@@ -31,17 +28,20 @@ except ImportError:
     print("[ENV] python-dotenv not installed, using system environment variables", flush=True)
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_PORT = int(os.getenv("DB_PORT") or 3306)
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
-# 日K线查询字段（包含 preclose 用于除权检测）
+# 日K线查询字段
 KLINE_FIELDS = (
     "date,code,open,high,low,close,preclose,volume,amount,"
     "adjustflag,tradestatus,isST,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
 )
+
+# 数据起始日期
+START_DATE = "2020-01-01"
 
 
 def get_beijing_time():
@@ -112,7 +112,6 @@ def ensure_bs_login():
 
 
 def check_stock_basic_has_data(conn):
-    """检查 stock_basic 表是否有数据"""
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM stock_basic")
@@ -129,10 +128,6 @@ def check_stock_basic_has_data(conn):
 
 
 def get_active_stocks_from_db(conn):
-    """
-    从 stock_basic 获取上市股票列表（type='1' 且 status='1'）
-    返回: list of dict with code and ipo_date
-    """
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT code, ipo_date FROM stock_basic WHERE type = '1' AND status = '1'")
@@ -140,7 +135,10 @@ def get_active_stocks_from_db(conn):
             stocks = []
             for row in rows:
                 code = row[0]
-                ipo_date = row[1].strftime('%Y-%m-%d') if row[1] else '2000-01-01'
+                ipo_date = row[1].strftime('%Y-%m-%d') if row[1] else '2020-01-01'
+                # 如果上市日期早于2020年，从2020年开始
+                if ipo_date < '2020-01-01':
+                    ipo_date = '2020-01-01'
                 stocks.append({'code': code, 'ipo_date': ipo_date})
             print(f"  [DB] Found {len(stocks)} active stocks from stock_basic", flush=True)
             return stocks
@@ -150,10 +148,6 @@ def get_active_stocks_from_db(conn):
 
 
 def get_kline_latest_date(conn, code):
-    """
-    查询某支股票在 stock_kline_day 表中的最新日期
-    返回: 日期字符串 或 None
-    """
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -170,10 +164,6 @@ def get_kline_latest_date(conn, code):
 
 
 def get_previous_close(conn, code, date):
-    """
-    查询某支股票在指定日期前一天的 close 价格
-    返回: float 或 None
-    """
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -189,30 +179,7 @@ def get_previous_close(conn, code, date):
         return None
 
 
-def has_dividend_in_range(conn, code, start_date, end_date):
-    """
-    查询某股票在指定日期范围内是否有除权记录 (is_dividend = 1)
-    供周/月K线调用
-    返回: True/False
-    """
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(1) FROM stock_kline_day WHERE code = %s AND date >= %s AND date <= %s AND is_dividend = 1",
-                (code, start_date, end_date)
-            )
-            row = cur.fetchone()
-            return row[0] > 0
-    except Exception as e:
-        print(f"  [WARN] Failed to check dividend for {code}: {e}", flush=True)
-        return False
-
-
 def delete_stock_kline_data(conn, code):
-    """
-    删除某支股票的全部日K线数据
-    返回: 删除的行数
-    """
     try:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM stock_kline_day WHERE code = %s", (code,))
@@ -225,10 +192,6 @@ def delete_stock_kline_data(conn, code):
 
 
 def fetch_stock_kline(code, start_date, end_date, max_retries=3):
-    """
-    从 Baostock 查询日K线数据（前复权）
-    返回: (data_list, success)
-    """
     for attempt in range(max_retries):
         try:
             if not ensure_bs_login():
@@ -241,7 +204,7 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
                 start_date=start_date,
                 end_date=end_date,
                 frequency="d",
-                adjustflag="2"  # 前复权
+                adjustflag="2"
             )
             if rs.error_code != '0':
                 if attempt < max_retries - 1:
@@ -357,11 +320,6 @@ def flush_db_buffer(conn, batch_data, table_name="stock_kline_day"):
 
 
 def parse_kline_row(row, code, update_date, is_dividend):
-    """
-    解析 Baostock 返回的日K线数据行
-    字段顺序: date,code,open,high,low,close,preclose,volume,amount,
-              adjustflag,tradestatus,isST,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM
-    """
     date_val = row[0]
     open_val = safe_float(row[2])
     high_val = safe_float(row[3])
@@ -378,50 +336,37 @@ def parse_kline_row(row, code, update_date, is_dividend):
         safe_str(row[9], '3'), safe_str(row[10], '1'), safe_str(row[11], '0'),
         safe_float(row[12]), safe_float(row[13]),
         safe_float(row[14]), safe_float(row[15]), safe_float(row[16]), safe_float(row[17]),
-        is_dividend,  # 新增：除权标记
+        is_dividend,
         update_date
     )
 
 
 def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit):
-    """
-    更新单支股票的日K线数据
-    返回: (total_rows, updated, skipped, failed, db_buffer, dividend_detected)
-    """
     total_rows = 0
     updated = 0
     skipped = 0
     failed = 0
     dividend_detected = False
     
-    # 查询本地最新日期
     last_date = get_kline_latest_date(conn, code)
     
-    # 如果本地有数据且已是最新，跳过
     if last_date and last_date >= target_date:
         return 0, 0, 1, 0, db_buffer, False
     
-    # 确定拉取起始日期
     if last_date:
         start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
     else:
         start_date = ipo_date
     
-    print(f"  {code} ({start_date} -> {target_date}) ...", end=" ", flush=True)
+    # 不打印每只股票的详细信息，由主循环控制进度输出
     
-    # 拉取数据
     data_list, ok = fetch_stock_kline(code, start_date, target_date)
     if not ok or data_list is None:
-        print("[FAIL] 拉取失败", flush=True)
         return 0, 0, 0, 1, db_buffer, False
     
     if len(data_list) == 0:
-        print("[SKIP] 无新数据", flush=True)
         return 0, 0, 1, 0, db_buffer, False
     
-    # ========== 核心：检测除权除息 ==========
-    # 如果本地有历史数据，检查增量数据第一天的 preclose
-    # 如果 preclose != 本地前一天的 close，说明发生了除权
     dividend_date = None
     if last_date:
         first_row = data_list[0]
@@ -430,41 +375,28 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
         
         prev_close = get_previous_close(conn, code, first_date)
         if prev_close is not None and first_preclose is not None:
-            # 使用阈值 0.001 避免浮点精度误差
             if abs(first_preclose - prev_close) > 0.001:
                 dividend_detected = True
                 dividend_date = first_date
-                print(f"[DIVIDEND] 检测到除权! {first_date} preclose={first_preclose:.4f}, prev_close={prev_close:.4f}", flush=True)
     
-    # 如果检测到除权除息，全量重建
     if dividend_detected:
-        print(f"  全量重建 {code} ...", end=" ", flush=True)
-        # 删除全部历史数据
         delete_stock_kline_data(conn, code)
         conn.commit()
         
-        # 从上市日期开始全量拉取
         data_list, ok = fetch_stock_kline(code, ipo_date, target_date)
         if not ok or data_list is None:
-            print("[FAIL] 全量重建失败", flush=True)
             return 0, 0, 0, 1, db_buffer, False
         
         if len(data_list) == 0:
-            print("[SKIP] 全量重建无数据", flush=True)
             return 0, 0, 1, 0, db_buffer, False
         
-        # 全量重建时，只有 dividend_date 这一天标记为 is_dividend = 1
-        # 其他所有日期标记为 0
         is_dividend = 0
     else:
-        # 正常增量更新，所有新增数据 is_dividend = 0
         is_dividend = 0
     
-    # 解析数据行，标记除权日
     valid_rows = 0
     for row in data_list:
         row_date = row[0]
-        # 如果是全量重建，只有除权日标记为 1
         if dividend_detected and row_date == dividend_date:
             db_row = parse_kline_row(row, code, update_date, 1)
         else:
@@ -478,11 +410,6 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
             db_buffer = []
-    
-    if dividend_detected:
-        print(f"[REBUILD] {valid_rows} 行 (除权日: {dividend_date})", flush=True)
-    else:
-        print(f"[SUCCESS] {valid_rows} 行", flush=True)
     
     return valid_rows, 1, 0, 0, db_buffer, dividend_detected
 
@@ -498,6 +425,7 @@ def print_summary(total_stocks, updated_count, skip_count, fail_count,
     print(f"  [检测到除权]        : {dividend_count}")
     print(f"  [失败]              : {fail_count}")
     print(f"  [目标日期]          : {target_date}")
+    print(f"  [数据起始]          : {START_DATE}")
     print("=" * 70, flush=True)
 
 
@@ -510,6 +438,7 @@ def main():
     print("=" * 70)
     print("  [UPDATE] A-share 日K线数据 (前复权 + 除权检测与标记)")
     print(f"  [北京时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  [数据范围] {START_DATE} 至今")
     
     if current_hour >= 18:
         target_date = today_str
@@ -521,7 +450,6 @@ def main():
     update_date = today_str
     print("=" * 70, flush=True)
     
-    # 数据库连接
     conn = None
     for attempt in range(1, 6):
         try:
@@ -543,19 +471,16 @@ def main():
         return
     
     try:
-        # Step 1: 检查 stock_basic 是否有数据
         print("\n[1] Checking stock_basic...", flush=True)
         if not check_stock_basic_has_data(conn):
             return
         
-        # Step 2: 从 stock_basic 获取上市股票列表
         print("\n[2] Getting active stocks from stock_basic...", flush=True)
         all_stocks = get_active_stocks_from_db(conn)
         if not all_stocks:
             print("  [ERROR] No stocks found in stock_basic", flush=True)
             return
         
-        # Step 3: 遍历更新
         print(f"\n[3] Updating {len(all_stocks)} stocks (target: {target_date})...", flush=True)
         print("-" * 70, flush=True)
         
@@ -569,6 +494,7 @@ def main():
         
         total_stocks = len(all_stocks)
         processed = 0
+        start_time = time.time()
         
         for stock in all_stocks:
             processed += 1
@@ -587,13 +513,19 @@ def main():
             if dividend_detected:
                 dividend_count += 1
             
-            if processed % 50 == 0:
-                print(f"  [进度] {processed}/{total_stocks} (更新: {updated_count}, 跳过: {skip_count}, 除权: {dividend_count}, 失败: {fail_count})", flush=True)
+            # 每10只股票输出一次进度
+            if processed % 10 == 0 or processed == 1 or processed == total_stocks:
+                progress = (processed / total_stocks) * 100
+                elapsed = time.time() - start_time
+                avg_time = elapsed / processed
+                remaining = avg_time * (total_stocks - processed)
+                print(f"  [进度] {processed}/{total_stocks} ({progress:.1f}%) "
+                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s "
+                      f"(更新: {updated_count}, 跳过: {skip_count}, 除权: {dividend_count})", flush=True)
             
             if processed % 5 == 0:
                 time.sleep(random.uniform(0.3, 0.8))
         
-        # 刷新剩余数据
         if db_buffer:
             print("\nFlushing remaining data...", flush=True)
             conn = flush_db_buffer(conn, db_buffer)

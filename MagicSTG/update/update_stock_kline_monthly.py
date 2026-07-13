@@ -3,10 +3,7 @@
 """
 stock_kline_monthly A股月K线数据更新脚本（前复权）
 从 stock_basic 获取股票列表（type='1'），从 Baostock 拉取前复权月K线数据
-核心逻辑：
-    1. 查询日K线表，判断本月范围内是否有 is_dividend = 1
-    2. 如果有 → 全量重建该股票月K线
-    3. 如果无 → 正常增量更新
+数据范围：2020年至今
 """
 
 import os
@@ -31,13 +28,15 @@ except ImportError:
     print("[ENV] python-dotenv not installed, using system environment variables", flush=True)
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_PORT = int(os.getenv("DB_PORT") or 3306)
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_SSL_CA = os.getenv("DB_SSL_CA", "")
 
 KLINE_FIELDS = "date,code,open,high,low,close,volume,amount,adjustflag,turn,pctChg"
+
+START_DATE = "2020-01-01"
 
 
 def get_beijing_time():
@@ -131,7 +130,9 @@ def get_active_stocks_from_db(conn):
             stocks = []
             for row in rows:
                 code = row[0]
-                ipo_date = row[1].strftime('%Y-%m-%d') if row[1] else '2000-01-01'
+                ipo_date = row[1].strftime('%Y-%m-%d') if row[1] else '2020-01-01'
+                if ipo_date < '2020-01-01':
+                    ipo_date = '2020-01-01'
                 stocks.append({'code': code, 'ipo_date': ipo_date})
             print(f"  [DB] Found {len(stocks)} active stocks from stock_basic", flush=True)
             return stocks
@@ -157,9 +158,6 @@ def get_kline_latest_date(conn, code):
 
 
 def has_dividend_in_range(conn, code, start_date, end_date):
-    """
-    查询日K线表，判断某股票在指定日期范围内是否有 is_dividend = 1
-    """
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -322,9 +320,6 @@ def parse_kline_row(row, code, update_date):
 
 
 def get_month_range(month_end_date):
-    """
-    根据某月的结束日期，计算该月的起始日期
-    """
     dt = pd.to_datetime(month_end_date)
     month_start = dt.replace(day=1)
     return month_start.strftime('%Y-%m-%d'), dt.strftime('%Y-%m-%d')
@@ -346,33 +341,26 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
     else:
         start_date = ipo_date
     
-    # ========== 核心：检查本月范围内是否有除权记录 ==========
     month_start, month_end = get_month_range(target_date)
     check_start = start_date if start_date > month_start else month_start
     has_div = has_dividend_in_range(conn, code, check_start, target_date)
     
     if has_div:
-        print(f"  {code} [DIVIDEND] 检测到除权记录 ({check_start} ~ {target_date})，全量重建 ...", end=" ", flush=True)
         delete_stock_kline_data(conn, code)
         conn.commit()
         
         data_list, ok = fetch_stock_kline(code, ipo_date, target_date)
         if not ok or data_list is None:
-            print("[FAIL] 全量重建失败", flush=True)
             return 0, 0, 0, 1, db_buffer
         
         if len(data_list) == 0:
-            print("[SKIP] 全量重建无数据", flush=True)
             return 0, 0, 1, 0, db_buffer
     else:
-        print(f"  {code} ({start_date} -> {target_date}) ...", end=" ", flush=True)
         data_list, ok = fetch_stock_kline(code, start_date, target_date)
         if not ok or data_list is None:
-            print("[FAIL] 拉取失败", flush=True)
             return 0, 0, 0, 1, db_buffer
         
         if len(data_list) == 0:
-            print("[SKIP] 无新数据", flush=True)
             return 0, 0, 1, 0, db_buffer
     
     valid_rows = 0
@@ -387,11 +375,6 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
             conn.commit()
             db_buffer = []
     
-    if has_div:
-        print(f"[REBUILD] {valid_rows} 行", flush=True)
-    else:
-        print(f"[SUCCESS] {valid_rows} 行", flush=True)
-    
     return valid_rows, 1, 0, 0, db_buffer
 
 
@@ -405,6 +388,7 @@ def print_summary(total_stocks, updated_count, skip_count, fail_count,
     print(f"  [写入行数]          : {total_rows}")
     print(f"  [失败]              : {fail_count}")
     print(f"  [目标日期]          : {target_date}")
+    print(f"  [数据起始]          : {START_DATE}")
     print("=" * 70, flush=True)
 
 
@@ -417,6 +401,7 @@ def main():
     print("=" * 70)
     print("  [UPDATE] A-share 月K线数据 (前复权 + 除权检测)")
     print(f"  [北京时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  [数据范围] {START_DATE} 至今")
     
     if current_hour >= 18:
         target_date = today_str
@@ -471,6 +456,7 @@ def main():
         
         total_stocks = len(all_stocks)
         processed = 0
+        start_time = time.time()
         
         for stock in all_stocks:
             processed += 1
@@ -487,8 +473,15 @@ def main():
             skip_count += skipped
             fail_count += failed
             
-            if processed % 50 == 0:
-                print(f"  [进度] {processed}/{total_stocks} (更新: {updated_count}, 跳过: {skip_count}, 失败: {fail_count})", flush=True)
+            # 每10只股票输出一次进度
+            if processed % 10 == 0 or processed == 1 or processed == total_stocks:
+                progress = (processed / total_stocks) * 100
+                elapsed = time.time() - start_time
+                avg_time = elapsed / processed
+                remaining = avg_time * (total_stocks - processed)
+                print(f"  [进度] {processed}/{total_stocks} ({progress:.1f}%) "
+                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s "
+                      f"(更新: {updated_count}, 跳过: {skip_count})", flush=True)
             
             if processed % 5 == 0:
                 time.sleep(random.uniform(0.3, 0.8))
