@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-stock_kline_weekly A股周K线数据更新脚本（前复权）
-从 stock_basic 获取股票列表（type='1'），从 Baostock 拉取前复权周K线数据
+stock_kline_day A股日K线数据更新脚本（前复权 + 除权自动检测与标记）
+从 stock_basic 获取股票列表（type='1'），从 Baostock 拉取前复权日K线数据
 数据范围：2020年至今
 """
 
@@ -35,7 +35,10 @@ from db import (
 # 配置
 # ============================================================
 
-KLINE_FIELDS = "date,code,open,high,low,close,volume,amount,adjustflag,turn,pctChg"
+KLINE_FIELDS = (
+    "date,code,open,high,low,close,preclose,volume,amount,"
+    "adjustflag,tradestatus,isST,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
+)
 START_DATE = "2020-01-01"
 
 
@@ -64,10 +67,10 @@ def get_active_stocks_from_db(conn):
 
 
 def get_kline_latest_date(conn, code):
-    """查询某支股票在 stock_kline_weekly 表中的最新日期"""
+    """查询某支股票在 stock_kline_day 表中的最新日期"""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT MAX(date) FROM stock_kline_weekly WHERE code = %s", (code,))
+            cur.execute("SELECT MAX(date) FROM stock_kline_day WHERE code = %s", (code,))
             row = cur.fetchone()
             if row and row[0]:
                 return row[0].strftime('%Y-%m-%d')
@@ -77,28 +80,30 @@ def get_kline_latest_date(conn, code):
         return None
 
 
-def has_dividend_in_range(conn, code, start_date, end_date):
-    """查询日K线表，判断某股票在指定日期范围内是否有 is_dividend = 1"""
+def get_previous_close(conn, code, date):
+    """查询某支股票在指定日期前一天的 close 价格"""
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT COUNT(1) FROM stock_kline_day WHERE code = %s AND date >= %s AND date <= %s AND is_dividend = 1",
-                (code, start_date, end_date)
+                "SELECT close FROM stock_kline_day WHERE code = %s AND date < %s ORDER BY date DESC LIMIT 1",
+                (code, date)
             )
             row = cur.fetchone()
-            return row[0] > 0
+            if row and row[0]:
+                return float(row[0])
+            return None
     except Exception as e:
-        print(f"  [WARN] Failed to check dividend for {code}: {e}", flush=True)
-        return False
+        print(f"  [ERROR] Failed to query previous close for {code} on {date}: {e}", flush=True)
+        return None
 
 
 def delete_stock_kline_data(conn, code):
-    """删除某支股票的全部周K线数据"""
+    """删除某支股票的全部日K线数据"""
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM stock_kline_weekly WHERE code = %s", (code,))
+            cur.execute("DELETE FROM stock_kline_day WHERE code = %s", (code,))
             deleted = cur.rowcount
-            print(f"  [DELETE] 删除了 {deleted} 条历史周K线数据", flush=True)
+            print(f"  [DELETE] 删除了 {deleted} 条历史数据", flush=True)
             return deleted
     except Exception as e:
         print(f"  [ERROR] Failed to delete data for {code}: {e}", flush=True)
@@ -116,24 +121,34 @@ def build_insert_sql(table_name, fields, batch_size):
         `high` = VALUES(`high`),
         `low` = VALUES(`low`),
         `close` = VALUES(`close`),
+        `preclose` = VALUES(`preclose`),
         `volume` = VALUES(`volume`),
         `amount` = VALUES(`amount`),
         `adjustflag` = VALUES(`adjustflag`),
+        `tradestatus` = VALUES(`tradestatus`),
+        `isST` = VALUES(`isST`),
         `turn` = VALUES(`turn`),
         `pctChg` = VALUES(`pctChg`),
+        `peTTM` = VALUES(`peTTM`),
+        `pbMRQ` = VALUES(`pbMRQ`),
+        `psTTM` = VALUES(`psTTM`),
+        `pcfNcfTTM` = VALUES(`pcfNcfTTM`),
+        `is_dividend` = VALUES(`is_dividend`),
         `update_date` = VALUES(`update_date`);
     """
     return sql
 
 
-def flush_db_buffer(conn, batch_data, table_name="stock_kline_weekly"):
-    """批量插入周K线数据"""
+def flush_db_buffer(conn, batch_data, table_name="stock_kline_day"):
+    """批量插入日K线数据"""
     if not batch_data:
         return conn
     
     fields = [
-        'date', 'code', 'open', 'high', 'low', 'close',
-        'volume', 'amount', 'adjustflag', 'turn', 'pctChg', 'update_date'
+        'date', 'code', 'open', 'high', 'low', 'close', 'preclose',
+        'volume', 'amount', 'adjustflag', 'tradestatus', 'isST',
+        'turn', 'pctChg', 'peTTM', 'pbMRQ', 'psTTM', 'pcfNcfTTM',
+        'is_dividend', 'update_date'
     ]
     
     sql = build_insert_sql(table_name, fields, len(batch_data))
@@ -163,7 +178,7 @@ def flush_db_buffer(conn, batch_data, table_name="stock_kline_weekly"):
 # ============================================================
 
 def fetch_stock_kline(code, start_date, end_date, max_retries=3):
-    """从 Baostock 查询周K线数据（前复权）"""
+    """从 Baostock 查询日K线数据（前复权）"""
     for attempt in range(max_retries):
         try:
             if not ensure_bs_login():
@@ -175,7 +190,7 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
                 KLINE_FIELDS,
                 start_date=start_date,
                 end_date=end_date,
-                frequency="w",
+                frequency="d",
                 adjustflag="2"
             )
             if rs.error_code != '0':
@@ -206,30 +221,27 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
     return None, False
 
 
-def parse_kline_row(row, code, update_date):
-    """解析周K线数据行"""
+def parse_kline_row(row, code, update_date, is_dividend):
+    """解析日K线数据行"""
     date_val = row[0]
     open_val = safe_float(row[2])
     high_val = safe_float(row[3])
     low_val = safe_float(row[4])
     close_val = safe_float(row[5])
+    preclose_val = safe_float(row[6])
     
     if open_val is None or high_val is None or low_val is None or close_val is None:
         return None
     
     return (
-        date_val, code, open_val, high_val, low_val, close_val,
-        safe_int(row[6], 0), safe_float(row[7], 0.0),
-        safe_str(row[8], '2'), safe_float(row[9]), safe_float(row[10]),
+        date_val, code, open_val, high_val, low_val, close_val, preclose_val,
+        safe_int(row[7], 0), safe_float(row[8], 0.0),
+        safe_str(row[9], '3'), safe_str(row[10], '1'), safe_str(row[11], '0'),
+        safe_float(row[12]), safe_float(row[13]),
+        safe_float(row[14]), safe_float(row[15]), safe_float(row[16]), safe_float(row[17]),
+        is_dividend,
         update_date
     )
-
-
-def get_week_range(week_end_date):
-    """根据某周的结束日期（通常是周五），计算该周的起始日期（周一）"""
-    dt = pd.to_datetime(week_end_date)
-    week_start = dt - timedelta(days=dt.weekday())
-    return week_start.strftime('%Y-%m-%d'), dt.strftime('%Y-%m-%d')
 
 
 # ============================================================
@@ -237,46 +249,64 @@ def get_week_range(week_end_date):
 # ============================================================
 
 def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit):
-    """更新单支股票的周K线数据"""
+    """
+    更新单支股票的日K线数据
+    返回: (total_rows, updated, skipped, failed, db_buffer, dividend_detected)
+    """
     total_rows = 0
-    updated = 0
-    skipped = 0
-    failed = 0
+    dividend_detected = False
     
     last_date = get_kline_latest_date(conn, code)
     
     if last_date and last_date >= target_date:
-        return 0, 0, 1, 0, db_buffer
+        return 0, 0, 1, 0, db_buffer, False
     
     if last_date:
         start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
     else:
         start_date = ipo_date
     
-    week_start, week_end = get_week_range(target_date)
-    check_start = start_date if start_date > week_start else week_start
-    has_div = has_dividend_in_range(conn, code, check_start, target_date)
+    data_list, ok = fetch_stock_kline(code, start_date, target_date)
+    if not ok or data_list is None:
+        return 0, 0, 0, 1, db_buffer, False
     
-    if has_div:
+    if len(data_list) == 0:
+        return 0, 0, 1, 0, db_buffer, False
+    
+    dividend_date = None
+    if last_date:
+        first_row = data_list[0]
+        first_date = first_row[0]
+        first_preclose = safe_float(first_row[6])
+        
+        prev_close = get_previous_close(conn, code, first_date)
+        if prev_close is not None and first_preclose is not None:
+            if abs(first_preclose - prev_close) > 0.001:
+                dividend_detected = True
+                dividend_date = first_date
+    
+    if dividend_detected:
         delete_stock_kline_data(conn, code)
         conn.commit()
         
         data_list, ok = fetch_stock_kline(code, ipo_date, target_date)
         if not ok or data_list is None:
-            return 0, 0, 0, 1, db_buffer
+            return 0, 0, 0, 1, db_buffer, False
         
         if len(data_list) == 0:
-            return 0, 0, 1, 0, db_buffer
+            return 0, 0, 1, 0, db_buffer, False
+        
+        is_dividend = 0
     else:
-        data_list, ok = fetch_stock_kline(code, start_date, target_date)
-        if not ok or data_list is None:
-            return 0, 0, 0, 1, db_buffer
-        
-        if len(data_list) == 0:
-            return 0, 0, 1, 0, db_buffer
+        is_dividend = 0
     
     for row in data_list:
-        db_row = parse_kline_row(row, code, update_date)
+        row_date = row[0]
+        if dividend_detected and row_date == dividend_date:
+            db_row = parse_kline_row(row, code, update_date, 1)
+        else:
+            db_row = parse_kline_row(row, code, update_date, 0)
+        
         if db_row:
             db_buffer.append(db_row)
             total_rows += 1
@@ -286,12 +316,23 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
             conn.commit()
             db_buffer = []
     
-    return total_rows, 1, 0, 0, db_buffer
+    return total_rows, 1, 0, 0, db_buffer, dividend_detected
 
 
-# ============================================================
-# 主函数
-# ============================================================
+def print_summary(total_stocks, updated_count, skip_count, fail_count, 
+                  total_rows, dividend_count, target_date):
+    print("=" * 70)
+    print("📊 日K线数据同步汇总（前复权 + 除权检测与标记）")
+    print(f"  [总股票数]          : {total_stocks}")
+    print(f"  [已最新跳过]        : {skip_count}")
+    print(f"  [成功更新]          : {updated_count}")
+    print(f"  [写入行数]          : {total_rows}")
+    print(f"  [检测到除权]        : {dividend_count}")
+    print(f"  [失败]              : {fail_count}")
+    print(f"  [目标日期]          : {target_date}")
+    print(f"  [数据起始]          : {START_DATE}")
+    print("=" * 70, flush=True)
+
 
 def main():
     beijing_time = get_beijing_time()
@@ -299,7 +340,7 @@ def main():
     update_date = beijing_time.strftime('%Y-%m-%d')
     
     print("=" * 70)
-    print("  [UPDATE] A-share 周K线数据 (前复权 + 除权检测)")
+    print("  [UPDATE] A-share 日K线数据 (前复权 + 除权检测与标记)")
     print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  [数据范围] {START_DATE} 至今")
     print(f"  [目标日期] {target_date}")
@@ -324,6 +365,7 @@ def main():
         updated_count = 0
         skip_count = 0
         fail_count = 0
+        dividend_count = 0
         
         total_stocks = len(all_stocks)
         start_time = time.time()
@@ -332,7 +374,7 @@ def main():
             code = stock['code']
             ipo_date = stock['ipo_date']
             
-            rows, updated, skipped, failed, db_buffer = update_stock_data(
+            rows, updated, skipped, failed, db_buffer, dividend_detected = update_stock_data(
                 conn, code, ipo_date, target_date, update_date,
                 db_buffer, db_buffer_limit
             )
@@ -341,7 +383,10 @@ def main():
             updated_count += updated
             skip_count += skipped
             fail_count += failed
+            if dividend_detected:
+                dividend_count += 1
             
+            # 每10只输出一次进度
             if idx % 10 == 0 or idx == 1 or idx == total_stocks:
                 elapsed = time.time() - start_time
                 avg_time = elapsed / idx
@@ -359,16 +404,8 @@ def main():
             conn.commit()
             db_buffer = []
         
-        print("\n" + "=" * 70)
-        print("📊 周K线数据同步汇总（前复权）")
-        print(f"  [总股票数]          : {total_stocks}")
-        print(f"  [已最新跳过]        : {skip_count}")
-        print(f"  [成功更新]          : {updated_count}")
-        print(f"  [写入行数]          : {total_rows}")
-        print(f"  [失败]              : {fail_count}")
-        print(f"  [目标日期]          : {target_date}")
-        print(f"  [数据起始]          : {START_DATE}")
-        print("=" * 70, flush=True)
+        print_summary(total_stocks, updated_count, skip_count, fail_count, 
+                     total_rows, dividend_count, target_date)
         
     except Exception as e:
         if conn:
