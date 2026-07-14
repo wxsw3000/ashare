@@ -1,108 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-stock_industry 表更新脚本
-从 Baostock 同步行业分类信息
-更新频率：每周一更新（Baostock 每周一更新行业分类）
+stock_industry 证券行业信息更新脚本
+从 Baostock 拉取行业分类信息
 """
 
-import os
 import sys
+import os
 import time
-from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import baostock as bs
 import pandas as pd
-import pymysql
 
-try:
-    from dotenv import load_dotenv
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
-    if os.path.exists(ENV_PATH):
-        load_dotenv(ENV_PATH)
-        print(f"[ENV] Loaded .env from: {ENV_PATH}", flush=True)
-except ImportError:
-    pass
-
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
-DB_USER = os.getenv("DB_USER", "")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "")
-DB_SSL_CA = os.getenv("DB_SSL_CA", "")
-
-
-def get_connection():
-    """建立数据库连接"""
-    is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
-    
-    if is_github_actions:
-        ssl_ca = "/etc/ssl/cert.pem"
-    else:
-        ssl_ca = DB_SSL_CA
-        if ssl_ca and not os.path.exists(ssl_ca):
-            filename = os.path.basename(ssl_ca)
-            for path_candidate in [
-                os.path.join(PROJECT_ROOT, 'dbconfig', filename),
-                os.path.join(PROJECT_ROOT, filename),
-            ]:
-                if os.path.exists(path_candidate):
-                    ssl_ca = path_candidate
-                    break
-        if ssl_ca and os.path.exists(ssl_ca):
-            print(f"[SSL] Using CA: {ssl_ca}", flush=True)
-        else:
-            ssl_ca = "/etc/ssl/cert.pem" if os.path.exists("/etc/ssl/cert.pem") else None
-    
-    conn_params = {
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "user": DB_USER,
-        "password": DB_PASSWORD,
-        "database": DB_NAME,
-        "charset": "utf8mb4",
-        "autocommit": False,
-        "connect_timeout": 15,
-        "read_timeout": 60,
-    }
-    
-    if ssl_ca and os.path.exists(ssl_ca):
-        conn_params["ssl"] = {"ca": ssl_ca, "verify_cert": True, "verify_identity": True}
-    else:
-        conn_params["ssl"] = {"verify_cert": False, "verify_identity": False}
-    
-    return pymysql.connect(**conn_params)
-
-
-def ensure_bs_login():
-    """确保 Baostock 已登录"""
-    try:
-        rs = bs.query_stock_basic()
-        if rs.error_code == '0':
-            return True
-    except Exception:
-        pass
-    
-    try:
-        bs.logout()
-    except Exception:
-        pass
-    time.sleep(1)
-    lg = bs.login()
-    if lg.error_code != '0':
-        print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
-        return False
-    print("[Baostock] Login successful", flush=True)
-    return True
+from db import (
+    get_connection,
+    get_connection_with_retry,
+    safe_float,
+    safe_str,
+    safe_int,
+    get_beijing_time,
+    ensure_bs_login,
+    random_sleep,
+    print_progress,
+)
 
 
 def fetch_stock_industry(date=None):
-    """
-    从 Baostock 获取行业分类数据
-    参数:
-        date: 查询日期，格式 YYYY-MM-DD，为空时获取最新数据
-    返回: list of dict
-    """
+    """从 Baostock 获取行业分类数据"""
     if not ensure_bs_login():
         return []
     
@@ -114,7 +40,6 @@ def fetch_stock_industry(date=None):
     data_list = []
     while rs.next():
         row = rs.get_row_data()
-        # row 顺序: updateDate, code, code_name, industry, industryClassification
         data_list.append({
             'code': row[1],
             'code_name': row[2],
@@ -127,22 +52,8 @@ def fetch_stock_industry(date=None):
     return data_list
 
 
-def get_db_existing_codes(conn):
-    """
-    查询数据库中已有的行业记录代码
-    返回: set
-    """
-    with conn.cursor() as cur:
-        cur.execute("SELECT code FROM stock_industry")
-        rows = cur.fetchall()
-        return {row[0] for row in rows}
-
-
 def sync_stock_industry(conn, data_list):
-    """
-    全量同步 stock_industry 表
-    使用 INSERT ... ON DUPLICATE KEY UPDATE
-    """
+    """全量同步 stock_industry 表"""
     if not data_list:
         return 0
     
@@ -190,11 +101,9 @@ def get_stock_count_by_industry(conn):
 
 def print_summary(data_list, inserted_count, conn):
     """打印汇总信息"""
-    # 统计有行业分类的股票数
     with_industry = [d for d in data_list if d['industry'] and d['industry'] != '']
     without_industry = [d for d in data_list if not d['industry'] or d['industry'] == '']
     
-    # 行业分类标准统计
     classification_counts = {}
     for d in data_list:
         cls = d['industry_classification'] or '未分类'
@@ -212,58 +121,40 @@ def print_summary(data_list, inserted_count, conn):
         print(f"    - {cls}: {count}")
     print()
     
-    # 显示行业股票数量 TOP 10
     top_industries = get_stock_count_by_industry(conn)
     print("  行业股票数量 TOP 10:")
     for i, (industry, count) in enumerate(top_industries[:10], 1):
         print(f"    {i:2d}. {industry}: {count} 只")
-    
     print("=" * 70, flush=True)
 
 
 def main():
     print("=" * 70)
     print("  [UPDATE] stock_industry 行业分类同步")
-    print(f"  [时间] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    beijing_time = get_beijing_time()
+    print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70, flush=True)
     
-    # 数据库连接
-    conn = None
-    for attempt in range(1, 4):
-        try:
-            conn = get_connection()
-            print("[DB] Database connection established!", flush=True)
-            break
-        except Exception as e:
-            print(f"Failed to connect (attempt {attempt}/3): {e}", flush=True)
-            if attempt < 3:
-                time.sleep(2)
-            else:
-                print("Error: Could not establish database connection. Exiting.", flush=True)
-                return
+    conn = get_connection_with_retry()
+    print("[DB] Database connection established!", flush=True)
     
-    # 从 Baostock 获取数据（使用最新日期）
-    print("\n[1] Fetching industry data from Baostock (latest)...", flush=True)
-    data_list = fetch_stock_industry(date=None)
-    if not data_list:
-        print("  [ERROR] No data fetched", flush=True)
-        if conn:
-            conn.close()
-        return
-    
-    # 同步到数据库
-    print("\n[2] Syncing to database...", flush=True)
     try:
+        print("\n[1] Fetching industry data from Baostock (latest)...")
+        data_list = fetch_stock_industry(date=None)
+        if not data_list:
+            print("  [ERROR] No data fetched")
+            return
+        
+        print("\n[2] Syncing to database...")
         inserted = sync_stock_industry(conn, data_list)
         conn.commit()
-        print(f"  [SUCCESS] {inserted} records inserted/updated", flush=True)
+        print(f"  [SUCCESS] {inserted} records inserted/updated")
         
-        # 打印汇总
         print_summary(data_list, inserted, conn)
         
     except Exception as e:
         conn.rollback()
-        print(f"  [ERROR] Failed to sync: {e}", flush=True)
+        print(f"  [ERROR] Failed to sync: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -271,8 +162,7 @@ def main():
             bs.logout()
         except Exception:
             pass
-        if conn:
-            conn.close()
+        conn.close()
 
 
 if __name__ == "__main__":

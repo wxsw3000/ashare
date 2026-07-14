@@ -6,127 +6,44 @@ stock_operation_quarterly 季频营运能力数据更新脚本
 数据范围：2020年至今
 """
 
-import os
 import sys
+import os
 import time
 import random
 from datetime import datetime, timedelta
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import baostock as bs
 import pandas as pd
-import pymysql
 
-try:
-    from dotenv import load_dotenv
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
-    if os.path.exists(ENV_PATH):
-        load_dotenv(ENV_PATH)
-        print(f"[ENV] Loaded .env from: {ENV_PATH}", flush=True)
-except ImportError:
-    pass
+from db import (
+    get_connection,
+    get_connection_with_retry,
+    safe_float,
+    safe_int,
+    safe_str,
+    get_beijing_time,
+    ensure_bs_login,
+    random_sleep,
+    format_time,
+    print_progress,
+)
 
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT") or 3306)
-DB_USER = os.getenv("DB_USER", "")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "")
-DB_SSL_CA = os.getenv("DB_SSL_CA", "")
+# ============================================================
+# 配置
+# ============================================================
 
-# 营运能力查询字段（字段名保持 Baostock 原始命名）
 OPERATION_FIELDS = "code,pubDate,statDate,NRTurnRatio,NRTurnDays,INVTurnRatio,INVTurnDays,CATurnRatio,AssetTurnRatio"
-
-# 数据起始年份
 START_YEAR = 2020
 
 
-def get_beijing_time():
-    return datetime.utcnow() + timedelta(hours=8)
-
-
-def get_connection():
-    is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
-    
-    if is_github_actions:
-        ssl_ca = "/etc/ssl/cert.pem"
-    else:
-        ssl_ca = DB_SSL_CA
-        if ssl_ca and not os.path.exists(ssl_ca):
-            filename = os.path.basename(ssl_ca)
-            for path_candidate in [
-                os.path.join(PROJECT_ROOT, 'dbconfig', filename),
-                os.path.join(PROJECT_ROOT, filename),
-            ]:
-                if os.path.exists(path_candidate):
-                    ssl_ca = path_candidate
-                    break
-        if ssl_ca and os.path.exists(ssl_ca):
-            print(f"[SSL] Using CA: {ssl_ca}", flush=True)
-        else:
-            ssl_ca = "/etc/ssl/cert.pem" if os.path.exists("/etc/ssl/cert.pem") else None
-    
-    conn_params = {
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "user": DB_USER,
-        "password": DB_PASSWORD,
-        "database": DB_NAME,
-        "charset": "utf8mb4",
-        "autocommit": False,
-        "connect_timeout": 15,
-        "read_timeout": 60,
-    }
-    
-    if ssl_ca and os.path.exists(ssl_ca):
-        conn_params["ssl"] = {"ca": ssl_ca, "verify_cert": True, "verify_identity": True}
-    else:
-        conn_params["ssl"] = {"verify_cert": False, "verify_identity": False}
-    
-    return pymysql.connect(**conn_params)
-
-
-def ensure_bs_login():
-    try:
-        rs = bs.query_stock_basic()
-        if rs.error_code == '0':
-            return True
-    except Exception:
-        pass
-    
-    try:
-        bs.logout()
-    except Exception:
-        pass
-    time.sleep(1)
-    lg = bs.login()
-    if lg.error_code != '0':
-        print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
-        return False
-    print("[Baostock] Login successful", flush=True)
-    return True
-
-
-def check_stock_basic_has_data(conn):
-    """检查 stock_basic 表是否有数据"""
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM stock_basic")
-            count = cur.fetchone()[0]
-            if count == 0:
-                print("  [ERROR] stock_basic is empty!", flush=True)
-                print("  [HINT] Please run update_stock_basic.py first!", flush=True)
-                return False
-            print(f"  [INFO] stock_basic has {count} records", flush=True)
-            return True
-    except Exception as e:
-        print(f"  [ERROR] Failed to check stock_basic: {e}", flush=True)
-        return False
-
+# ============================================================
+# 数据库操作
+# ============================================================
 
 def get_active_stocks_from_db(conn):
-    """
-    从 stock_basic 获取上市股票列表（type='1' 且 status='1'）
-    返回: list of codes
-    """
+    """从 stock_basic 获取上市股票列表（type='1' 且 status='1'）"""
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT code FROM stock_basic WHERE type = '1' AND status = '1'")
@@ -140,10 +57,7 @@ def get_active_stocks_from_db(conn):
 
 
 def get_operation_latest_dates(conn, codes):
-    """
-    批量查询各股票在 operation 表中的最新 stat_date（已统一为 stat_date）
-    返回: {'sh.600000': '2024-12-31', ...}
-    """
+    """批量查询各股票在 operation 表中的最新 stat_date"""
     if not codes:
         return {}
     
@@ -151,7 +65,6 @@ def get_operation_latest_dates(conn, codes):
     
     try:
         with conn.cursor() as cur:
-            # 检查表是否存在
             cur.execute("SHOW TABLES LIKE 'stock_operation_quarterly'")
             if cur.fetchone() is None:
                 print("  [INFO] stock_operation_quarterly table does not exist yet", flush=True)
@@ -159,7 +72,6 @@ def get_operation_latest_dates(conn, codes):
                     result[code] = None
                 return result
             
-            # 检查表是否为空
             cur.execute("SELECT COUNT(*) FROM stock_operation_quarterly")
             count = cur.fetchone()[0]
             if count == 0:
@@ -198,7 +110,62 @@ def get_operation_latest_dates(conn, codes):
     return result
 
 
+def build_insert_sql(table_name, fields, batch_size):
+    """构建批量插入 SQL"""
+    placeholders = ", ".join(["(" + ", ".join(["%s"] * len(fields)) + ")"] * batch_size)
+    sql = f"""
+    INSERT INTO `{table_name}` ({', '.join(['`' + f + '`' for f in fields])})
+    VALUES {placeholders}
+    ON DUPLICATE KEY UPDATE
+        `pub_date` = VALUES(`pub_date`),
+        `NRTurnRatio` = VALUES(`NRTurnRatio`),
+        `NRTurnDays` = VALUES(`NRTurnDays`),
+        `INVTurnRatio` = VALUES(`INVTurnRatio`),
+        `INVTurnDays` = VALUES(`INVTurnDays`),
+        `CATurnRatio` = VALUES(`CATurnRatio`),
+        `AssetTurnRatio` = VALUES(`AssetTurnRatio`),
+        `update_date` = VALUES(`update_date`);
+    """
+    return sql
+
+
+def flush_db_buffer(conn, batch_data):
+    """批量插入营运能力数据"""
+    if not batch_data:
+        return conn
+    
+    fields = ['code', 'stat_date', 'pub_date', 'NRTurnRatio', 'NRTurnDays',
+              'INVTurnRatio', 'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio',
+              'year', 'quarter', 'update_date']
+    
+    sql = build_insert_sql('stock_operation_quarterly', fields, len(batch_data))
+    flat_args = [val for record in batch_data for val in record]
+    
+    for attempt in range(1, 4):
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, flat_args)
+            return conn
+        except Exception as e:
+            print(f"  [DB ERROR] Bulk insert failed (attempt {attempt}/3): {e}", flush=True)
+            if attempt < 3:
+                time.sleep(2)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = get_connection_with_retry()
+            else:
+                raise e
+    return conn
+
+
+# ============================================================
+# Baostock 数据拉取
+# ============================================================
+
 def fetch_operation_data(code, year, quarter, max_retries=3):
+    """从 Baostock 查询营运能力数据"""
     for attempt in range(max_retries):
         try:
             if not ensure_bs_login():
@@ -234,70 +201,8 @@ def fetch_operation_data(code, year, quarter, max_retries=3):
     return None, False
 
 
-def safe_float(val, default=None):
-    if val is None or val == "" or pd.isna(val):
-        return default
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return default
-
-
-def build_insert_sql(table_name, fields, batch_size):
-    placeholders = ", ".join(["(" + ", ".join(["%s"] * len(fields)) + ")"] * batch_size)
-    sql = f"""
-    INSERT INTO `{table_name}` ({', '.join(['`' + f + '`' for f in fields])})
-    VALUES {placeholders}
-    ON DUPLICATE KEY UPDATE
-        `pub_date` = VALUES(`pub_date`),
-        `NRTurnRatio` = VALUES(`NRTurnRatio`),
-        `NRTurnDays` = VALUES(`NRTurnDays`),
-        `INVTurnRatio` = VALUES(`INVTurnRatio`),
-        `INVTurnDays` = VALUES(`INVTurnDays`),
-        `CATurnRatio` = VALUES(`CATurnRatio`),
-        `AssetTurnRatio` = VALUES(`AssetTurnRatio`),
-        `update_date` = VALUES(`update_date`);
-    """
-    return sql
-
-
-def flush_db_buffer(conn, batch_data):
-    if not batch_data:
-        return conn
-    
-    fields = ['code', 'stat_date', 'pub_date', 'NRTurnRatio', 'NRTurnDays',
-              'INVTurnRatio', 'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio',
-              'year', 'quarter', 'update_date']
-    
-    sql = build_insert_sql('stock_operation_quarterly', fields, len(batch_data))
-    flat_args = [val for record in batch_data for val in record]
-    
-    for attempt in range(1, 4):
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, flat_args)
-            return conn
-        except Exception as e:
-            print(f"  [DB ERROR] Bulk insert failed (attempt {attempt}/3): {e}", flush=True)
-            if attempt < 3:
-                time.sleep(2)
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = get_connection()
-            else:
-                raise e
-    return conn
-
-
 def parse_operation_row(row, year, quarter, update_date):
-    """
-    解析 Baostock 返回的营运能力数据行
-    Baostock 字段顺序: code, pubDate, statDate, NRTurnRatio, NRTurnDays,
-                        INVTurnRatio, INVTurnDays, CATurnRatio, AssetTurnRatio
-    存入数据库时使用统一的 stat_date 和 pub_date
-    """
+    """解析营运能力数据行"""
     code = row[0]
     pub_date = row[1] if row[1] else None
     stat_date = row[2] if row[2] else None
@@ -306,27 +211,27 @@ def parse_operation_row(row, year, quarter, update_date):
         return None
     
     return (
-        code,                          # code
-        stat_date,                     # stat_date（统一字段名）
-        pub_date,                      # pub_date（统一字段名）
-        safe_float(row[3]),            # NRTurnRatio
-        safe_float(row[4]),            # NRTurnDays
-        safe_float(row[5]),            # INVTurnRatio
-        safe_float(row[6]),            # INVTurnDays
-        safe_float(row[7]),            # CATurnRatio
-        safe_float(row[8]),            # AssetTurnRatio
-        year,                          # year
-        quarter,                       # quarter
-        update_date                    # update_date
+        code,
+        stat_date,
+        pub_date,
+        safe_float(row[3]),
+        safe_float(row[4]),
+        safe_float(row[5]),
+        safe_float(row[6]),
+        safe_float(row[7]),
+        safe_float(row[8]),
+        year,
+        quarter,
+        update_date
     )
 
 
 def get_target_quarter():
+    """确定目标季度"""
     beijing_time = get_beijing_time()
     month = beijing_time.month
     year = beijing_time.year
     
-    # 从 2020 年开始，如果当前年份小于 2020，返回 2020Q1
     if year < START_YEAR:
         return START_YEAR, 1
     
@@ -342,18 +247,71 @@ def get_target_quarter():
         return (year, 3)
 
 
-def print_summary(total_stocks, updated_count, skip_count, fail_count, total_rows, target_year, target_quarter):
-    print("=" * 70)
-    print("📊 营运能力数据同步汇总")
-    print(f"  [总股票数]          : {total_stocks}")
-    print(f"  [已最新跳过]        : {skip_count}")
-    print(f"  [成功更新]          : {updated_count}")
-    print(f"  [写入行数]          : {total_rows}")
-    print(f"  [失败]              : {fail_count}")
-    print(f"  [目标季度]          : {target_year} Q{target_quarter}")
-    print(f"  [起始年份]          : {START_YEAR}")
-    print("=" * 70, flush=True)
+# ============================================================
+# 核心更新逻辑
+# ============================================================
 
+def update_stock_data(conn, code, target_year, target_quarter, update_date, db_buffer, db_buffer_limit):
+    """更新单支股票的营运能力数据"""
+    total_rows = 0
+    
+    with conn.cursor() as cur:
+        cur.execute("SELECT MAX(stat_date) FROM stock_operation_quarterly WHERE code = %s", (code,))
+        row = cur.fetchone()
+        last_date = row[0].strftime('%Y-%m-%d') if row and row[0] else None
+    
+    if last_date:
+        last_dt = pd.to_datetime(last_date)
+        last_year = last_dt.year
+        last_quarter = (last_dt.month - 1) // 3 + 1
+        if last_year > target_year or (last_year == target_year and last_quarter >= target_quarter):
+            return 0
+        
+        start_year = max(last_dt.year, START_YEAR)
+        start_quarter = (last_dt.month - 1) // 3 + 1
+        if start_quarter == 4:
+            start_year += 1
+            start_quarter = 1
+        else:
+            start_quarter += 1
+    else:
+        start_year = START_YEAR
+        start_quarter = 1
+    
+    if start_year > target_year or (start_year == target_year and start_quarter > target_quarter):
+        return 0
+    
+    year = start_year
+    quarter = start_quarter
+    
+    while year < target_year or (year == target_year and quarter <= target_quarter):
+        data_list, ok = fetch_operation_data(code, year, quarter)
+        if not ok or data_list is None:
+            return -1
+        
+        for row in data_list:
+            db_row = parse_operation_row(row, year, quarter, update_date)
+            if db_row:
+                db_buffer.append(db_row)
+                total_rows += 1
+            
+            if len(db_buffer) >= db_buffer_limit:
+                conn = flush_db_buffer(conn, db_buffer)
+                conn.commit()
+                db_buffer = []
+        
+        if quarter == 4:
+            year += 1
+            quarter = 1
+        else:
+            quarter += 1
+    
+    return total_rows
+
+
+# ============================================================
+# 主函数
+# ============================================================
 
 def main():
     beijing_time = get_beijing_time()
@@ -365,51 +323,25 @@ def main():
     print(f"  [数据范围] {START_YEAR}年至今")
     print("=" * 70, flush=True)
     
-    conn = None
-    for attempt in range(1, 4):
-        try:
-            conn = get_connection()
-            print("[DB] Database connection established!", flush=True)
-            break
-        except Exception as e:
-            print(f"Failed to connect (attempt {attempt}/3): {e}", flush=True)
-            if attempt < 3:
-                time.sleep(2)
-            else:
-                print("Error: Could not establish database connection. Exiting.", flush=True)
-                return
-
-    if not ensure_bs_login():
-        print("Baostock login failed. Exiting.", flush=True)
-        if conn:
-            conn.close()
-        return
+    conn = get_connection_with_retry()
+    print("[DB] Database connection established!", flush=True)
     
     try:
-        # Step 1: 检查 stock_basic 是否有数据
-        print("\n[1] Checking stock_basic...", flush=True)
-        if not check_stock_basic_has_data(conn):
-            return
-        
-        # Step 2: 从 stock_basic 获取上市股票
-        print("\n[2] Getting active stocks from stock_basic...", flush=True)
+        print("\n[1] Getting active stocks from stock_basic...")
         all_stocks = get_active_stocks_from_db(conn)
         if not all_stocks:
-            print("  [ERROR] No stocks found in stock_basic", flush=True)
+            print("  [ERROR] No stocks found in stock_basic")
             return
         
-        # Step 3: 查询各股票已有的最新数据
-        print(f"\n[3] Querying existing operation data from database for {len(all_stocks)} stocks...", flush=True)
+        print(f"\n[2] Querying existing operation data from database for {len(all_stocks)} stocks...")
         operation_status = get_operation_latest_dates(conn, all_stocks)
         with_data_count = len([v for v in operation_status.values() if v is not None])
-        print(f"  [INFO] {with_data_count} stocks already have data", flush=True)
+        print(f"  [INFO] {with_data_count} stocks already have data")
         
-        # Step 4: 确定目标季度
         target_year, target_quarter = get_target_quarter()
-        print(f"\n[4] Target quarter: {target_year} Q{target_quarter}", flush=True)
+        print(f"\n[3] Target quarter: {target_year} Q{target_quarter}")
         print("-" * 70, flush=True)
         
-        # Step 5: 遍历股票更新
         db_buffer = []
         db_buffer_limit = 500
         total_rows = 0
@@ -418,99 +350,54 @@ def main():
         fail_count = 0
         
         total_stocks = len(all_stocks)
-        processed = 0
         start_time = time.time()
         
-        for code in all_stocks:
-            processed += 1
+        for idx, code in enumerate(all_stocks, 1):
             last_date = operation_status.get(code)
             
-            # 判断是否需要更新
             if last_date:
                 last_dt = pd.to_datetime(last_date)
                 last_year = last_dt.year
                 last_quarter = (last_dt.month - 1) // 3 + 1
                 if last_year > target_year or (last_year == target_year and last_quarter >= target_quarter):
                     skip_count += 1
-                    if processed % 100 == 0:
-                        progress = (processed / total_stocks) * 100
-                        elapsed = time.time() - start_time
-                        avg_time = elapsed / processed
-                        remaining = avg_time * (total_stocks - processed)
-                        print(f"  [进度] {processed}/{total_stocks} ({progress:.1f}%) "
-                              f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s (跳过: {skip_count})", flush=True)
+                    if idx % 100 == 0:
+                        print_progress(idx, total_stocks, start_time, "[进度] ")
                     continue
             
-            # 确定起始季度
-            if last_date:
-                last_dt = pd.to_datetime(last_date)
-                start_year = max(last_dt.year, START_YEAR)
-                start_quarter = (last_dt.month - 1) // 3 + 1
-                if start_quarter == 4:
-                    start_year += 1
-                    start_quarter = 1
-                else:
-                    start_quarter += 1
-            else:
-                start_year = START_YEAR
-                start_quarter = 1
+            rows = update_stock_data(conn, code, target_year, target_quarter, today_str, db_buffer, db_buffer_limit)
             
-            if start_year > target_year or (start_year == target_year and start_quarter > target_quarter):
-                skip_count += 1
-                continue
-            
-            # 每10只股票输出一次进度
-            if processed % 10 == 0 or processed == 1:
-                progress = (processed / total_stocks) * 100
-                elapsed = time.time() - start_time
-                avg_time = elapsed / processed
-                remaining = avg_time * (total_stocks - processed)
-                print(f"  [{processed}/{total_stocks}] {code} ({progress:.1f}%) "
-                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s", flush=True)
-            
-            year = start_year
-            quarter = start_quarter
-            stock_rows = 0
-            
-            while year < target_year or (year == target_year and quarter <= target_quarter):
-                data_list, ok = fetch_operation_data(code, year, quarter)
-                if not ok or data_list is None:
-                    print(f"  [FAIL] {code} {year}Q{quarter}", flush=True)
-                    fail_count += 1
-                    break
-                
-                for row in data_list:
-                    db_row = parse_operation_row(row, year, quarter, today_str)
-                    if db_row:
-                        db_buffer.append(db_row)
-                        stock_rows += 1
-                
-                if quarter == 4:
-                    year += 1
-                    quarter = 1
-                else:
-                    quarter += 1
-            
-            if stock_rows > 0:
+            if rows == -1:
+                fail_count += 1
+                print(f"  [FAIL] {code}", flush=True)
+            elif rows > 0:
                 updated_count += 1
-                total_rows += stock_rows
+                total_rows += rows
+                if idx % 10 == 0:
+                    print_progress(idx, total_stocks, start_time, "[进度] ")
+            else:
+                if idx % 100 == 0:
+                    print_progress(idx, total_stocks, start_time, "[进度] ")
             
-            if len(db_buffer) >= db_buffer_limit:
-                conn = flush_db_buffer(conn, db_buffer)
-                conn.commit()
-                db_buffer = []
-            
-            if processed % 10 == 0:
-                time.sleep(random.uniform(0.3, 0.8))
+            if idx % 10 == 0:
+                random_sleep(0.3, 0.8)
         
-        # 刷新剩余数据
         if db_buffer:
-            print("\nFlushing remaining data...", flush=True)
+            print("\nFlushing remaining data...")
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
             db_buffer = []
         
-        print_summary(total_stocks, updated_count, skip_count, fail_count, total_rows, target_year, target_quarter)
+        print("\n" + "=" * 70)
+        print("📊 营运能力数据同步汇总")
+        print(f"  [总股票数]          : {total_stocks}")
+        print(f"  [已最新跳过]        : {skip_count}")
+        print(f"  [成功更新]          : {updated_count}")
+        print(f"  [写入行数]          : {total_rows}")
+        print(f"  [失败]              : {fail_count}")
+        print(f"  [目标季度]          : {target_year} Q{target_quarter}")
+        print(f"  [起始年份]          : {START_YEAR}")
+        print("=" * 70, flush=True)
         
     except Exception as e:
         if conn:
@@ -518,7 +405,7 @@ def main():
                 conn.rollback()
             except Exception:
                 pass
-        print(f"\nFatal error: {e}", flush=True)
+        print(f"\nFatal error: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -526,11 +413,7 @@ def main():
             bs.logout()
         except Exception:
             pass
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        conn.close()
 
 
 if __name__ == "__main__":

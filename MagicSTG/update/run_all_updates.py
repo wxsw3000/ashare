@@ -1,297 +1,409 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-数据更新主控脚本（基于任务日期 + 断点续传 + 连接保活修复）
-每次更新进度时独立建立数据库连接，避免长连接空闲超时
+数据更新主控脚本（状态面板版 + 断点续传 + 频率控制）
+支持 --mode 参数：daily / weekly / monthly / quarterly / all
+自动检测空表并执行初始化
 """
 
 import os
 import sys
 import subprocess
 import time
-from datetime import datetime
-import pymysql
+import argparse
+import re
+from datetime import datetime, timedelta
 
-sys.stdout.reconfigure(line_buffering=True)
+# 添加父目录到路径，以便导入 db 模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from db import (
+    get_connection,
+    get_connection_with_retry,
+    format_time,
+    get_beijing_time,
+)
 
 # ============================================================
-# 获取脚本所在目录
+# 配置
 # ============================================================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ============================================================
-# 加载 .env 文件（本地开发时使用）
-# ============================================================
-
-try:
-    from dotenv import load_dotenv
-    ENV_PATH = os.path.join(SCRIPT_DIR, '.env')
-    if os.path.exists(ENV_PATH):
-        load_dotenv(ENV_PATH)
-        print(f"[ENV] Loaded .env from: {ENV_PATH}")
-except ImportError:
-    pass
-
-# ============================================================
-# 数据库配置
-# ============================================================
-
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT") or 3306)
-DB_USER = os.getenv("DB_USER", "")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "")
-DB_SSL_CA = os.getenv("DB_SSL_CA", "")
-
-# ============================================================
-# 所有脚本（按依赖顺序）
-# ============================================================
-
-ALL_SCRIPTS = [
-    'update_stock_basic.py',
-    'update_stock_industry.py',
-    'update_index_kline_day.py',
-    'update_stock_kline_day.py',
-    'update_stock_kline_weekly.py',
-    'update_stock_kline_monthly.py',
-    'update_stock_profit_quarterly.py',
-    'update_stock_operation_quarterly.py',
-    'update_stock_growth_quarterly.py',
-    'update_stock_balance_quarterly.py',
-    'update_stock_cash_flow_quarterly.py',
-    'update_stock_dupont_quarterly.py',
-    'update_stock_performance_express.py',
-    'update_stock_forecast.py',
-    'update_macro_deposit_rate.py',
-    'update_macro_loan_rate.py',
-    'update_macro_reserve_ratio.py',
-    'update_macro_money_supply_month.py',
-    'update_macro_money_supply_year.py',
-]
-
-# 为不同脚本设置不同的超时时间（秒）
-SCRIPT_TIMEOUT_MAP = {
-    'update_index_kline_day.py': 10800,      # 3小时
-    'update_stock_kline_day.py': 10800,      # 3小时
-    'update_stock_profit_quarterly.py': 7200, # 2小时
-    'update_stock_operation_quarterly.py': 7200,
-    'update_stock_growth_quarterly.py': 7200,
-    'update_stock_balance_quarterly.py': 7200,
-    'update_stock_cash_flow_quarterly.py': 7200,
-    'update_stock_dupont_quarterly.py': 7200,
-    'update_stock_performance_express.py': 3600,
-    'update_stock_forecast.py': 3600,
-    'update_stock_kline_weekly.py': 3600,
-    'update_stock_kline_monthly.py': 3600,
-    'update_macro_deposit_rate.py': 600,
-    'update_macro_loan_rate.py': 600,
-    'update_macro_reserve_ratio.py': 600,
-    'update_macro_money_supply_month.py': 600,
-    'update_macro_money_supply_year.py': 600,
+# 表名与脚本名的映射（用于检查表是否为空）
+SCRIPT_TABLE_MAP = {
+    'update_stock_basic.py': 'stock_basic',
+    'update_stock_industry.py': 'stock_industry',
+    'update_index_kline_day.py': 'index_kline_day',
+    'update_stock_kline_day.py': 'stock_kline_day',
+    'update_stock_kline_weekly.py': 'stock_kline_weekly',
+    'update_stock_kline_monthly.py': 'stock_kline_monthly',
+    'update_stock_profit_quarterly.py': 'stock_profit_quarterly',
+    'update_stock_operation_quarterly.py': 'stock_operation_quarterly',
+    'update_stock_growth_quarterly.py': 'stock_growth_quarterly',
+    'update_stock_balance_quarterly.py': 'stock_balance_quarterly',
+    'update_stock_cash_flow_quarterly.py': 'stock_cash_flow_quarterly',
+    'update_stock_dupont_quarterly.py': 'stock_dupont_quarterly',
+    'update_stock_performance_express.py': 'stock_performance_express',
+    'update_stock_forecast.py': 'stock_forecast',
+    'update_macro_deposit_rate.py': 'macro_deposit_rate',
+    'update_macro_loan_rate.py': 'macro_loan_rate',
+    'update_macro_reserve_ratio.py': 'macro_reserve_ratio',
+    'update_macro_money_supply_month.py': 'macro_money_supply_month',
+    'update_macro_money_supply_year.py': 'macro_money_supply_year',
 }
 
-# 默认超时时间（秒）
-DEFAULT_TIMEOUT = 5400  # 1.5小时
+# 按频率分组
+SCRIPT_GROUPS = {
+    'daily': [
+        'update_stock_basic.py',
+        'update_stock_industry.py',
+        'update_index_kline_day.py',
+        'update_stock_kline_day.py',
+        'update_macro_deposit_rate.py',
+        'update_macro_loan_rate.py',
+        'update_macro_reserve_ratio.py',
+        'update_macro_money_supply_month.py',
+        'update_macro_money_supply_year.py',
+    ],
+    'weekly': [
+        'update_stock_kline_weekly.py',
+    ],
+    'monthly': [
+        'update_stock_kline_monthly.py',
+    ],
+    'quarterly': [
+        'update_stock_profit_quarterly.py',
+        'update_stock_operation_quarterly.py',
+        'update_stock_growth_quarterly.py',
+        'update_stock_balance_quarterly.py',
+        'update_stock_cash_flow_quarterly.py',
+        'update_stock_dupont_quarterly.py',
+        'update_stock_performance_express.py',
+        'update_stock_forecast.py',
+    ],
+    'all': [
+        'update_stock_basic.py',
+        'update_stock_industry.py',
+        'update_index_kline_day.py',
+        'update_stock_kline_day.py',
+        'update_stock_kline_weekly.py',
+        'update_stock_kline_monthly.py',
+        'update_stock_profit_quarterly.py',
+        'update_stock_operation_quarterly.py',
+        'update_stock_growth_quarterly.py',
+        'update_stock_balance_quarterly.py',
+        'update_stock_cash_flow_quarterly.py',
+        'update_stock_dupont_quarterly.py',
+        'update_stock_performance_express.py',
+        'update_stock_forecast.py',
+        'update_macro_deposit_rate.py',
+        'update_macro_loan_rate.py',
+        'update_macro_reserve_ratio.py',
+        'update_macro_money_supply_month.py',
+        'update_macro_money_supply_year.py',
+    ]
+}
+
+# 所有脚本列表（用于依赖检查）
+ALL_SCRIPTS = SCRIPT_GROUPS['all']
+
 
 # ============================================================
-# 数据库连接
+# 数据库操作函数
 # ============================================================
 
-def get_db_connection():
-    """获取数据库连接"""
-    conn_params = {
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "user": DB_USER,
-        "password": DB_PASSWORD,
-        "database": DB_NAME,
-        "charset": "utf8mb4",
-        "autocommit": False,
-        "connect_timeout": 15,
-        "read_timeout": 60,
-    }
-    
-    if DB_SSL_CA and os.path.exists(DB_SSL_CA):
-        conn_params["ssl"] = {"ca": DB_SSL_CA}
-    
-    return pymysql.connect(**conn_params)
-
-
-def get_script_timeout(script_name):
-    """获取脚本的超时时间"""
-    return SCRIPT_TIMEOUT_MAP.get(script_name, DEFAULT_TIMEOUT)
-
-
-# ============================================================
-# 进度管理函数（每次独立连接）
-# ============================================================
-
-def init_daily_task():
-    """
-    初始化当天的任务记录
-    如果今天还没有记录，插入所有脚本为 pending
-    返回: (existed, pending_list)
-    """
-    today = datetime.now().strftime('%Y-%m-%d')
-    conn = None
+def check_table_empty(conn, table_name):
+    """检查表是否为空"""
     try:
-        conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(1) FROM update_progress WHERE task_date = %s",
-                (today,)
-            )
+            cur.execute(f"SELECT COUNT(1) FROM {table_name}")
             count = cur.fetchone()[0]
-            
-            if count == 0:
-                print(f"  [INIT] 初始化今日任务: {today}")
-                for script in ALL_SCRIPTS:
-                    cur.execute("""
-                        INSERT INTO update_progress (task_date, script_name, status)
-                        VALUES (%s, %s, 'pending')
-                    """, (today, script))
-                conn.commit()
-                return False, ALL_SCRIPTS.copy()
-            else:
-                cur.execute("""
-                    SELECT script_name FROM update_progress
-                    WHERE task_date = %s AND status IN ('pending', 'failed')
-                    ORDER BY id
-                """, (today,))
-                pending = [row[0] for row in cur.fetchall()]
-                return True, pending
-    finally:
-        if conn:
-            conn.close()
+            return count == 0
+    except Exception:
+        # 表不存在或查询失败，视为空
+        return True
 
 
-def mark_script_status(script_name, status, error_msg=None):
-    """
-    标记脚本状态（每次独立连接）
-    """
-    today = datetime.now().strftime('%Y-%m-%d')
-    conn = None
+def get_script_status(conn, task_date, script_name):
+    """获取脚本在今天的执行状态"""
     try:
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            if status == 'running':
-                cur.execute("""
-                    UPDATE update_progress 
-                    SET status = %s, started_at = %s 
-                    WHERE task_date = %s AND script_name = %s
-                """, (status, datetime.now(), today, script_name))
-            elif status in ('success', 'failed'):
-                cur.execute("""
-                    UPDATE update_progress 
-                    SET status = %s, completed_at = %s, error_msg = %s
-                    WHERE task_date = %s AND script_name = %s
-                """, (status, datetime.now(), error_msg, today, script_name))
-            conn.commit()
-    except Exception as e:
-        print(f"  [WARN] mark_script_status({script_name}, {status}) 失败: {e}")
-        raise
-    finally:
-        if conn:
-            conn.close()
-
-
-def is_task_completed():
-    """检查今天的任务是否全部完成"""
-    today = datetime.now().strftime('%Y-%m-%d')
-    conn = None
-    try:
-        conn = get_db_connection()
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT COUNT(1) FROM update_progress
-                WHERE task_date = %s AND status IN ('pending', 'failed')
-            """, (today,))
-            return cur.fetchone()[0] == 0
-    finally:
-        if conn:
-            conn.close()
-
-
-def get_task_summary():
-    """获取今天任务的执行摘要"""
-    today = datetime.now().strftime('%Y-%m-%d')
-    conn = None
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    COUNT(1) AS total,
-                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
-                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
-                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+                SELECT status, started_at, completed_at, error_msg
                 FROM update_progress
-                WHERE task_date = %s
-            """, (today,))
+                WHERE task_date = %s AND script_name = %s
+            """, (task_date, script_name))
             row = cur.fetchone()
-            return {
-                'total': row[0],
-                'pending': row[1],
-                'running': row[2],
-                'success': row[3],
-                'failed': row[4],
-            }
-    finally:
-        if conn:
-            conn.close()
+            if row:
+                return {'status': row[0], 'started_at': row[1], 'completed_at': row[2], 'error_msg': row[3]}
+            return None
+    except Exception:
+        return None
+
+
+def init_daily_task(conn, task_date, scripts):
+    """初始化当天的任务记录"""
+    with conn.cursor() as cur:
+        for script in scripts:
+            cur.execute("""
+                INSERT INTO update_progress (task_date, script_name, status)
+                VALUES (%s, %s, 'pending')
+                ON DUPLICATE KEY UPDATE
+                    status = IF(status IN ('pending', 'failed'), status, status)
+            """, (task_date, script))
+        conn.commit()
+
+
+def mark_script_status(conn, task_date, script_name, status, error_msg=None):
+    """标记脚本状态"""
+    with conn.cursor() as cur:
+        if status == 'running':
+            cur.execute("""
+                UPDATE update_progress 
+                SET status = %s, started_at = %s 
+                WHERE task_date = %s AND script_name = %s
+            """, (status, datetime.now(), task_date, script_name))
+        elif status in ('success', 'failed'):
+            cur.execute("""
+                UPDATE update_progress 
+                SET status = %s, completed_at = %s, error_msg = %s
+                WHERE task_date = %s AND script_name = %s
+            """, (status, datetime.now(), error_msg, task_date, script_name))
+        conn.commit()
+
+
+def get_pending_scripts(conn, task_date, scripts):
+    """获取未完成的脚本"""
+    pending = []
+    with conn.cursor() as cur:
+        placeholders = ','.join(['%s'] * len(scripts))
+        cur.execute(f"""
+            SELECT script_name FROM update_progress
+            WHERE task_date = %s AND script_name IN ({placeholders})
+            AND status IN ('pending', 'failed')
+            ORDER BY id
+        """, (task_date, *scripts))
+        rows = cur.fetchall()
+        pending = [row[0] for row in rows]
+    return pending
+
+
+def get_task_summary(conn, task_date, scripts):
+    """获取任务摘要"""
+    with conn.cursor() as cur:
+        placeholders = ','.join(['%s'] * len(scripts))
+        cur.execute(f"""
+            SELECT 
+                COUNT(1) AS total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM update_progress
+            WHERE task_date = %s AND script_name IN ({placeholders})
+        """, (task_date, *scripts))
+        row = cur.fetchone()
+        return {
+            'total': row[0] or 0,
+            'pending': row[1] or 0,
+            'running': row[2] or 0,
+            'success': row[3] or 0,
+            'failed': row[4] or 0,
+        }
+
+
+def reset_task(conn, task_date, scripts):
+    """重置任务（将 running 和 failed 重置为 pending）"""
+    with conn.cursor() as cur:
+        placeholders = ','.join(['%s'] * len(scripts))
+        cur.execute(f"""
+            UPDATE update_progress 
+            SET status = 'pending', started_at = NULL, completed_at = NULL, error_msg = NULL
+            WHERE task_date = %s AND script_name IN ({placeholders})
+            AND status IN ('running', 'failed')
+        """, (task_date, *scripts))
+        conn.commit()
+        return cur.rowcount
 
 
 # ============================================================
-# 脚本执行
+# 脚本执行（状态面板版）
 # ============================================================
 
-def run_single_script(script_name):
+def run_script_with_progress(script_name, task_date, conn):
     """
-    运行单个脚本
-    返回: (success, output)
+    运行单个脚本，实时捕获进度输出
+    返回: (success, output, progress_info)
     """
     script_path = os.path.join(SCRIPT_DIR, script_name)
     
     if not os.path.exists(script_path):
-        return False, f"脚本不存在: {script_path}"
+        mark_script_status(conn, task_date, script_name, 'failed', f"脚本不存在: {script_path}")
+        return False, f"脚本不存在: {script_path}", None
     
-    timeout = get_script_timeout(script_name)
+    # 标记为 running
+    mark_script_status(conn, task_date, script_name, 'running')
     
-    print(f"\n{'='*70}")
-    print(f"  ▶ [{datetime.now().strftime('%H:%M:%S')}] 执行: {script_name}")
-    print(f"  ⏱️  超时限制: {timeout // 60} 分钟")
-    print(f"{'='*70}")
+    progress_info = {
+        'current': 0,
+        'total': 0,
+        'last_update': time.time()
+    }
+    
+    start_time = time.time()
+    output_lines = []
     
     try:
-        # 使用与当前脚本相同的 Python 解释器，传递环境变量
-        result = subprocess.run(
+        # 使用 subprocess.Popen 逐行读取输出
+        process = subprocess.Popen(
             [sys.executable, script_path],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=timeout,
+            bufsize=1,
             env=os.environ.copy()
         )
         
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-        
-        if result.returncode == 0:
-            print(f"  ✅ {script_name} 执行成功")
-            return True, result.stdout
-        else:
-            print(f"  ❌ {script_name} 执行失败 (退出码: {result.returncode})")
-            return False, result.stderr[:500]
+        # 逐行读取并解析进度
+        for line in process.stdout:
+            line = line.strip()
+            output_lines.append(line)
             
-    except subprocess.TimeoutExpired:
-        print(f"  ❌ {script_name} 执行超时 (> {timeout}s)")
-        return False, f"执行超时 (> {timeout}s)"
+            # 解析 PROGRESS: 标记
+            if 'PROGRESS:' in line:
+                match = re.search(r'PROGRESS:\s*(\d+)\s*/\s*(\d+)', line)
+                if match:
+                    progress_info['current'] = int(match.group(1))
+                    progress_info['total'] = int(match.group(2))
+                    progress_info['last_update'] = time.time()
+        
+        process.wait()
+        elapsed = time.time() - start_time
+        
+        if process.returncode == 0:
+            mark_script_status(conn, task_date, script_name, 'success')
+            return True, '\n'.join(output_lines), progress_info
+        else:
+            error_msg = f"退出码: {process.returncode}"
+            mark_script_status(conn, task_date, script_name, 'failed', error_msg)
+            return False, '\n'.join(output_lines), progress_info
+            
     except Exception as e:
-        print(f"  ❌ {script_name} 执行异常: {e}")
-        return False, str(e)
+        error_msg = str(e)
+        mark_script_status(conn, task_date, script_name, 'failed', error_msg[:500])
+        return False, str(e), progress_info
+
+
+# ============================================================
+# 状态面板显示
+# ============================================================
+
+def print_status_panel(task_date, mode, scripts, script_statuses, start_time):
+    """
+    打印状态面板
+    script_statuses: {script_name: {'status': 'pending/running/success/failed', 'started_at': datetime, 'completed_at': datetime, 'progress': (current, total), 'error_msg': str}}
+    """
+    elapsed = time.time() - start_time
+    
+    # 清屏（移动光标到顶部）
+    print("\033[H\033[J", end="")
+    
+    print("=" * 78)
+    print("  📊 任务执行进度")
+    print(f"  当前模式: {mode}")
+    print(f"  任务日期: {task_date}")
+    print(f"  已运行: {format_time(elapsed)}")
+    print("-" * 78)
+    
+    # 统计已完成数
+    completed = sum(1 for s in script_statuses.values() if s.get('status') == 'success')
+    total = len(scripts)
+    running_count = sum(1 for s in script_statuses.values() if s.get('status') == 'running')
+    
+    # 标题行
+    print(f"  进度: {completed}/{total} 完成, {running_count} 执行中")
+    print("-" * 78)
+    
+    for idx, script_name in enumerate(scripts, 1):
+        status_info = script_statuses.get(script_name, {'status': 'pending'})
+        status = status_info.get('status', 'pending')
+        
+        # 状态图标
+        if status == 'success':
+            icon = "✅"
+        elif status == 'running':
+            icon = "🔄"
+        elif status == 'failed':
+            icon = "❌"
+        else:
+            icon = "⏳"
+        
+        # 状态文字
+        if status == 'success':
+            status_text = "已完成"
+            elapsed_text = f"耗时: {format_time((status_info.get('completed_at') - status_info.get('started_at')).total_seconds()) if status_info.get('started_at') and status_info.get('completed_at') else 'N/A'}"
+        elif status == 'running':
+            started = status_info.get('started_at')
+            if started:
+                run_time = time.time() - started.timestamp()
+                elapsed_text = f"已用: {format_time(run_time)}"
+            else:
+                elapsed_text = "已用: N/A"
+        elif status == 'failed':
+            elapsed_text = f"错误: {status_info.get('error_msg', '未知错误')[:30]}"
+        else:
+            elapsed_text = "等待执行"
+        
+        # 进度信息
+        progress = status_info.get('progress', (0, 0))
+        if progress[1] > 0:
+            pct = (progress[0] / progress[1]) * 100
+            progress_text = f"进度: {pct:.1f}% ({progress[0]}/{progress[1]})"
+        else:
+            progress_text = ""
+        
+        # 估算剩余时间（仅对 running 状态）
+        if status == 'running' and progress[1] > 0 and progress[0] > 0:
+            started = status_info.get('started_at')
+            if started:
+                run_time = time.time() - started.timestamp()
+                avg_time = run_time / progress[0]
+                remaining = avg_time * (progress[1] - progress[0])
+                progress_text += f" 剩余: {format_time(remaining)}"
+        
+        # 截断过长的脚本名
+        display_name = script_name[:35] + "..." if len(script_name) > 35 else script_name
+        
+        print(f"  [{idx:2d}/{total:2d}] {display_name}")
+        print(f"     {icon} {status_text}  {elapsed_text}")
+        if progress_text:
+            print(f"     {progress_text}")
+        print("-" * 78)
+
+
+def build_status_dict(scripts, conn, task_date):
+    """构建脚本状态字典"""
+    statuses = {}
+    for script in scripts:
+        status_info = get_script_status(conn, task_date, script)
+        if status_info:
+            statuses[script] = {
+                'status': status_info['status'],
+                'started_at': status_info['started_at'],
+                'completed_at': status_info['completed_at'],
+                'error_msg': status_info['error_msg'],
+                'progress': (0, 0)
+            }
+        else:
+            statuses[script] = {
+                'status': 'pending',
+                'started_at': None,
+                'completed_at': None,
+                'error_msg': None,
+                'progress': (0, 0)
+            }
+    return statuses
 
 
 # ============================================================
@@ -299,95 +411,144 @@ def run_single_script(script_name):
 # ============================================================
 
 def main():
+    parser = argparse.ArgumentParser(description='数据更新主控脚本')
+    parser.add_argument('--mode', type=str, default='daily',
+                        choices=['daily', 'weekly', 'monthly', 'quarterly', 'all'],
+                        help='更新模式')
+    parser.add_argument('--reset', action='store_true',
+                        help='重置当前任务（将 running/failed 重置为 pending）')
+    args = parser.parse_args()
+    
+    mode = args.mode
+    reset_flag = args.reset
+    task_date = get_beijing_time().strftime('%Y-%m-%d')
     start_time = time.time()
     
-    print("=" * 70)
-    print("  📊 数据更新系统 - 基于任务日期的断点续传")
+    print("=" * 78)
+    print("  📊 数据更新系统 - 状态面板版")
+    print(f"  模式: {mode}")
+    print(f"  任务日期: {task_date}")
     print(f"  开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  脚本目录: {SCRIPT_DIR}")
-    print("=" * 70)
+    print("=" * 78)
+    print()
+    
+    # 获取要执行的脚本列表
+    scripts = SCRIPT_GROUPS.get(mode, [])
+    if not scripts:
+        print(f"  [ERROR] 未知模式: {mode}")
+        return 1
+    
+    print(f"  [INFO] 模式 '{mode}' 包含 {len(scripts)} 个脚本")
+    
+    # 连接数据库
+    conn = None
+    try:
+        conn = get_connection_with_retry()
+        print("  [DB] 数据库连接成功")
+    except Exception as e:
+        print(f"  [ERROR] 数据库连接失败: {e}")
+        return 1
     
     try:
-        # 初始化当天任务
-        print("\n[1] 检查今日任务状态...")
-        existed, pending = init_daily_task()
+        # 检查哪些表为空，需要初始化
+        print("  [CHECK] 检查数据表状态...")
+        empty_tables = []
+        for script in scripts:
+            table_name = SCRIPT_TABLE_MAP.get(script)
+            if table_name and check_table_empty(conn, table_name):
+                empty_tables.append(script)
         
-        summary = get_task_summary()
-        print(f"\n  📋 今日任务状态:")
-        print(f"     总脚本数: {summary['total']}")
-        print(f"     ✅ 已完成: {summary['success']}")
-        print(f"     ⏳ 待执行: {summary['pending']}")
-        print(f"     🔄 执行中: {summary['running']}")
-        print(f"     ❌ 失败: {summary['failed']}")
+        if empty_tables:
+            print(f"  [INIT] 检测到 {len(empty_tables)} 个表为空，将自动初始化:")
+            for script in empty_tables:
+                print(f"     - {script}")
+        
+        # 初始化任务记录
+        init_daily_task(conn, task_date, scripts)
+        
+        # 如果设置了 reset 标志，重置所有 running/failed 状态
+        if reset_flag:
+            reset_count = reset_task(conn, task_date, scripts)
+            print(f"  [RESET] 重置了 {reset_count} 个脚本状态")
+        
+        # 获取待执行脚本
+        pending = get_pending_scripts(conn, task_date, scripts)
+        # 如果有空表，确保它们在待执行列表中
+        for script in empty_tables:
+            if script not in pending:
+                pending.append(script)
+                # 确保状态为 pending
+                mark_script_status(conn, task_date, script, 'pending')
         
         if not pending:
-            print("\n✅ 所有脚本已完成，本次无需执行")
+            print("  [SUCCESS] 所有脚本已完成")
             return 0
         
-        print(f"\n  📋 待执行脚本 ({len(pending)} 个):")
-        for script in pending:
-            timeout = get_script_timeout(script)
-            print(f"     - {script} (超时: {timeout // 60} 分钟)")
+        print(f"  [INFO] 待执行: {len(pending)} 个脚本")
+        print("=" * 78)
         
-        print("\n[2] 开始执行脚本...")
-        success_count = 0
-        fail_count = 0
+        # 构建状态字典
+        statuses = build_status_dict(scripts, conn, task_date)
         
+        # 打印初始状态面板
+        print_status_panel(task_date, mode, scripts, statuses, start_time)
+        
+        # 逐个执行待执行脚本
+        executed_count = 0
         for script_name in pending:
-            # 标记为 running（独立连接）
-            try:
-                mark_script_status(script_name, 'running')
-            except Exception as e:
-                print(f"  [ERROR] 无法标记 {script_name} 为 running: {e}")
-                # 尝试继续执行，但可能进度表会不一致
-                # 这里我们选择继续，因为子脚本会自己写入数据
+            # 更新状态
+            statuses[script_name]['status'] = 'running'
+            statuses[script_name]['started_at'] = datetime.now()
+            
+            # 刷新面板
+            print_status_panel(task_date, mode, scripts, statuses, start_time)
             
             # 执行脚本
-            success, output = run_single_script(script_name)
+            success, output, progress = run_script_with_progress(script_name, task_date, conn)
             
-            # 标记状态（独立连接）
-            try:
-                if success:
-                    mark_script_status(script_name, 'success')
-                    success_count += 1
-                else:
-                    mark_script_status(script_name, 'failed', output)
-                    fail_count += 1
-            except Exception as e:
-                print(f"  [ERROR] 无法标记 {script_name} 状态: {e}")
-                if success:
-                    success_count += 1
-                else:
-                    fail_count += 1
+            # 更新状态信息
+            statuses[script_name]['status'] = 'success' if success else 'failed'
+            statuses[script_name]['completed_at'] = datetime.now()
+            if progress and progress['total'] > 0:
+                statuses[script_name]['progress'] = (progress['current'], progress['total'])
+            
+            # 刷新面板
+            print_status_panel(task_date, mode, scripts, statuses, start_time)
+            
+            executed_count += 1
+            
+            # 输出脚本的详细日志（缩进显示）
+            if output:
+                print(f"\n  详细日志 ({script_name}):")
+                for line in output.split('\n')[:20]:  # 只显示前20行
+                    if line.strip():
+                        print(f"     {line}")
+                if len(output.split('\n')) > 20:
+                    print(f"     ... (共 {len(output.split('\n'))} 行)")
+                print()
         
-        # 最终检查
-        completed = is_task_completed()
-        final_summary = get_task_summary()
+        # 最终统计
+        summary = get_task_summary(conn, task_date, scripts)
         
-        print("\n" + "=" * 70)
-        print("  📊 本轮执行总结")
-        print(f"  结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"  总耗时: {time.time() - start_time:.2f}s")
-        print("-" * 70)
-        print(f"  本轮成功: {success_count}")
-        print(f"  本轮失败: {fail_count}")
-        print(f"  今日总完成: {final_summary['success']}/{final_summary['total']}")
+        print("\n" + "=" * 78)
+        print("  📊 执行完成")
+        print(f"  总耗时: {format_time(time.time() - start_time)}")
+        print("-" * 78)
+        print(f"  ✅ 成功: {summary['success']}")
+        print(f"  ❌ 失败: {summary['failed']}")
+        print(f"  ⏳ 待执行: {summary['pending'] + summary['running']}")
+        print("=" * 78)
         
-        if completed:
-            print("\n  🎉 今日任务全部完成！")
-        else:
-            remaining = final_summary['pending'] + final_summary['failed']
-            print(f"\n  ⏳ 今日任务未完成，剩余 {remaining} 个脚本")
-            print(f"  下次触发将继续执行")
-        print("=" * 70)
-        
-        return 1 if fail_count > 0 and completed else 0
+        return 1 if summary['failed'] > 0 else 0
         
     except Exception as e:
-        print(f"\nFatal error: {e}")
+        print(f"\n  [ERROR] 执行异常: {e}")
         import traceback
         traceback.print_exc()
         return 1
+    finally:
+        if conn:
+            conn.close()
 
 
 if __name__ == "__main__":

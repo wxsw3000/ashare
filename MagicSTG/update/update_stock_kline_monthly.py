@@ -6,123 +6,45 @@ stock_kline_monthly A股月K线数据更新脚本（前复权）
 数据范围：2020年至今
 """
 
-import os
 import sys
+import os
 import time
 import random
 from datetime import datetime, timedelta
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import baostock as bs
 import pandas as pd
-import pymysql
 
-try:
-    from dotenv import load_dotenv
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
-    if os.path.exists(ENV_PATH):
-        load_dotenv(ENV_PATH)
-        print(f"[ENV] Loaded .env from: {ENV_PATH}", flush=True)
-    else:
-        print("[ENV] No .env file found, using system environment variables", flush=True)
-except ImportError:
-    print("[ENV] python-dotenv not installed, using system environment variables", flush=True)
+from db import (
+    get_connection,
+    get_connection_with_retry,
+    safe_float,
+    safe_int,
+    safe_str,
+    get_beijing_time,
+    ensure_bs_login,
+    random_sleep,
+    get_target_date,
+    format_time,
+    print_progress,
+)
 
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT") or 3306)
-DB_USER = os.getenv("DB_USER", "")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "")
-DB_SSL_CA = os.getenv("DB_SSL_CA", "")
+# ============================================================
+# 配置
+# ============================================================
 
 KLINE_FIELDS = "date,code,open,high,low,close,volume,amount,adjustflag,turn,pctChg"
-
 START_DATE = "2020-01-01"
 
 
-def get_beijing_time():
-    return datetime.utcnow() + timedelta(hours=8)
-
-
-def get_connection():
-    is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
-    
-    if is_github_actions:
-        ssl_ca = "/etc/ssl/cert.pem"
-    else:
-        ssl_ca = DB_SSL_CA
-        if ssl_ca and not os.path.exists(ssl_ca):
-            filename = os.path.basename(ssl_ca)
-            for path_candidate in [
-                os.path.join(PROJECT_ROOT, 'dbconfig', filename),
-                os.path.join(PROJECT_ROOT, filename),
-            ]:
-                if os.path.exists(path_candidate):
-                    ssl_ca = path_candidate
-                    break
-        if ssl_ca and os.path.exists(ssl_ca):
-            print(f"[SSL] Using CA: {ssl_ca}", flush=True)
-        else:
-            ssl_ca = "/etc/ssl/cert.pem" if os.path.exists("/etc/ssl/cert.pem") else None
-    
-    conn_params = {
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "user": DB_USER,
-        "password": DB_PASSWORD,
-        "database": DB_NAME,
-        "charset": "utf8mb4",
-        "autocommit": False,
-        "connect_timeout": 15,
-        "read_timeout": 60,
-    }
-    
-    if ssl_ca and os.path.exists(ssl_ca):
-        conn_params["ssl"] = {"ca": ssl_ca, "verify_cert": True, "verify_identity": True}
-    else:
-        conn_params["ssl"] = {"verify_cert": False, "verify_identity": False}
-    
-    return pymysql.connect(**conn_params)
-
-
-def ensure_bs_login():
-    try:
-        rs = bs.query_stock_basic()
-        if rs.error_code == '0':
-            return True
-    except Exception:
-        pass
-    
-    print("[Baostock] Session expired or not logged in, re-logging...", flush=True)
-    try:
-        bs.logout()
-    except Exception:
-        pass
-    time.sleep(1)
-    lg = bs.login()
-    if lg.error_code != '0':
-        print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
-        return False
-    print("[Baostock] Re-login successful", flush=True)
-    return True
-
-
-def check_stock_basic_has_data(conn):
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM stock_basic")
-            count = cur.fetchone()[0]
-            if count == 0:
-                print("  [ERROR] stock_basic is empty!", flush=True)
-                print("  [HINT] Please run update_stock_basic.py first!", flush=True)
-                return False
-            print(f"  [INFO] stock_basic has {count} records", flush=True)
-            return True
-    except Exception as e:
-        print(f"  [ERROR] Failed to check stock_basic: {e}", flush=True)
-        return False
-
+# ============================================================
+# 数据库操作
+# ============================================================
 
 def get_active_stocks_from_db(conn):
+    """从 stock_basic 获取上市股票列表（type='1' 且 status='1'）"""
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT code, ipo_date FROM stock_basic WHERE type = '1' AND status = '1'")
@@ -142,12 +64,10 @@ def get_active_stocks_from_db(conn):
 
 
 def get_kline_latest_date(conn, code):
+    """查询某支股票在 stock_kline_monthly 表中的最新日期"""
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT MAX(date) FROM stock_kline_monthly WHERE code = %s",
-                (code,)
-            )
+            cur.execute("SELECT MAX(date) FROM stock_kline_monthly WHERE code = %s", (code,))
             row = cur.fetchone()
             if row and row[0]:
                 return row[0].strftime('%Y-%m-%d')
@@ -158,6 +78,7 @@ def get_kline_latest_date(conn, code):
 
 
 def has_dividend_in_range(conn, code, start_date, end_date):
+    """查询日K线表，判断某股票在指定日期范围内是否有 is_dividend = 1"""
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -172,6 +93,7 @@ def has_dividend_in_range(conn, code, start_date, end_date):
 
 
 def delete_stock_kline_data(conn, code):
+    """删除某支股票的全部月K线数据"""
     try:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM stock_kline_monthly WHERE code = %s", (code,))
@@ -183,7 +105,65 @@ def delete_stock_kline_data(conn, code):
         raise
 
 
+def build_insert_sql(table_name, fields, batch_size):
+    """构建批量插入 SQL"""
+    placeholders = ", ".join(["(" + ", ".join(["%s"] * len(fields)) + ")"] * batch_size)
+    sql = f"""
+    INSERT INTO `{table_name}` ({', '.join(['`' + f + '`' for f in fields])})
+    VALUES {placeholders}
+    ON DUPLICATE KEY UPDATE
+        `open` = VALUES(`open`),
+        `high` = VALUES(`high`),
+        `low` = VALUES(`low`),
+        `close` = VALUES(`close`),
+        `volume` = VALUES(`volume`),
+        `amount` = VALUES(`amount`),
+        `adjustflag` = VALUES(`adjustflag`),
+        `turn` = VALUES(`turn`),
+        `pctChg` = VALUES(`pctChg`),
+        `update_date` = VALUES(`update_date`);
+    """
+    return sql
+
+
+def flush_db_buffer(conn, batch_data, table_name="stock_kline_monthly"):
+    """批量插入月K线数据"""
+    if not batch_data:
+        return conn
+    
+    fields = [
+        'date', 'code', 'open', 'high', 'low', 'close',
+        'volume', 'amount', 'adjustflag', 'turn', 'pctChg', 'update_date'
+    ]
+    
+    sql = build_insert_sql(table_name, fields, len(batch_data))
+    flat_args = [val for record in batch_data for val in record]
+    
+    for attempt in range(1, 4):
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, flat_args)
+            return conn
+        except Exception as e:
+            print(f"  [DB ERROR] Bulk insert failed (attempt {attempt}/3): {e}", flush=True)
+            if attempt < 3:
+                time.sleep(2)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = get_connection_with_retry()
+            else:
+                raise e
+    return conn
+
+
+# ============================================================
+# Baostock 数据拉取
+# ============================================================
+
 def fetch_stock_kline(code, start_date, end_date, max_retries=3):
+    """从 Baostock 查询月K线数据（前复权）"""
     for attempt in range(max_retries):
         try:
             if not ensure_bs_login():
@@ -226,82 +206,8 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
     return None, False
 
 
-def safe_int(val, default=0):
-    if val is None or val == "" or pd.isna(val):
-        return default
-    try:
-        return int(float(val))
-    except (ValueError, TypeError):
-        return default
-
-
-def safe_float(val, default=None):
-    if val is None or val == "" or pd.isna(val):
-        return default
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return default
-
-
-def safe_str(val, default=None):
-    if val is None or val == "" or pd.isna(val):
-        return default
-    return str(val)
-
-
-def build_insert_sql(table_name, fields, batch_size):
-    placeholders = ", ".join(["(" + ", ".join(["%s"] * len(fields)) + ")"] * batch_size)
-    sql = f"""
-    INSERT INTO `{table_name}` ({', '.join(['`' + f + '`' for f in fields])})
-    VALUES {placeholders}
-    ON DUPLICATE KEY UPDATE
-        `open` = VALUES(`open`),
-        `high` = VALUES(`high`),
-        `low` = VALUES(`low`),
-        `close` = VALUES(`close`),
-        `volume` = VALUES(`volume`),
-        `amount` = VALUES(`amount`),
-        `adjustflag` = VALUES(`adjustflag`),
-        `turn` = VALUES(`turn`),
-        `pctChg` = VALUES(`pctChg`),
-        `update_date` = VALUES(`update_date`);
-    """
-    return sql
-
-
-def flush_db_buffer(conn, batch_data, table_name="stock_kline_monthly"):
-    if not batch_data:
-        return conn
-    
-    fields = [
-        'date', 'code', 'open', 'high', 'low', 'close',
-        'volume', 'amount', 'adjustflag', 'turn', 'pctChg', 'update_date'
-    ]
-    
-    sql = build_insert_sql(table_name, fields, len(batch_data))
-    flat_args = [val for record in batch_data for val in record]
-    
-    for attempt in range(1, 4):
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, flat_args)
-            return conn
-        except Exception as e:
-            print(f"  [DB ERROR] Bulk insert failed (attempt {attempt}/3): {e}", flush=True)
-            if attempt < 3:
-                time.sleep(2)
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = get_connection()
-            else:
-                raise e
-    return conn
-
-
 def parse_kline_row(row, code, update_date):
+    """解析月K线数据行"""
     date_val = row[0]
     open_val = safe_float(row[2])
     high_val = safe_float(row[3])
@@ -320,12 +226,18 @@ def parse_kline_row(row, code, update_date):
 
 
 def get_month_range(month_end_date):
+    """根据某月的结束日期，计算该月的起始日期"""
     dt = pd.to_datetime(month_end_date)
     month_start = dt.replace(day=1)
     return month_start.strftime('%Y-%m-%d'), dt.strftime('%Y-%m-%d')
 
 
+# ============================================================
+# 核心更新逻辑
+# ============================================================
+
 def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit):
+    """更新单支股票的月K线数据"""
     total_rows = 0
     updated = 0
     skipped = 0
@@ -363,88 +275,47 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
         if len(data_list) == 0:
             return 0, 0, 1, 0, db_buffer
     
-    valid_rows = 0
     for row in data_list:
         db_row = parse_kline_row(row, code, update_date)
         if db_row:
             db_buffer.append(db_row)
-            valid_rows += 1
+            total_rows += 1
         
         if len(db_buffer) >= db_buffer_limit:
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
             db_buffer = []
     
-    return valid_rows, 1, 0, 0, db_buffer
+    return total_rows, 1, 0, 0, db_buffer
 
 
-def print_summary(total_stocks, updated_count, skip_count, fail_count, 
-                  total_rows, target_date):
-    print("=" * 70)
-    print("📊 月K线数据同步汇总（前复权）")
-    print(f"  [总股票数]          : {total_stocks}")
-    print(f"  [已最新跳过]        : {skip_count}")
-    print(f"  [成功更新]          : {updated_count}")
-    print(f"  [写入行数]          : {total_rows}")
-    print(f"  [失败]              : {fail_count}")
-    print(f"  [目标日期]          : {target_date}")
-    print(f"  [数据起始]          : {START_DATE}")
-    print("=" * 70, flush=True)
-
+# ============================================================
+# 主函数
+# ============================================================
 
 def main():
     beijing_time = get_beijing_time()
-    today_str = beijing_time.strftime('%Y-%m-%d')
-    current_hour = beijing_time.hour
-    current_minute = beijing_time.minute
+    target_date = get_target_date()
+    update_date = beijing_time.strftime('%Y-%m-%d')
     
     print("=" * 70)
     print("  [UPDATE] A-share 月K线数据 (前复权 + 除权检测)")
-    print(f"  [北京时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  [数据范围] {START_DATE} 至今")
-    
-    if current_hour >= 18:
-        target_date = today_str
-        print(f"  ⏰ 当前时间 {current_hour:02d}:{current_minute:02d} >= 18:00，拉取截止到 {target_date}")
-    else:
-        target_date = (beijing_time - timedelta(days=1)).strftime('%Y-%m-%d')
-        print(f"  ⏰ 当前时间 {current_hour:02d}:{current_minute:02d} < 18:00，拉取截止到 {target_date}")
-    
-    update_date = today_str
+    print(f"  [目标日期] {target_date}")
     print("=" * 70, flush=True)
     
-    conn = None
-    for attempt in range(1, 6):
-        try:
-            conn = get_connection()
-            print("[DB] Database connection established!", flush=True)
-            break
-        except Exception as e:
-            print(f"Failed to connect (attempt {attempt}/5): {e}", flush=True)
-            if attempt < 5:
-                time.sleep(3)
-            else:
-                print("Error: Could not establish database connection. Exiting.", flush=True)
-                return
-
-    if not ensure_bs_login():
-        print("Baostock login failed. Exiting.", flush=True)
-        if conn:
-            conn.close()
-        return
+    conn = get_connection_with_retry()
+    print("[DB] Database connection established!", flush=True)
     
     try:
-        print("\n[1] Checking stock_basic...", flush=True)
-        if not check_stock_basic_has_data(conn):
-            return
-        
-        print("\n[2] Getting active stocks from stock_basic...", flush=True)
+        print("\n[1] Getting active stocks from stock_basic...")
         all_stocks = get_active_stocks_from_db(conn)
         if not all_stocks:
-            print("  [ERROR] No stocks found in stock_basic", flush=True)
+            print("  [ERROR] No stocks found in stock_basic")
             return
         
-        print(f"\n[3] Updating {len(all_stocks)} stocks (target: {target_date})...", flush=True)
+        print(f"\n[2] Updating {len(all_stocks)} stocks (target: {target_date})...")
         print("-" * 70, flush=True)
         
         db_buffer = []
@@ -455,11 +326,9 @@ def main():
         fail_count = 0
         
         total_stocks = len(all_stocks)
-        processed = 0
         start_time = time.time()
         
-        for stock in all_stocks:
-            processed += 1
+        for idx, stock in enumerate(all_stocks, 1):
             code = stock['code']
             ipo_date = stock['ipo_date']
             
@@ -473,27 +342,33 @@ def main():
             skip_count += skipped
             fail_count += failed
             
-            # 每10只股票输出一次进度
-            if processed % 10 == 0 or processed == 1 or processed == total_stocks:
-                progress = (processed / total_stocks) * 100
+            if idx % 10 == 0 or idx == 1 or idx == total_stocks:
                 elapsed = time.time() - start_time
-                avg_time = elapsed / processed
-                remaining = avg_time * (total_stocks - processed)
-                print(f"  [进度] {processed}/{total_stocks} ({progress:.1f}%) "
-                      f"已用: {elapsed:.0f}s 剩余: {remaining:.0f}s "
+                avg_time = elapsed / idx
+                remaining = avg_time * (total_stocks - idx)
+                print(f"  [进度] {idx}/{total_stocks} "
+                      f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} "
                       f"(更新: {updated_count}, 跳过: {skip_count})", flush=True)
             
-            if processed % 5 == 0:
-                time.sleep(random.uniform(0.3, 0.8))
+            if idx % 5 == 0:
+                random_sleep(0.3, 0.8)
         
         if db_buffer:
-            print("\nFlushing remaining data...", flush=True)
+            print("\nFlushing remaining data...")
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
             db_buffer = []
         
-        print_summary(total_stocks, updated_count, skip_count, fail_count, 
-                     total_rows, target_date)
+        print("\n" + "=" * 70)
+        print("📊 月K线数据同步汇总（前复权）")
+        print(f"  [总股票数]          : {total_stocks}")
+        print(f"  [已最新跳过]        : {skip_count}")
+        print(f"  [成功更新]          : {updated_count}")
+        print(f"  [写入行数]          : {total_rows}")
+        print(f"  [失败]              : {fail_count}")
+        print(f"  [目标日期]          : {target_date}")
+        print(f"  [数据起始]          : {START_DATE}")
+        print("=" * 70, flush=True)
         
     except Exception as e:
         if conn:
@@ -501,7 +376,7 @@ def main():
                 conn.rollback()
             except Exception:
                 pass
-        print(f"\nFatal error: {e}", flush=True)
+        print(f"\nFatal error: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -509,11 +384,7 @@ def main():
             bs.logout()
         except Exception:
             pass
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        conn.close()
 
 
 if __name__ == "__main__":

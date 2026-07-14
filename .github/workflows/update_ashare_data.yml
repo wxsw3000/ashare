@@ -2,6 +2,18 @@ name: 数据更新
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '更新模式'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+          - quarterly
+          - all
   repository_dispatch:
     types:
       - update-data
@@ -32,4 +44,4 @@ jobs:
           DB_NAME: ${{ secrets.TIDB_DB_NAME }}
           DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
         run: |
-          python -u run_all_updates.py
+          python run_all_updates.py --mode ${{ github.event.inputs.mode || 'daily' }}
