@@ -200,20 +200,39 @@ def init_daily_task(conn, task_date, scripts):
 
 
 def mark_script_status(conn, task_date, script_name, status, error_msg=None):
-    with conn.cursor() as cur:
-        if status == 'running':
-            cur.execute("""
-                UPDATE update_progress 
-                SET status = %s, started_at = %s 
-                WHERE task_date = %s AND script_name = %s
-            """, (status, datetime.now(), task_date, script_name))
-        elif status in ('success', 'failed'):
-            cur.execute("""
-                UPDATE update_progress 
-                SET status = %s, completed_at = %s, error_msg = %s
-                WHERE task_date = %s AND script_name = %s
-            """, (status, datetime.now(), error_msg, task_date, script_name))
-        conn.commit()
+    """
+    更新脚本执行进度
+    忽略传入的 conn 并开启临时连接，防止因长耗时子进程导致连接超时失效
+    """
+    temp_conn = get_connection_with_retry()
+    try:
+        with temp_conn.cursor() as cur:
+            if status == 'running':
+                cur.execute("""
+                    UPDATE update_progress 
+                    SET status = %s, started_at = %s 
+                    WHERE task_date = %s AND script_name = %s
+                """, (status, datetime.now(), task_date, script_name))
+            elif status == 'pending':
+                cur.execute("""
+                    UPDATE update_progress 
+                    SET status = %s, started_at = NULL, completed_at = NULL, error_msg = %s
+                    WHERE task_date = %s AND script_name = %s
+                """, (status, error_msg, task_date, script_name))
+            elif status in ('success', 'failed'):
+                cur.execute("""
+                    UPDATE update_progress 
+                    SET status = %s, completed_at = %s, error_msg = %s
+                    WHERE task_date = %s AND script_name = %s
+                """, (status, datetime.now(), error_msg, task_date, script_name))
+            temp_conn.commit()
+    except Exception as e:
+        print(f"  [ERROR] Failed to mark script status for {script_name}: {e}", flush=True)
+    finally:
+        try:
+            temp_conn.close()
+        except Exception:
+            pass
 
 
 def get_pending_scripts(conn, task_date, scripts):
@@ -232,26 +251,37 @@ def get_pending_scripts(conn, task_date, scripts):
 
 
 def get_task_summary(conn, task_date, scripts):
-    with conn.cursor() as cur:
-        placeholders = ','.join(['%s'] * len(scripts))
-        cur.execute(f"""
-            SELECT 
-                COUNT(1) AS total,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
-                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
-                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
-            FROM update_progress
-            WHERE task_date = %s AND script_name IN ({placeholders})
-        """, (task_date, *scripts))
-        row = cur.fetchone()
-        return {
-            'total': row[0] or 0,
-            'pending': row[1] or 0,
-            'running': row[2] or 0,
-            'success': row[3] or 0,
-            'failed': row[4] or 0,
-        }
+    """
+    获取任务汇总信息
+    忽略传入的 conn 并开启临时连接，防止主连接超时失效
+    """
+    temp_conn = get_connection_with_retry()
+    try:
+        with temp_conn.cursor() as cur:
+            placeholders = ','.join(['%s'] * len(scripts))
+            cur.execute(f"""
+                SELECT 
+                    COUNT(1) AS total,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+                FROM update_progress
+                WHERE task_date = %s AND script_name IN ({placeholders})
+            """, (task_date, *scripts))
+            row = cur.fetchone()
+            return {
+                'total': row[0] or 0,
+                'pending': row[1] or 0,
+                'running': row[2] or 0,
+                'success': row[3] or 0,
+                'failed': row[4] or 0,
+            }
+    finally:
+        try:
+            temp_conn.close()
+        except Exception:
+            pass
 
 
 def reset_task(conn, task_date, scripts):
