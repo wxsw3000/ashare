@@ -297,6 +297,30 @@ def reset_task(conn, task_date, scripts):
         return cur.rowcount
 
 
+def auto_reset_running_task(conn, task_date, scripts):
+    """启动时自动将上次崩溃/中断遗留的 'running' 状态脚本重置为 'pending'"""
+    temp_conn = get_connection_with_retry()
+    try:
+        with temp_conn.cursor() as cur:
+            placeholders = ','.join(['%s'] * len(scripts))
+            cur.execute(f"""
+                UPDATE update_progress 
+                SET status = 'pending', started_at = NULL, completed_at = NULL, error_msg = NULL
+                WHERE task_date = %s AND script_name IN ({placeholders})
+                AND status = 'running'
+            """, (task_date, *scripts))
+            temp_conn.commit()
+            return cur.rowcount
+    except Exception as e:
+        print(f"  [WARN] Failed to auto-reset running tasks: {e}", flush=True)
+        return 0
+    finally:
+        try:
+            temp_conn.close()
+        except Exception:
+            pass
+
+
 def build_status_dict(scripts, conn, task_date):
     statuses = {}
     for script in scripts:
@@ -509,6 +533,11 @@ def main():
         # 初始化任务记录
         init_daily_task(conn, task_date, scripts)
         
+        # 启动时自动将上次崩溃/中断遗留的 'running' 状态脚本重置为 'pending'，恢复显示准确度
+        auto_reset_count = auto_reset_running_task(conn, task_date, scripts)
+        if auto_reset_count > 0:
+            print(f"  [INIT] 自动清理上次中断遗留的 {auto_reset_count} 个运行中状态并重置为 pending", flush=True)
+            
         if reset_flag:
             reset_count = reset_task(conn, task_date, scripts)
             print(f"  [RESET] 重置了 {reset_count} 个脚本状态")
