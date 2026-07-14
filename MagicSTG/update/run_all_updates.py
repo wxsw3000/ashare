@@ -161,7 +161,8 @@ def get_scripts_by_date():
 # 数据库操作
 # ============================================================
 
-def check_table_empty(conn, table_name):
+def check_table_empty(table_name):
+    conn = get_connection_with_retry()
     try:
         with conn.cursor() as cur:
             cur.execute(f"SELECT COUNT(1) FROM {table_name}")
@@ -169,9 +170,15 @@ def check_table_empty(conn, table_name):
             return count == 0
     except Exception:
         return True
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-def get_script_status(conn, task_date, script_name):
+def get_script_status(task_date, script_name):
+    conn = get_connection_with_retry()
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -185,28 +192,39 @@ def get_script_status(conn, task_date, script_name):
             return None
     except Exception:
         return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-def init_daily_task(conn, task_date, scripts):
-    with conn.cursor() as cur:
-        for script in scripts:
-            cur.execute("""
-                INSERT INTO update_progress (task_date, script_name, status)
-                VALUES (%s, %s, 'pending')
-                ON DUPLICATE KEY UPDATE
-                    status = IF(status IN ('pending', 'failed'), status, status)
-            """, (task_date, script))
-        conn.commit()
+def init_daily_task(task_date, scripts):
+    conn = get_connection_with_retry()
+    try:
+        with conn.cursor() as cur:
+            for script in scripts:
+                cur.execute("""
+                    INSERT INTO update_progress (task_date, script_name, status)
+                    VALUES (%s, %s, 'pending')
+                    ON DUPLICATE KEY UPDATE
+                        status = IF(status IN ('pending', 'failed'), status, status)
+                """, (task_date, script))
+            conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-def mark_script_status(conn, task_date, script_name, status, error_msg=None):
+def mark_script_status(task_date, script_name, status, error_msg=None):
     """
     更新脚本执行进度
-    忽略传入的 conn 并开启临时连接，防止因长耗时子进程导致连接超时失效
     """
-    temp_conn = get_connection_with_retry()
+    conn = get_connection_with_retry()
     try:
-        with temp_conn.cursor() as cur:
+        with conn.cursor() as cur:
             if status == 'running':
                 cur.execute("""
                     UPDATE update_progress 
@@ -225,39 +243,43 @@ def mark_script_status(conn, task_date, script_name, status, error_msg=None):
                     SET status = %s, completed_at = %s, error_msg = %s
                     WHERE task_date = %s AND script_name = %s
                 """, (status, datetime.now(), error_msg, task_date, script_name))
-            temp_conn.commit()
+            conn.commit()
     except Exception as e:
         print(f"  [ERROR] Failed to mark script status for {script_name}: {e}", flush=True)
     finally:
         try:
-            temp_conn.close()
+            conn.close()
         except Exception:
             pass
 
 
-def get_pending_scripts(conn, task_date, scripts):
-    pending = []
-    with conn.cursor() as cur:
-        placeholders = ','.join(['%s'] * len(scripts))
-        cur.execute(f"""
-            SELECT script_name FROM update_progress
-            WHERE task_date = %s AND script_name IN ({placeholders})
-            AND status IN ('pending', 'failed')
-            ORDER BY id
-        """, (task_date, *scripts))
-        rows = cur.fetchall()
-        pending = [row[0] for row in rows]
-    return pending
+def get_pending_scripts(task_date, scripts):
+    conn = get_connection_with_retry()
+    try:
+        with conn.cursor() as cur:
+            placeholders = ','.join(['%s'] * len(scripts))
+            cur.execute(f"""
+                SELECT script_name FROM update_progress
+                WHERE task_date = %s AND script_name IN ({placeholders})
+                AND status IN ('pending', 'failed')
+                ORDER BY id
+            """, (task_date, *scripts))
+            rows = cur.fetchall()
+            return [row[0] for row in rows]
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-def get_task_summary(conn, task_date, scripts):
+def get_task_summary(task_date, scripts):
     """
     获取任务汇总信息
-    忽略传入的 conn 并开启临时连接，防止主连接超时失效
     """
-    temp_conn = get_connection_with_retry()
+    conn = get_connection_with_retry()
     try:
-        with temp_conn.cursor() as cur:
+        with conn.cursor() as cur:
             placeholders = ','.join(['%s'] * len(scripts))
             cur.execute(f"""
                 SELECT 
@@ -279,29 +301,36 @@ def get_task_summary(conn, task_date, scripts):
             }
     finally:
         try:
-            temp_conn.close()
+            conn.close()
         except Exception:
             pass
 
 
-def reset_task(conn, task_date, scripts):
-    with conn.cursor() as cur:
-        placeholders = ','.join(['%s'] * len(scripts))
-        cur.execute(f"""
-            UPDATE update_progress 
-            SET status = 'pending', started_at = NULL, completed_at = NULL, error_msg = NULL
-            WHERE task_date = %s AND script_name IN ({placeholders})
-            AND status IN ('running', 'failed')
-        """, (task_date, *scripts))
-        conn.commit()
-        return cur.rowcount
-
-
-def auto_reset_running_task(conn, task_date, scripts):
-    """启动时自动将上次崩溃/中断遗留的 'running' 状态脚本重置为 'pending'"""
-    temp_conn = get_connection_with_retry()
+def reset_task(task_date, scripts):
+    conn = get_connection_with_retry()
     try:
-        with temp_conn.cursor() as cur:
+        with conn.cursor() as cur:
+            placeholders = ','.join(['%s'] * len(scripts))
+            cur.execute(f"""
+                UPDATE update_progress 
+                SET status = 'pending', started_at = NULL, completed_at = NULL, error_msg = NULL
+                WHERE task_date = %s AND script_name IN ({placeholders})
+                AND status IN ('running', 'failed')
+            """, (task_date, *scripts))
+            conn.commit()
+            return cur.rowcount
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def auto_reset_running_task(task_date, scripts):
+    """启动时自动将上次崩溃/中断遗留的 'running' 状态脚本重置为 'pending'"""
+    conn = get_connection_with_retry()
+    try:
+        with conn.cursor() as cur:
             placeholders = ','.join(['%s'] * len(scripts))
             cur.execute(f"""
                 UPDATE update_progress 
@@ -309,22 +338,22 @@ def auto_reset_running_task(conn, task_date, scripts):
                 WHERE task_date = %s AND script_name IN ({placeholders})
                 AND status = 'running'
             """, (task_date, *scripts))
-            temp_conn.commit()
+            conn.commit()
             return cur.rowcount
     except Exception as e:
         print(f"  [WARN] Failed to auto-reset running tasks: {e}", flush=True)
         return 0
     finally:
         try:
-            temp_conn.close()
+            conn.close()
         except Exception:
             pass
 
 
-def build_status_dict(scripts, conn, task_date):
+def build_status_dict(scripts, task_date):
     statuses = {}
     for script in scripts:
-        status_info = get_script_status(conn, task_date, script)
+        status_info = get_script_status(task_date, script)
         if status_info:
             statuses[script] = {
                 'status': status_info['status'],
@@ -348,14 +377,14 @@ def build_status_dict(scripts, conn, task_date):
 # 脚本执行
 # ============================================================
 
-def run_script_with_progress(script_name, task_date, conn):
+def run_script_with_progress(script_name, task_date):
     script_path = os.path.join(SCRIPT_DIR, script_name)
     
     if not os.path.exists(script_path):
-        mark_script_status(conn, task_date, script_name, 'failed', f"脚本不存在: {script_path}")
+        mark_script_status(task_date, script_name, 'failed', f"脚本不存在: {script_path}")
         return False, f"脚本不存在: {script_path}", None, -1
     
-    mark_script_status(conn, task_date, script_name, 'running')
+    mark_script_status(task_date, script_name, 'running')
     
     progress_info = {
         'current': 0,
@@ -393,20 +422,20 @@ def run_script_with_progress(script_name, task_date, conn):
         
         ret_code = process.returncode
         if ret_code == 0:
-            mark_script_status(conn, task_date, script_name, 'success')
+            mark_script_status(task_date, script_name, 'success')
             return True, '\n'.join(output_lines), progress_info, ret_code
         elif ret_code == 2:
             # 优雅超时退出，状态改回 pending 以便重试
-            mark_script_status(conn, task_date, script_name, 'pending', 'Reached runtime limit, partially completed')
+            mark_script_status(task_date, script_name, 'pending', 'Reached runtime limit, partially completed')
             return True, '\n'.join(output_lines), progress_info, ret_code
         else:
             error_msg = f"退出码: {ret_code}"
-            mark_script_status(conn, task_date, script_name, 'failed', error_msg)
+            mark_script_status(task_date, script_name, 'failed', error_msg)
             return False, '\n'.join(output_lines), progress_info, ret_code
             
     except Exception as e:
         error_msg = str(e)
-        mark_script_status(conn, task_date, script_name, 'failed', error_msg[:500])
+        mark_script_status(task_date, script_name, 'failed', error_msg[:500])
         return False, str(e), progress_info, -1
 
 
@@ -508,21 +537,13 @@ def main():
         print(f"     {idx:2d}. {script}")
     print()
     
-    conn = None
-    try:
-        conn = get_connection_with_retry()
-        print("  [DB] 数据库连接成功")
-    except Exception as e:
-        print(f"  [ERROR] 数据库连接失败: {e}")
-        return 1
-    
     try:
         # 检查哪些表为空，需要初始化
         print("  [CHECK] 检查数据表状态...")
         empty_tables = []
         for script in scripts:
             table_name = SCRIPT_TABLE_MAP.get(script)
-            if table_name and check_table_empty(conn, table_name):
+            if table_name and check_table_empty(table_name):
                 empty_tables.append(script)
         
         if empty_tables:
@@ -531,22 +552,22 @@ def main():
                 print(f"     - {script}")
         
         # 初始化任务记录
-        init_daily_task(conn, task_date, scripts)
+        init_daily_task(task_date, scripts)
         
         # 启动时自动将上次崩溃/中断遗留的 'running' 状态脚本重置为 'pending'，恢复显示准确度
-        auto_reset_count = auto_reset_running_task(conn, task_date, scripts)
+        auto_reset_count = auto_reset_running_task(task_date, scripts)
         if auto_reset_count > 0:
             print(f"  [INIT] 自动清理上次中断遗留的 {auto_reset_count} 个运行中状态并重置为 pending", flush=True)
             
         if reset_flag:
-            reset_count = reset_task(conn, task_date, scripts)
+            reset_count = reset_task(task_date, scripts)
             print(f"  [RESET] 重置了 {reset_count} 个脚本状态")
         
-        pending = get_pending_scripts(conn, task_date, scripts)
+        pending = get_pending_scripts(task_date, scripts)
         for script in empty_tables:
             if script not in pending:
                 pending.append(script)
-                mark_script_status(conn, task_date, script, 'pending')
+                mark_script_status(task_date, script, 'pending')
         
         if not pending:
             print("  [SUCCESS] 所有脚本已完成")
@@ -555,7 +576,7 @@ def main():
         print(f"  [INFO] 待执行: {len(pending)} 个脚本")
         print("=" * 78)
         
-        statuses = build_status_dict(scripts, conn, task_date)
+        statuses = build_status_dict(scripts, task_date)
         print_initial_status(task_date, scripts, statuses, start_time)
         
         early_exit = False
@@ -568,7 +589,7 @@ def main():
             print(f"\n  ▶ 开始执行: {script_name}")
             print("-" * 50)
             
-            success, output, progress, ret_code = run_script_with_progress(script_name, task_date, conn)
+            success, output, progress, ret_code = run_script_with_progress(script_name, task_date)
             
             if ret_code == 2:
                 statuses[script_name]['status'] = 'pending'
@@ -596,7 +617,7 @@ def main():
                 print("  [WARN] 达到运行时间上限，已保存断点，停止后续脚本的执行。")
                 break
         
-        summary = get_task_summary(conn, task_date, scripts)
+        summary = get_task_summary(task_date, scripts)
         
         print("\n" + "=" * 78)
         print("  📊 执行完成")
@@ -614,9 +635,6 @@ def main():
         import traceback
         traceback.print_exc()
         return 1
-    finally:
-        if conn:
-            conn.close()
 
 
 if __name__ == "__main__":

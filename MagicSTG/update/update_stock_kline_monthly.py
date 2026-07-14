@@ -250,7 +250,7 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
     last_date = latest_info.get(code)
     
     if last_date and last_date >= target_date:
-        return 0, 0, 1, 0, db_buffer
+        return 0, 0, 1, 0, db_buffer, False
     
     if last_date:
         start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -266,17 +266,17 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
         
         data_list, ok = fetch_stock_kline(code, ipo_date, target_date)
         if not ok or data_list is None:
-            return 0, 0, 0, 1, db_buffer
+            return 0, 0, 0, 1, db_buffer, True
         
         if len(data_list) == 0:
-            return 0, 0, 1, 0, db_buffer
+            return 0, 0, 1, 0, db_buffer, True
     else:
         data_list, ok = fetch_stock_kline(code, start_date, target_date)
         if not ok or data_list is None:
-            return 0, 0, 0, 1, db_buffer
+            return 0, 0, 0, 1, db_buffer, False
         
         if len(data_list) == 0:
-            return 0, 0, 1, 0, db_buffer
+            return 0, 0, 1, 0, db_buffer, False
     
     for row in data_list:
         db_row = parse_kline_row(row, code, update_date)
@@ -289,7 +289,7 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
             conn.commit()
             db_buffer = []
     
-    return total_rows, 1, 0, 0, db_buffer
+    return total_rows, 1, 0, 0, db_buffer, has_div
 
 
 # ============================================================
@@ -349,17 +349,33 @@ def main():
             code = stock['code']
             ipo_date = stock['ipo_date']
             
-            rows, updated, skipped, failed, db_buffer = update_stock_data(
+            stock_start_time = time.time()
+            rows, updated, skipped, failed, db_buffer, has_div = update_stock_data(
                 conn, code, ipo_date, target_date, update_date,
                 db_buffer, db_buffer_limit, latest_info
             )
+            stock_elapsed = time.time() - stock_start_time
             
             total_rows += rows
             updated_count += updated
             skip_count += skipped
             fail_count += failed
             
-            if idx % 10 == 0 or idx == 1 or idx == total_stocks:
+            # 针对每一只股票输出处理情况
+            if skipped > 0:
+                print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+            elif failed > 0:
+                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
+            else:
+                last_date = latest_info.get(code)
+                start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else ipo_date
+                if has_div:
+                    print(f"  {code} | 写入 {rows} 条 data | {ipo_date} ~ {target_date} (检测到除权，全量重刷) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                else:
+                    print(f"  {code} | 写入 {rows} 条 data | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+            
+            # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
+            if idx % 100 == 0 or idx == 1 or idx == total_stocks:
                 elapsed = time.time() - start_time
                 avg_time = elapsed / idx if idx > 0 else 0
                 remaining = avg_time * (total_stocks - idx)

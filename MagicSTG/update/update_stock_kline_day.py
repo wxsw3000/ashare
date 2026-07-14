@@ -395,10 +395,12 @@ def main():
             code = stock['code']
             ipo_date = stock['ipo_date']
             
+            stock_start_time = time.time()
             rows, updated, skipped, failed, db_buffer, dividend_detected = update_stock_data(
                 conn, code, ipo_date, target_date, update_date,
                 db_buffer, db_buffer_limit, latest_info
             )
+            stock_elapsed = time.time() - stock_start_time
             
             total_rows += rows
             updated_count += updated
@@ -407,8 +409,21 @@ def main():
             if dividend_detected:
                 dividend_count += 1
             
-            # 每 10 只输出一次包含 PROGRESS 格式的进度
-            if idx % 10 == 0 or idx == 1 or idx == total_stocks:
+            # 针对每一只股票输出处理情况
+            if skipped > 0:
+                print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+            elif failed > 0:
+                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
+            else:
+                last_date, _ = latest_info.get(code, (None, None))
+                start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else ipo_date
+                if dividend_detected:
+                    print(f"  {code} | 写入 {rows} 条数据 | {ipo_date} ~ {target_date} (检测到除权，全量重刷) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                else:
+                    print(f"  {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+            
+            # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
+            if idx % 100 == 0 or idx == 1 or idx == total_stocks:
                 elapsed = time.time() - start_time
                 avg_time = elapsed / idx if idx > 0 else 0
                 remaining = avg_time * (total_stocks - idx)

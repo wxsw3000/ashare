@@ -319,28 +319,33 @@ def main():
         for idx, code in enumerate(all_stocks, 1):
             last_date = express_status.get(code)
             
+            stock_start_time = time.time()
             if last_date:
                 last_year = pd.to_datetime(last_date).year
                 current_year = pd.to_datetime(end_date).year
                 if last_year >= current_year - 1:
                     skip_count += 1
-                    if idx % 100 == 0:
+                    stock_elapsed = time.time() - stock_start_time
+                    print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    if idx % 100 == 0 or idx == 1 or idx == total_stocks:
                         print_progress(idx, total_stocks, start_time, "[进度] ")
                     continue
             
             rows = update_stock_data(conn, code, last_date, start_date, end_date, today_str, db_buffer, db_buffer_limit)
+            stock_elapsed = time.time() - stock_start_time
             
             if rows == -1:
                 fail_count += 1
-                print(f"  [FAIL] {code}", flush=True)
+                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif rows > 0:
                 updated_count += 1
                 total_rows += rows
-                if idx % 10 == 0:
-                    print_progress(idx, total_stocks, start_time, "[进度] ")
+                print(f"  {code} | 写入 {rows} 条数据 | {start_date} ~ {end_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
-                if idx % 100 == 0:
-                    print_progress(idx, total_stocks, start_time, "[进度] ")
+                print(f"  {code} | 无新数据 | {start_date} ~ {end_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+            
+            if idx % 100 == 0 or idx == 1 or idx == total_stocks:
+                print_progress(idx, total_stocks, start_time, "[进度] ")
             
             if idx % 10 == 0:
                 random_sleep(0.3, 0.8)

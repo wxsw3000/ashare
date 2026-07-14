@@ -333,9 +333,14 @@ def main():
                 
             last_date = index_status.get(code)
             
+            stock_start_time = time.time()
             if last_date and last_date >= target_date:
                 skip_count += 1
-                if idx % 10 == 0 or idx == 1 or idx == total_indices:
+                stock_elapsed = time.time() - stock_start_time
+                print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                
+                # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
+                if idx % 100 == 0 or idx == 1 or idx == total_indices:
                     elapsed = time.time() - start_time
                     avg_time = elapsed / idx if idx > 0 else 0
                     remaining = avg_time * (total_indices - idx)
@@ -346,30 +351,29 @@ def main():
                 continue
             
             rows = update_index_data(conn, code, last_date, target_date, update_date, db_buffer, db_buffer_limit)
+            stock_elapsed = time.time() - stock_start_time
             
             if rows == -1:
                 fail_count += 1
-                print(f"  [FAIL] {code}", flush=True)
+                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif rows > 0:
                 updated_count += 1
                 total_rows += rows
-                if idx % 10 == 0 or idx == 1 or idx == total_indices:
-                    elapsed = time.time() - start_time
-                    avg_time = elapsed / idx if idx > 0 else 0
-                    remaining = avg_time * (total_indices - idx)
-                    pct = (idx / total_indices) * 100
-                    print(f"  PROGRESS: {idx}/{total_indices} ({pct:.1f}%) "
-                          f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
-                          f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
+                start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else START_DATE
+                print(f"  {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
-                if idx % 10 == 0 or idx == 1 or idx == total_indices:
-                    elapsed = time.time() - start_time
-                    avg_time = elapsed / idx if idx > 0 else 0
-                    remaining = avg_time * (total_indices - idx)
-                    pct = (idx / total_indices) * 100
-                    print(f"  PROGRESS: {idx}/{total_indices} ({pct:.1f}%) "
-                          f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
-                          f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
+                start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else START_DATE
+                print(f"  {code} | 无新数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                
+            # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
+            if idx % 100 == 0 or idx == 1 or idx == total_indices:
+                elapsed = time.time() - start_time
+                avg_time = elapsed / idx if idx > 0 else 0
+                remaining = avg_time * (total_indices - idx)
+                pct = (idx / total_indices) * 100
+                print(f"  PROGRESS: {idx}/{total_indices} ({pct:.1f}%) "
+                      f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
+                      f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
             
             if idx % 5 == 0:
                 random_sleep(0.2, 0.5)

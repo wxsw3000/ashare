@@ -346,28 +346,59 @@ def main():
         for idx, code in enumerate(all_stocks, 1):
             last_date = dupont_status.get(code)
             
+            stock_start_time = time.time()
             if last_date:
                 last_dt = pd.to_datetime(last_date)
                 last_year = last_dt.year
                 last_quarter = (last_dt.month - 1) // 3 + 1
                 if last_year > target_year or (last_year == target_year and last_quarter >= target_quarter):
                     skip_count += 1
-                    if idx % 100 == 0:
+                    stock_elapsed = time.time() - stock_start_time
+                    print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    
+                    if idx % 100 == 0 or idx == 1 or idx == total_stocks:
                         print_progress(idx, total_stocks, start_time, "[进度] ")
                     continue
+            
             rows = update_stock_data(conn, code, last_date, target_year, target_quarter, today_str, db_buffer, db_buffer_limit)
+            stock_elapsed = time.time() - stock_start_time
             
             if rows == -1:
                 fail_count += 1
-                print(f"  [FAIL] {code}", flush=True)
+                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif rows > 0:
                 updated_count += 1
                 total_rows += rows
-                if idx % 10 == 0:
-                    print_progress(idx, total_stocks, start_time, "[进度] ")
+                if last_date:
+                    last_dt = pd.to_datetime(last_date)
+                    start_year = last_dt.year
+                    start_quarter = (last_dt.month - 1) // 3 + 1
+                    if start_quarter == 4:
+                        start_year += 1
+                        start_quarter = 1
+                    else:
+                        start_quarter += 1
+                else:
+                    start_year = START_YEAR
+                    start_quarter = 1
+                print(f"  {code} | 写入 {rows} 条数据 | {start_year}Q{start_quarter} ~ {target_year}Q{target_quarter} | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
-                if idx % 100 == 0:
-                    print_progress(idx, total_stocks, start_time, "[进度] ")
+                if last_date:
+                    last_dt = pd.to_datetime(last_date)
+                    start_year = last_dt.year
+                    start_quarter = (last_dt.month - 1) // 3 + 1
+                    if start_quarter == 4:
+                        start_year += 1
+                        start_quarter = 1
+                    else:
+                        start_quarter += 1
+                else:
+                    start_year = START_YEAR
+                    start_quarter = 1
+                print(f"  {code} | 无新数据 | {start_year}Q{start_quarter} ~ {target_year}Q{target_quarter} | 耗时: {stock_elapsed:.3f}s", flush=True)
+            
+            if idx % 100 == 0 or idx == 1 or idx == total_stocks:
+                print_progress(idx, total_stocks, start_time, "[进度] ")
             
             if idx % 10 == 0:
                 random_sleep(0.3, 0.8)
