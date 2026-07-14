@@ -494,7 +494,6 @@ def main():
         print_status_panel(task_date, mode, scripts, statuses, start_time)
         
         # 逐个执行待执行脚本
-        executed_count = 0
         for script_name in pending:
             # 更新状态
             statuses[script_name]['status'] = 'running'
@@ -515,16 +514,16 @@ def main():
             # 刷新面板
             print_status_panel(task_date, mode, scripts, statuses, start_time)
             
-            executed_count += 1
-            
             # 输出脚本的详细日志（缩进显示）
             if output:
                 print(f"\n  详细日志 ({script_name}):")
-                for line in output.split('\n')[:20]:  # 只显示前20行
+                # 修复：将 split('\n') 移到 f-string 外面
+                lines = output.split('\n')
+                for line in lines[:20]:
                     if line.strip():
                         print(f"     {line}")
-                if len(output.split('\n')) > 20:
-                    print(f"     ... (共 {len(output.split('\n'))} 行)")
+                if len(lines) > 20:
+                    print(f"     ... (共 {len(lines)} 行)")
                 print()
         
         # 最终统计
