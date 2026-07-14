@@ -2,18 +2,6 @@ name: 数据更新
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: '更新模式'
-        required: true
-        default: 'daily'
-        type: choice
-        options:
-          - daily
-          - weekly
-          - monthly
-          - quarterly
-          - all
   repository_dispatch:
     types:
       - update-data
@@ -34,7 +22,7 @@ jobs:
         run: |
           pip install baostock pandas pymysql python-dotenv
       
-      - name: 运行更新
+      - name: 运行更新（智能判断）
         working-directory: MagicSTG/update
         env:
           DB_HOST: ${{ secrets.TIDB_HOST }}
@@ -44,4 +32,4 @@ jobs:
           DB_NAME: ${{ secrets.TIDB_DB_NAME }}
           DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
         run: |
-          python run_all_updates.py --mode ${{ github.event.inputs.mode || 'daily' }}
+          python run_all_updates.py

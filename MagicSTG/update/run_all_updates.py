@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-数据更新主控脚本（状态面板版 + 断点续传 + 频率控制）
-支持 --mode 参数：daily / weekly / monthly / quarterly / all
-自动检测空表并执行初始化
+数据更新主控脚本（智能判断版 + 断点续传）
+自动根据当前日期判断该执行哪些脚本：
+    - 每天：日K线 + 基础数据 + 宏观数据
+    - 每周一：额外执行周K线
+    - 每月1号：额外执行月K线
+    - 1月/4月/7月/10月：额外执行财报数据（季频）
 """
 
 import os
@@ -12,9 +15,9 @@ import subprocess
 import time
 import argparse
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# 添加父目录到路径，以便导入 db 模块
+# 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db import (
@@ -105,28 +108,70 @@ SCRIPT_GROUPS = {
     ]
 }
 
-# 所有脚本列表（用于依赖检查）
-ALL_SCRIPTS = SCRIPT_GROUPS['all']
+# 财报季月份
+QUARTERLY_MONTHS = [1, 4, 7, 10]
 
 
 # ============================================================
-# 数据库操作函数
+# 智能判断：根据日期决定执行哪些脚本
+# ============================================================
+
+def get_scripts_by_date():
+    """
+    根据当前日期自动判断应该执行哪些脚本
+    返回: list of script names
+    """
+    beijing_time = get_beijing_time()
+    weekday = beijing_time.weekday()  # 0=周一, 6=周日
+    day = beijing_time.day
+    month = beijing_time.month
+    
+    scripts = []
+    
+    # 1. 每日必跑：日K线 + 基础数据 + 宏观数据
+    scripts.extend(SCRIPT_GROUPS['daily'])
+    
+    # 2. 每周一跑周K线
+    if weekday == 0:  # 周一
+        scripts.extend(SCRIPT_GROUPS['weekly'])
+        print("  [SCHEDULE] 今天是周一，将执行周K线更新")
+    
+    # 3. 每月1号跑月K线
+    if day == 1:
+        scripts.extend(SCRIPT_GROUPS['monthly'])
+        print("  [SCHEDULE] 今天是1号，将执行月K线更新")
+    
+    # 4. 季频：1月、4月、7月、10月跑财报数据
+    if month in QUARTERLY_MONTHS:
+        scripts.extend(SCRIPT_GROUPS['quarterly'])
+        print(f"  [SCHEDULE] 当前是财报季（{month}月），将执行季频财报数据更新")
+    
+    # 去重（保持顺序）
+    seen = set()
+    result = []
+    for s in scripts:
+        if s not in seen:
+            seen.add(s)
+            result.append(s)
+    
+    return result
+
+
+# ============================================================
+# 数据库操作
 # ============================================================
 
 def check_table_empty(conn, table_name):
-    """检查表是否为空"""
     try:
         with conn.cursor() as cur:
             cur.execute(f"SELECT COUNT(1) FROM {table_name}")
             count = cur.fetchone()[0]
             return count == 0
     except Exception:
-        # 表不存在或查询失败，视为空
         return True
 
 
 def get_script_status(conn, task_date, script_name):
-    """获取脚本在今天的执行状态"""
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -143,7 +188,6 @@ def get_script_status(conn, task_date, script_name):
 
 
 def init_daily_task(conn, task_date, scripts):
-    """初始化当天的任务记录"""
     with conn.cursor() as cur:
         for script in scripts:
             cur.execute("""
@@ -156,7 +200,6 @@ def init_daily_task(conn, task_date, scripts):
 
 
 def mark_script_status(conn, task_date, script_name, status, error_msg=None):
-    """标记脚本状态"""
     with conn.cursor() as cur:
         if status == 'running':
             cur.execute("""
@@ -174,7 +217,6 @@ def mark_script_status(conn, task_date, script_name, status, error_msg=None):
 
 
 def get_pending_scripts(conn, task_date, scripts):
-    """获取未完成的脚本"""
     pending = []
     with conn.cursor() as cur:
         placeholders = ','.join(['%s'] * len(scripts))
@@ -190,7 +232,6 @@ def get_pending_scripts(conn, task_date, scripts):
 
 
 def get_task_summary(conn, task_date, scripts):
-    """获取任务摘要"""
     with conn.cursor() as cur:
         placeholders = ','.join(['%s'] * len(scripts))
         cur.execute(f"""
@@ -214,7 +255,6 @@ def get_task_summary(conn, task_date, scripts):
 
 
 def reset_task(conn, task_date, scripts):
-    """重置任务（将 running 和 failed 重置为 pending）"""
     with conn.cursor() as cur:
         placeholders = ','.join(['%s'] * len(scripts))
         cur.execute(f"""
@@ -227,162 +267,7 @@ def reset_task(conn, task_date, scripts):
         return cur.rowcount
 
 
-# ============================================================
-# 脚本执行（状态面板版）
-# ============================================================
-
-def run_script_with_progress(script_name, task_date, conn):
-    """
-    运行单个脚本，实时捕获进度输出
-    返回: (success, output, progress_info)
-    """
-    script_path = os.path.join(SCRIPT_DIR, script_name)
-    
-    if not os.path.exists(script_path):
-        mark_script_status(conn, task_date, script_name, 'failed', f"脚本不存在: {script_path}")
-        return False, f"脚本不存在: {script_path}", None
-    
-    # 标记为 running
-    mark_script_status(conn, task_date, script_name, 'running')
-    
-    progress_info = {
-        'current': 0,
-        'total': 0,
-        'last_update': time.time()
-    }
-    
-    start_time = time.time()
-    output_lines = []
-    
-    try:
-        # 使用 subprocess.Popen 逐行读取输出
-        process = subprocess.Popen(
-            [sys.executable, script_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            env=os.environ.copy()
-        )
-        
-        # 逐行读取并解析进度
-        for line in process.stdout:
-            line = line.strip()
-            output_lines.append(line)
-            
-            # 解析 PROGRESS: 标记
-            if 'PROGRESS:' in line:
-                match = re.search(r'PROGRESS:\s*(\d+)\s*/\s*(\d+)', line)
-                if match:
-                    progress_info['current'] = int(match.group(1))
-                    progress_info['total'] = int(match.group(2))
-                    progress_info['last_update'] = time.time()
-        
-        process.wait()
-        elapsed = time.time() - start_time
-        
-        if process.returncode == 0:
-            mark_script_status(conn, task_date, script_name, 'success')
-            return True, '\n'.join(output_lines), progress_info
-        else:
-            error_msg = f"退出码: {process.returncode}"
-            mark_script_status(conn, task_date, script_name, 'failed', error_msg)
-            return False, '\n'.join(output_lines), progress_info
-            
-    except Exception as e:
-        error_msg = str(e)
-        mark_script_status(conn, task_date, script_name, 'failed', error_msg[:500])
-        return False, str(e), progress_info
-
-
-# ============================================================
-# 状态面板显示
-# ============================================================
-
-def print_status_panel(task_date, mode, scripts, script_statuses, start_time):
-    """
-    打印状态面板
-    script_statuses: {script_name: {'status': 'pending/running/success/failed', 'started_at': datetime, 'completed_at': datetime, 'progress': (current, total), 'error_msg': str}}
-    """
-    elapsed = time.time() - start_time
-    
-    # 清屏（移动光标到顶部）
-    print("\033[H\033[J", end="")
-    
-    print("=" * 78)
-    print("  📊 任务执行进度")
-    print(f"  当前模式: {mode}")
-    print(f"  任务日期: {task_date}")
-    print(f"  已运行: {format_time(elapsed)}")
-    print("-" * 78)
-    
-    # 统计已完成数
-    completed = sum(1 for s in script_statuses.values() if s.get('status') == 'success')
-    total = len(scripts)
-    running_count = sum(1 for s in script_statuses.values() if s.get('status') == 'running')
-    
-    # 标题行
-    print(f"  进度: {completed}/{total} 完成, {running_count} 执行中")
-    print("-" * 78)
-    
-    for idx, script_name in enumerate(scripts, 1):
-        status_info = script_statuses.get(script_name, {'status': 'pending'})
-        status = status_info.get('status', 'pending')
-        
-        # 状态图标
-        if status == 'success':
-            icon = "✅"
-            status_text = "已完成"
-            if status_info.get('started_at') and status_info.get('completed_at'):
-                elapsed_text = f"耗时: {format_time((status_info['completed_at'] - status_info['started_at']).total_seconds())}"
-            else:
-                elapsed_text = "耗时: N/A"
-        elif status == 'running':
-            icon = "🔄"
-            status_text = "执行中"
-            started = status_info.get('started_at')
-            if started:
-                run_time = time.time() - started.timestamp()
-                elapsed_text = f"已用: {format_time(run_time)}"
-            else:
-                elapsed_text = "已用: N/A"
-        elif status == 'failed':
-            icon = "❌"
-            status_text = "失败"
-            elapsed_text = f"错误: {status_info.get('error_msg', '未知错误')[:30]}"
-        else:
-            icon = "⏳"
-            status_text = "等待执行"
-            elapsed_text = "等待执行"
-        
-        # 进度信息
-        progress = status_info.get('progress', (0, 0))
-        progress_text = ""
-        if progress[1] > 0:
-            pct = (progress[0] / progress[1]) * 100
-            progress_text = f"进度: {pct:.1f}% ({progress[0]}/{progress[1]})"
-        
-        # 估算剩余时间（仅对 running 状态）
-        if status == 'running' and progress[1] > 0 and progress[0] > 0:
-            started = status_info.get('started_at')
-            if started:
-                run_time = time.time() - started.timestamp()
-                avg_time = run_time / progress[0]
-                remaining = avg_time * (progress[1] - progress[0])
-                progress_text += f" 剩余: {format_time(remaining)}"
-        
-        # 截断过长的脚本名
-        display_name = script_name[:35] + "..." if len(script_name) > 35 else script_name
-        
-        print(f"  [{idx:2d}/{total:2d}] {display_name}")
-        print(f"     {icon} {status_text}  {elapsed_text}")
-        if progress_text:
-            print(f"     {progress_text}")
-        print("-" * 78)
-
-
 def build_status_dict(scripts, conn, task_date):
-    """构建脚本状态字典"""
     statuses = {}
     for script in scripts:
         status_info = get_script_status(conn, task_date, script)
@@ -406,40 +291,164 @@ def build_status_dict(scripts, conn, task_date):
 
 
 # ============================================================
+# 脚本执行
+# ============================================================
+
+def run_script_with_progress(script_name, task_date, conn):
+    script_path = os.path.join(SCRIPT_DIR, script_name)
+    
+    if not os.path.exists(script_path):
+        mark_script_status(conn, task_date, script_name, 'failed', f"脚本不存在: {script_path}")
+        return False, f"脚本不存在: {script_path}", None
+    
+    mark_script_status(conn, task_date, script_name, 'running')
+    
+    progress_info = {
+        'current': 0,
+        'total': 0,
+        'last_update': time.time()
+    }
+    
+    output_lines = []
+    
+    try:
+        process = subprocess.Popen(
+            [sys.executable, script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=os.environ.copy()
+        )
+        
+        for line in process.stdout:
+            line = line.strip()
+            output_lines.append(line)
+            
+            if line:
+                print(f"  {line}", flush=True)
+            
+            if 'PROGRESS:' in line:
+                match = re.search(r'PROGRESS:\s*(\d+)\s*/\s*(\d+)', line)
+                if match:
+                    progress_info['current'] = int(match.group(1))
+                    progress_info['total'] = int(match.group(2))
+                    progress_info['last_update'] = time.time()
+        
+        process.wait()
+        
+        if process.returncode == 0:
+            mark_script_status(conn, task_date, script_name, 'success')
+            return True, '\n'.join(output_lines), progress_info
+        else:
+            error_msg = f"退出码: {process.returncode}"
+            mark_script_status(conn, task_date, script_name, 'failed', error_msg)
+            return False, '\n'.join(output_lines), progress_info
+            
+    except Exception as e:
+        error_msg = str(e)
+        mark_script_status(conn, task_date, script_name, 'failed', error_msg[:500])
+        return False, str(e), progress_info
+
+
+# ============================================================
+# 显示函数
+# ============================================================
+
+def print_initial_status(task_date, scripts, statuses, start_time):
+    elapsed = time.time() - start_time
+    
+    print("=" * 78)
+    print("  📊 任务执行进度")
+    print(f"  任务日期: {task_date}")
+    print(f"  脚本总数: {len(scripts)}")
+    print(f"  已运行: {format_time(elapsed)}")
+    print("-" * 78)
+    
+    for idx, script_name in enumerate(scripts, 1):
+        status_info = statuses.get(script_name, {'status': 'pending'})
+        status = status_info.get('status', 'pending')
+        
+        if status == 'success':
+            icon = "✅"
+            status_text = "已完成"
+        elif status == 'running':
+            icon = "🔄"
+            status_text = "执行中"
+        elif status == 'failed':
+            icon = "❌"
+            status_text = "失败"
+        else:
+            icon = "⏳"
+            status_text = "待执行"
+        
+        display_name = script_name[:35] + "..." if len(script_name) > 35 else script_name
+        print(f"  [{idx:2d}/{len(scripts):2d}] {display_name}  {icon} {status_text}")
+    
+    print("=" * 78)
+    print(flush=True)
+
+
+def print_status_summary(scripts, statuses, start_time):
+    elapsed = time.time() - start_time
+    
+    completed = sum(1 for s in statuses.values() if s.get('status') == 'success')
+    running = sum(1 for s in statuses.values() if s.get('status') == 'running')
+    failed = sum(1 for s in statuses.values() if s.get('status') == 'failed')
+    total = len(scripts)
+    
+    running_scripts = [s[:30] for s, info in statuses.items() if info.get('status') == 'running']
+    running_names = ", ".join(running_scripts[:3])
+    if len(running_scripts) > 3:
+        running_names += f" ... (+{len(running_scripts)-3}个)"
+    
+    print(f"[进度] 完成: {completed}/{total} | 执行中: {running} | 失败: {failed} | 已运行: {format_time(elapsed)}")
+    if running_scripts:
+        print(f"       正在执行: {running_names}", flush=True)
+
+
+# ============================================================
 # 主函数
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='数据更新主控脚本')
-    parser.add_argument('--mode', type=str, default='daily',
-                        choices=['daily', 'weekly', 'monthly', 'quarterly', 'all'],
-                        help='更新模式')
+    parser = argparse.ArgumentParser(description='数据更新主控脚本（智能判断版）')
     parser.add_argument('--reset', action='store_true',
                         help='重置当前任务（将 running/failed 重置为 pending）')
+    parser.add_argument('--force', action='store_true',
+                        help='强制执行所有脚本（忽略日期判断）')
     args = parser.parse_args()
     
-    mode = args.mode
     reset_flag = args.reset
+    force_flag = args.force
     task_date = get_beijing_time().strftime('%Y-%m-%d')
     start_time = time.time()
     
     print("=" * 78)
-    print("  📊 数据更新系统 - 状态面板版")
-    print(f"  模式: {mode}")
+    print("  📊 数据更新系统 - 智能判断版")
     print(f"  任务日期: {task_date}")
     print(f"  开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 78)
     print()
     
-    # 获取要执行的脚本列表
-    scripts = SCRIPT_GROUPS.get(mode, [])
+    # 智能判断要执行的脚本
+    if force_flag:
+        scripts = SCRIPT_GROUPS['all']
+        print("  [FORCE] 强制执行所有脚本")
+    else:
+        scripts = get_scripts_by_date()
+        print(f"  [SCHEDULE] 智能判断完成，共 {len(scripts)} 个脚本")
+    
     if not scripts:
-        print(f"  [ERROR] 未知模式: {mode}")
-        return 1
+        print("  [INFO] 今天没有需要执行的脚本")
+        return 0
     
-    print(f"  [INFO] 模式 '{mode}' 包含 {len(scripts)} 个脚本")
+    # 显示脚本列表
+    print("\n  📋 脚本列表:")
+    for idx, script in enumerate(scripts, 1):
+        print(f"     {idx:2d}. {script}")
+    print()
     
-    # 连接数据库
     conn = None
     try:
         conn = get_connection_with_retry()
@@ -465,18 +474,14 @@ def main():
         # 初始化任务记录
         init_daily_task(conn, task_date, scripts)
         
-        # 如果设置了 reset 标志，重置所有 running/failed 状态
         if reset_flag:
             reset_count = reset_task(conn, task_date, scripts)
             print(f"  [RESET] 重置了 {reset_count} 个脚本状态")
         
-        # 获取待执行脚本
         pending = get_pending_scripts(conn, task_date, scripts)
-        # 如果有空表，确保它们在待执行列表中
         for script in empty_tables:
             if script not in pending:
                 pending.append(script)
-                # 确保状态为 pending
                 mark_script_status(conn, task_date, script, 'pending')
         
         if not pending:
@@ -486,45 +491,34 @@ def main():
         print(f"  [INFO] 待执行: {len(pending)} 个脚本")
         print("=" * 78)
         
-        # 构建状态字典
         statuses = build_status_dict(scripts, conn, task_date)
+        print_initial_status(task_date, scripts, statuses, start_time)
         
-        # 打印初始状态面板
-        print_status_panel(task_date, mode, scripts, statuses, start_time)
-        
-        # 逐个执行待执行脚本
         for script_name in pending:
-            # 更新状态
             statuses[script_name]['status'] = 'running'
             statuses[script_name]['started_at'] = datetime.now()
             
-            # 刷新面板
-            print_status_panel(task_date, mode, scripts, statuses, start_time)
+            print_status_summary(scripts, statuses, start_time)
             
-            # 执行脚本
+            print(f"\n  ▶ 开始执行: {script_name}")
+            print("-" * 50)
+            
             success, output, progress = run_script_with_progress(script_name, task_date, conn)
             
-            # 更新状态信息
             statuses[script_name]['status'] = 'success' if success else 'failed'
             statuses[script_name]['completed_at'] = datetime.now()
             if progress and progress['total'] > 0:
                 statuses[script_name]['progress'] = (progress['current'], progress['total'])
             
-            # 刷新面板
-            print_status_panel(task_date, mode, scripts, statuses, start_time)
+            print("-" * 50)
+            if success:
+                print(f"  ✅ {script_name} 执行成功")
+            else:
+                print(f"  ❌ {script_name} 执行失败")
             
-            # 输出脚本的详细日志（缩进显示）
-            if output:
-                print(f"\n  详细日志 ({script_name}):")
-                lines = output.split('\n')
-                for line in lines[:20]:
-                    if line.strip():
-                        print(f"     {line}")
-                if len(lines) > 20:
-                    print(f"     ... (共 {len(lines)} 行)")
-                print()
+            print_status_summary(scripts, statuses, start_time)
+            print()
         
-        # 最终统计
         summary = get_task_summary(conn, task_date, scripts)
         
         print("\n" + "=" * 78)
