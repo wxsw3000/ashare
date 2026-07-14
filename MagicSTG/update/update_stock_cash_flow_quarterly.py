@@ -244,13 +244,8 @@ def get_target_quarter():
 # 核心更新逻辑
 # ============================================================
 
-def update_stock_data(conn, code, target_year, target_quarter, update_date, db_buffer, db_buffer_limit):
+def update_stock_data(conn, code, last_date, target_year, target_quarter, update_date, db_buffer, db_buffer_limit):
     total_rows = 0
-    
-    with conn.cursor() as cur:
-        cur.execute("SELECT MAX(stat_date) FROM stock_cash_flow_quarterly WHERE code = %s", (code,))
-        row = cur.fetchone()
-        last_date = row[0].strftime('%Y-%m-%d') if row and row[0] else None
     
     if last_date:
         last_dt = pd.to_datetime(last_date)
@@ -335,7 +330,7 @@ def main():
         print("-" * 70, flush=True)
         
         db_buffer = []
-        db_buffer_limit = 500
+        db_buffer_limit = 150
         total_rows = 0
         updated_count = 0
         skip_count = 0
@@ -356,8 +351,7 @@ def main():
                     if idx % 100 == 0:
                         print_progress(idx, total_stocks, start_time, "[进度] ")
                     continue
-            
-            rows = update_stock_data(conn, code, target_year, target_quarter, today_str, db_buffer, db_buffer_limit)
+            rows = update_stock_data(conn, code, last_date, target_year, target_quarter, today_str, db_buffer, db_buffer_limit)
             
             if rows == -1:
                 fail_count += 1

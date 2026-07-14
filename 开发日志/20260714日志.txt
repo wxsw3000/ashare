@@ -1,0 +1,1 @@
+>我现在正在做一个基于中国A股市场的量化交易项目。项目上传了github，根目录时ashare。我们现在正在设计和实现数据采集阶段。我们的数据来自于baostock的api（详见：Python API文档.txt），然后将数据写入我在TIDB CLOUD上创建的mysql数据库中（连接参数在：ashare\MagicSTG\dbconfig\.env中，我也在github secrets and variables actions 中设置了对应参数），我的拉取数据的脚本在ashare\MagicSTG\update下，github actions的workflows我配置在了ashare\.github\workflows中，我先请你了解整个项目。

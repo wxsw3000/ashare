@@ -66,35 +66,32 @@ def get_active_stocks_from_db(conn):
         return []
 
 
-def get_kline_latest_date(conn, code):
-    """查询某支股票在 stock_kline_day 表中的最新日期"""
+def get_all_kline_latest_info(conn):
+    """批量查询所有股票在 stock_kline_day 表中的最新日期和对应的收盘价"""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT MAX(date) FROM stock_kline_day WHERE code = %s", (code,))
-            row = cur.fetchone()
-            if row and row[0]:
-                return row[0].strftime('%Y-%m-%d')
-            return None
-    except Exception as e:
-        print(f"  [ERROR] Failed to query latest date for {code}: {e}", flush=True)
-        return None
-
-
-def get_previous_close(conn, code, date):
-    """查询某支股票在指定日期前一天的 close 价格"""
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT close FROM stock_kline_day WHERE code = %s AND date < %s ORDER BY date DESC LIMIT 1",
-                (code, date)
+            sql = """
+            SELECT code, date, close 
+            FROM stock_kline_day 
+            WHERE (code, date) IN (
+                SELECT code, MAX(date) 
+                FROM stock_kline_day 
+                GROUP BY code
             )
-            row = cur.fetchone()
-            if row and row[0]:
-                return float(row[0])
-            return None
+            """
+            cur.execute(sql)
+            rows = cur.fetchall()
+            latest_info = {}
+            for row in rows:
+                code = row[0]
+                latest_date = row[1].strftime('%Y-%m-%d') if row[1] else None
+                close_price = float(row[2]) if row[2] is not None else None
+                latest_info[code] = (latest_date, close_price)
+            print(f"  [DB] Loaded latest K-line dates/closes for {len(latest_info)} stocks", flush=True)
+            return latest_info
     except Exception as e:
-        print(f"  [ERROR] Failed to query previous close for {code} on {date}: {e}", flush=True)
-        return None
+        print(f"  [ERROR] Failed to get latest K-line info: {e}", flush=True)
+        return {}
 
 
 def delete_stock_kline_data(conn, code):
@@ -248,7 +245,7 @@ def parse_kline_row(row, code, update_date, is_dividend):
 # 核心更新逻辑
 # ============================================================
 
-def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit):
+def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit, latest_info):
     """
     更新单支股票的日K线数据
     返回: (total_rows, updated, skipped, failed, db_buffer, dividend_detected)
@@ -256,7 +253,7 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
     total_rows = 0
     dividend_detected = False
     
-    last_date = get_kline_latest_date(conn, code)
+    last_date, prev_close = latest_info.get(code, (None, None))
     
     if last_date and last_date >= target_date:
         return 0, 0, 1, 0, db_buffer, False
@@ -273,39 +270,46 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
     if len(data_list) == 0:
         return 0, 0, 1, 0, db_buffer, False
     
-    dividend_date = None
+    # 检测除权事件：判断第一天的 preclose 是否与本地最大日期的 close 不一致
     if last_date:
         first_row = data_list[0]
-        first_date = first_row[0]
         first_preclose = safe_float(first_row[6])
-        
-        prev_close = get_previous_close(conn, code, first_date)
         if prev_close is not None and first_preclose is not None:
             if abs(first_preclose - prev_close) > 0.001:
                 dividend_detected = True
-                dividend_date = first_date
     
     if dividend_detected:
         delete_stock_kline_data(conn, code)
         conn.commit()
         
+        # 重新获取 IPO 至今的全部行情
         data_list, ok = fetch_stock_kline(code, ipo_date, target_date)
         if not ok or data_list is None:
             return 0, 0, 0, 1, db_buffer, False
         
         if len(data_list) == 0:
             return 0, 0, 1, 0, db_buffer, False
-        
-        is_dividend = 0
-    else:
-        is_dividend = 0
+            
+    # 查找所有的除权日（相邻行的 preclose 与上一行 close 不一致即为除权日）
+    dividend_dates = set()
+    for i in range(1, len(data_list)):
+        prev_close_price = safe_float(data_list[i-1][5])
+        curr_preclose_price = safe_float(data_list[i][6])
+        if prev_close_price is not None and curr_preclose_price is not None:
+            if abs(curr_preclose_price - prev_close_price) > 0.001:
+                dividend_dates.add(data_list[i][0])
+                
+    # 若在增量第一天发生了除权，且第一天本身也是除权日
+    if dividend_detected and last_date:
+        first_row = data_list[0]
+        first_preclose = safe_float(first_row[6])
+        if prev_close is not None and first_preclose is not None and abs(first_preclose - prev_close) > 0.001:
+            dividend_dates.add(first_row[0])
     
     for row in data_list:
         row_date = row[0]
-        if dividend_detected and row_date == dividend_date:
-            db_row = parse_kline_row(row, code, update_date, 1)
-        else:
-            db_row = parse_kline_row(row, code, update_date, 0)
+        is_div = 1 if row_date in dividend_dates else 0
+        db_row = parse_kline_row(row, code, update_date, is_div)
         
         if db_row:
             db_buffer.append(db_row)
@@ -335,15 +339,20 @@ def print_summary(total_stocks, updated_count, skip_count, fail_count,
 
 
 def main():
+    import sys
     beijing_time = get_beijing_time()
     target_date = get_target_date()
     update_date = beijing_time.strftime('%Y-%m-%d')
+    
+    # 优雅超时的最大执行时长设定，这里支持通过环境变量控制，默认设定为 19000 秒 (约 5.28 小时)
+    MAX_RUNTIME = float(os.environ.get('MAX_RUNTIME', 19000))
     
     print("=" * 70)
     print("  [UPDATE] A-share 日K线数据 (前复权 + 除权检测与标记)")
     print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  [数据范围] {START_DATE} 至今")
     print(f"  [目标日期] {target_date}")
+    print(f"  [最大时长] {MAX_RUNTIME}秒")
     print("=" * 70, flush=True)
     
     conn = get_connection_with_retry()
@@ -356,11 +365,15 @@ def main():
             print("  [ERROR] No stocks found in stock_basic")
             return
         
-        print(f"\n[2] Updating {len(all_stocks)} stocks (target: {target_date})...")
+        print("\n[2] Loading all latest K-line date & close info in bulk...")
+        latest_info = get_all_kline_latest_info(conn)
+        
+        print(f"\n[3] Updating {len(all_stocks)} stocks (target: {target_date})...")
         print("-" * 70, flush=True)
         
         db_buffer = []
-        db_buffer_limit = 500
+        # 按用户建议，将写入频率调整为 150 条以优化 IO 并在意外超时发生时保留更多进度
+        db_buffer_limit = 150
         total_rows = 0
         updated_count = 0
         skip_count = 0
@@ -369,14 +382,22 @@ def main():
         
         total_stocks = len(all_stocks)
         start_time = time.time()
+        early_exit = False
         
         for idx, stock in enumerate(all_stocks, 1):
+            # 优雅超时判断
+            elapsed = time.time() - start_time
+            if elapsed > MAX_RUNTIME:
+                print(f"\n  [WARN] Reached maximum runtime limit ({elapsed:.1f}s > {MAX_RUNTIME}s), exiting gracefully...", flush=True)
+                early_exit = True
+                break
+                
             code = stock['code']
             ipo_date = stock['ipo_date']
             
             rows, updated, skipped, failed, db_buffer, dividend_detected = update_stock_data(
                 conn, code, ipo_date, target_date, update_date,
-                db_buffer, db_buffer_limit
+                db_buffer, db_buffer_limit, latest_info
             )
             
             total_rows += rows
@@ -386,14 +407,15 @@ def main():
             if dividend_detected:
                 dividend_count += 1
             
-            # 每10只输出一次进度
+            # 每 10 只输出一次包含 PROGRESS 格式的进度
             if idx % 10 == 0 or idx == 1 or idx == total_stocks:
                 elapsed = time.time() - start_time
-                avg_time = elapsed / idx
+                avg_time = elapsed / idx if idx > 0 else 0
                 remaining = avg_time * (total_stocks - idx)
-                print(f"  [进度] {idx}/{total_stocks} "
-                      f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} "
-                      f"(更新: {updated_count}, 跳过: {skip_count})", flush=True)
+                pct = (idx / total_stocks) * 100
+                print(f"  PROGRESS: {idx}/{total_stocks} ({pct:.1f}%) "
+                      f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
+                      f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
             
             if idx % 5 == 0:
                 random_sleep(0.3, 0.8)
@@ -406,6 +428,10 @@ def main():
         
         print_summary(total_stocks, updated_count, skip_count, fail_count, 
                      total_rows, dividend_count, target_date)
+                     
+        if early_exit:
+            print("  [EXIT] Partially completed due to runtime limits. Exiting with status 2.", flush=True)
+            sys.exit(2)
         
     except Exception as e:
         if conn:
@@ -416,6 +442,7 @@ def main():
         print(f"\nFatal error: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
     finally:
         try:
             bs.logout()

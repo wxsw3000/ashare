@@ -63,18 +63,22 @@ def get_active_stocks_from_db(conn):
         return []
 
 
-def get_kline_latest_date(conn, code):
-    """查询某支股票在 stock_kline_weekly 表中的最新日期"""
+def get_all_kline_latest_dates(conn, table_name="stock_kline_weekly"):
+    """批量查询所有股票在指定表中的最新日期"""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT MAX(date) FROM stock_kline_weekly WHERE code = %s", (code,))
-            row = cur.fetchone()
-            if row and row[0]:
-                return row[0].strftime('%Y-%m-%d')
-            return None
+            sql = f"SELECT code, MAX(date) FROM `{table_name}` GROUP BY code"
+            cur.execute(sql)
+            rows = cur.fetchall()
+            latest_dates = {}
+            for row in rows:
+                if row[0] and row[1]:
+                    latest_dates[row[0]] = row[1].strftime('%Y-%m-%d')
+            print(f"  [DB] Loaded latest dates for {len(latest_dates)} stocks from {table_name}", flush=True)
+            return latest_dates
     except Exception as e:
-        print(f"  [ERROR] Failed to query latest date for {code}: {e}", flush=True)
-        return None
+        print(f"  [ERROR] Failed to get latest dates from {table_name}: {e}", flush=True)
+        return {}
 
 
 def has_dividend_in_range(conn, code, start_date, end_date):
@@ -236,26 +240,25 @@ def get_week_range(week_end_date):
 # 核心更新逻辑
 # ============================================================
 
-def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit):
+def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer, db_buffer_limit, latest_info):
     """更新单支股票的周K线数据"""
     total_rows = 0
     updated = 0
     skipped = 0
     failed = 0
     
-    last_date = get_kline_latest_date(conn, code)
+    last_date = latest_info.get(code)
     
     if last_date and last_date >= target_date:
         return 0, 0, 1, 0, db_buffer
     
     if last_date:
         start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
+        # 除权区间判断从 start_date 开始，直至 target_date
+        has_div = has_dividend_in_range(conn, code, start_date, target_date)
     else:
         start_date = ipo_date
-    
-    week_start, week_end = get_week_range(target_date)
-    check_start = start_date if start_date > week_start else week_start
-    has_div = has_dividend_in_range(conn, code, check_start, target_date)
+        has_div = False
     
     if has_div:
         delete_stock_kline_data(conn, code)
@@ -294,15 +297,19 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
 # ============================================================
 
 def main():
+    import sys
     beijing_time = get_beijing_time()
     target_date = get_target_date()
     update_date = beijing_time.strftime('%Y-%m-%d')
+    
+    MAX_RUNTIME = float(os.environ.get('MAX_RUNTIME', 19000))
     
     print("=" * 70)
     print("  [UPDATE] A-share 周K线数据 (前复权 + 除权检测)")
     print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  [数据范围] {START_DATE} 至今")
     print(f"  [目标日期] {target_date}")
+    print(f"  [最大时长] {MAX_RUNTIME}秒")
     print("=" * 70, flush=True)
     
     conn = get_connection_with_retry()
@@ -314,12 +321,15 @@ def main():
         if not all_stocks:
             print("  [ERROR] No stocks found in stock_basic")
             return
+            
+        print("\n[2] Loading all latest weekly K-line date info in bulk...")
+        latest_info = get_all_kline_latest_dates(conn, "stock_kline_weekly")
         
-        print(f"\n[2] Updating {len(all_stocks)} stocks (target: {target_date})...")
+        print(f"\n[3] Updating {len(all_stocks)} stocks (target: {target_date})...")
         print("-" * 70, flush=True)
         
         db_buffer = []
-        db_buffer_limit = 500
+        db_buffer_limit = 150
         total_rows = 0
         updated_count = 0
         skip_count = 0
@@ -327,14 +337,21 @@ def main():
         
         total_stocks = len(all_stocks)
         start_time = time.time()
+        early_exit = False
         
         for idx, stock in enumerate(all_stocks, 1):
+            elapsed = time.time() - start_time
+            if elapsed > MAX_RUNTIME:
+                print(f"\n  [WARN] Reached maximum runtime limit ({elapsed:.1f}s > {MAX_RUNTIME}s), exiting gracefully...", flush=True)
+                early_exit = True
+                break
+                
             code = stock['code']
             ipo_date = stock['ipo_date']
             
             rows, updated, skipped, failed, db_buffer = update_stock_data(
                 conn, code, ipo_date, target_date, update_date,
-                db_buffer, db_buffer_limit
+                db_buffer, db_buffer_limit, latest_info
             )
             
             total_rows += rows
@@ -344,11 +361,12 @@ def main():
             
             if idx % 10 == 0 or idx == 1 or idx == total_stocks:
                 elapsed = time.time() - start_time
-                avg_time = elapsed / idx
+                avg_time = elapsed / idx if idx > 0 else 0
                 remaining = avg_time * (total_stocks - idx)
-                print(f"  [进度] {idx}/{total_stocks} "
-                      f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} "
-                      f"(更新: {updated_count}, 跳过: {skip_count})", flush=True)
+                pct = (idx / total_stocks) * 100
+                print(f"  PROGRESS: {idx}/{total_stocks} ({pct:.1f}%) "
+                      f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
+                      f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
             
             if idx % 5 == 0:
                 random_sleep(0.3, 0.8)
@@ -370,6 +388,10 @@ def main():
         print(f"  [数据起始]          : {START_DATE}")
         print("=" * 70, flush=True)
         
+        if early_exit:
+            print("  [EXIT] Partially completed due to runtime limits. Exiting with status 2.", flush=True)
+            sys.exit(2)
+            
     except Exception as e:
         if conn:
             try:
@@ -379,6 +401,7 @@ def main():
         print(f"\nFatal error: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
     finally:
         try:
             bs.logout()

@@ -240,15 +240,9 @@ def parse_index_row(row, code, update_date):
 # 核心更新逻辑
 # ============================================================
 
-def update_index_data(conn, code, target_date, update_date, db_buffer, db_buffer_limit):
+def update_index_data(conn, code, last_date, target_date, update_date, db_buffer, db_buffer_limit):
     """更新单只指数的日K线数据"""
     total_rows = 0
-    
-    # 查询本地最新日期
-    with conn.cursor() as cur:
-        cur.execute("SELECT MAX(date) FROM index_kline_day WHERE code = %s", (code,))
-        row = cur.fetchone()
-        last_date = row[0].strftime('%Y-%m-%d') if row and row[0] else None
     
     if last_date and last_date >= target_date:
         return 0
@@ -284,15 +278,19 @@ def update_index_data(conn, code, target_date, update_date, db_buffer, db_buffer
 # ============================================================
 
 def main():
+    import sys
     beijing_time = get_beijing_time()
     target_date = get_target_date()
     update_date = beijing_time.strftime('%Y-%m-%d')
+    
+    MAX_RUNTIME = float(os.environ.get('MAX_RUNTIME', 19000))
     
     print("=" * 70)
     print("  [UPDATE] 指数日线数据增量同步 (index_kline_day)")
     print(f"  [时间] {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  [数据范围] {START_DATE} 至今")
     print(f"  [目标日期] {target_date}")
+    print(f"  [最大时长] {MAX_RUNTIME}秒")
     print("=" * 70, flush=True)
     
     conn = get_connection_with_retry()
@@ -316,7 +314,7 @@ def main():
         print("-" * 70, flush=True)
         
         db_buffer = []
-        db_buffer_limit = 500
+        db_buffer_limit = 150
         total_rows = 0
         updated_count = 0
         skip_count = 0
@@ -324,17 +322,30 @@ def main():
         
         total_indices = len(all_indices)
         start_time = time.time()
+        early_exit = False
         
         for idx, code in enumerate(all_indices, 1):
+            elapsed = time.time() - start_time
+            if elapsed > MAX_RUNTIME:
+                print(f"\n  [WARN] Reached maximum runtime limit ({elapsed:.1f}s > {MAX_RUNTIME}s), exiting gracefully...", flush=True)
+                early_exit = True
+                break
+                
             last_date = index_status.get(code)
             
             if last_date and last_date >= target_date:
                 skip_count += 1
-                if idx % 50 == 0:
-                    print_progress(idx, total_indices, start_time, "[进度] ")
+                if idx % 10 == 0 or idx == 1 or idx == total_indices:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / idx if idx > 0 else 0
+                    remaining = avg_time * (total_indices - idx)
+                    pct = (idx / total_indices) * 100
+                    print(f"  PROGRESS: {idx}/{total_indices} ({pct:.1f}%) "
+                          f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
+                          f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
                 continue
             
-            rows = update_index_data(conn, code, target_date, update_date, db_buffer, db_buffer_limit)
+            rows = update_index_data(conn, code, last_date, target_date, update_date, db_buffer, db_buffer_limit)
             
             if rows == -1:
                 fail_count += 1
@@ -342,11 +353,23 @@ def main():
             elif rows > 0:
                 updated_count += 1
                 total_rows += rows
-                if idx % 5 == 0:
-                    print_progress(idx, total_indices, start_time, "[进度] ")
+                if idx % 10 == 0 or idx == 1 or idx == total_indices:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / idx if idx > 0 else 0
+                    remaining = avg_time * (total_indices - idx)
+                    pct = (idx / total_indices) * 100
+                    print(f"  PROGRESS: {idx}/{total_indices} ({pct:.1f}%) "
+                          f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
+                          f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
             else:
-                if idx % 50 == 0:
-                    print_progress(idx, total_indices, start_time, "[进度] ")
+                if idx % 10 == 0 or idx == 1 or idx == total_indices:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / idx if idx > 0 else 0
+                    remaining = avg_time * (total_indices - idx)
+                    pct = (idx / total_indices) * 100
+                    print(f"  PROGRESS: {idx}/{total_indices} ({pct:.1f}%) "
+                          f"已用: {format_time(elapsed)} 剩余: {format_time(remaining)} | "
+                          f"更新: {updated_count} 跳过: {skip_count} 失败: {fail_count}", flush=True)
             
             if idx % 5 == 0:
                 random_sleep(0.2, 0.5)
@@ -368,6 +391,10 @@ def main():
         print(f"  [数据起始]          : {START_DATE}")
         print("=" * 70, flush=True)
         
+        if early_exit:
+            print("  [EXIT] Partially completed due to runtime limits. Exiting with status 2.", flush=True)
+            sys.exit(2)
+        
     except Exception as e:
         if conn:
             try:
@@ -377,6 +404,7 @@ def main():
         print(f"\nFatal error: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
     finally:
         try:
             bs.logout()

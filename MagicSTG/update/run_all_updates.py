@@ -299,7 +299,7 @@ def run_script_with_progress(script_name, task_date, conn):
     
     if not os.path.exists(script_path):
         mark_script_status(conn, task_date, script_name, 'failed', f"脚本不存在: {script_path}")
-        return False, f"脚本不存在: {script_path}", None
+        return False, f"脚本不存在: {script_path}", None, -1
     
     mark_script_status(conn, task_date, script_name, 'running')
     
@@ -337,18 +337,23 @@ def run_script_with_progress(script_name, task_date, conn):
         
         process.wait()
         
-        if process.returncode == 0:
+        ret_code = process.returncode
+        if ret_code == 0:
             mark_script_status(conn, task_date, script_name, 'success')
-            return True, '\n'.join(output_lines), progress_info
+            return True, '\n'.join(output_lines), progress_info, ret_code
+        elif ret_code == 2:
+            # 优雅超时退出，状态改回 pending 以便重试
+            mark_script_status(conn, task_date, script_name, 'pending', 'Reached runtime limit, partially completed')
+            return True, '\n'.join(output_lines), progress_info, ret_code
         else:
-            error_msg = f"退出码: {process.returncode}"
+            error_msg = f"退出码: {ret_code}"
             mark_script_status(conn, task_date, script_name, 'failed', error_msg)
-            return False, '\n'.join(output_lines), progress_info
+            return False, '\n'.join(output_lines), progress_info, ret_code
             
     except Exception as e:
         error_msg = str(e)
         mark_script_status(conn, task_date, script_name, 'failed', error_msg[:500])
-        return False, str(e), progress_info
+        return False, str(e), progress_info, -1
 
 
 # ============================================================
@@ -494,6 +499,7 @@ def main():
         statuses = build_status_dict(scripts, conn, task_date)
         print_initial_status(task_date, scripts, statuses, start_time)
         
+        early_exit = False
         for script_name in pending:
             statuses[script_name]['status'] = 'running'
             statuses[script_name]['started_at'] = datetime.now()
@@ -503,21 +509,33 @@ def main():
             print(f"\n  ▶ 开始执行: {script_name}")
             print("-" * 50)
             
-            success, output, progress = run_script_with_progress(script_name, task_date, conn)
+            success, output, progress, ret_code = run_script_with_progress(script_name, task_date, conn)
             
-            statuses[script_name]['status'] = 'success' if success else 'failed'
-            statuses[script_name]['completed_at'] = datetime.now()
+            if ret_code == 2:
+                statuses[script_name]['status'] = 'pending'
+                statuses[script_name]['completed_at'] = None
+                early_exit = True
+            else:
+                statuses[script_name]['status'] = 'success' if success else 'failed'
+                statuses[script_name]['completed_at'] = datetime.now()
+                
             if progress and progress['total'] > 0:
                 statuses[script_name]['progress'] = (progress['current'], progress['total'])
             
             print("-" * 50)
-            if success:
+            if ret_code == 2:
+                print(f"  ⚠️ {script_name} 达到时间限制优雅退出，已保存进度")
+            elif success:
                 print(f"  ✅ {script_name} 执行成功")
             else:
                 print(f"  ❌ {script_name} 执行失败")
             
             print_status_summary(scripts, statuses, start_time)
             print()
+            
+            if early_exit:
+                print("  [WARN] 达到运行时间上限，已保存断点，停止后续脚本的执行。")
+                break
         
         summary = get_task_summary(conn, task_date, scripts)
         

@@ -50,30 +50,31 @@ CREATE TABLE `stock_industry` (
 -- 5. 股票日K线数据表（前复权）
 -- ============================================================
 CREATE TABLE `stock_kline_day` (
-    `date` date NOT NULL COMMENT '交易日期',
-    `code` varchar(20) NOT NULL COMMENT '股票代码',
-    `open` decimal(12,4) DEFAULT NULL COMMENT '开盘价',
-    `high` decimal(12,4) DEFAULT NULL COMMENT '最高价',
-    `low` decimal(12,4) DEFAULT NULL COMMENT '最低价',
-    `close` decimal(12,4) DEFAULT NULL COMMENT '收盘价',
-    `preclose` decimal(12,4) DEFAULT NULL COMMENT '前收盘价',
-    `volume` bigint DEFAULT NULL COMMENT '成交量(股)',
-    `amount` decimal(20,4) DEFAULT NULL COMMENT '成交额(元)',
-    `adjustflag` varchar(5) DEFAULT NULL COMMENT '复权状态(1:后复权,2:前复权,3:不复权)',
-    `tradestatus` varchar(5) DEFAULT NULL COMMENT '交易状态(1:正常,0:停牌)',
-    `isST` varchar(5) DEFAULT NULL COMMENT '是否ST股(1:是,0:否)',
-    `turn` decimal(12,6) DEFAULT NULL COMMENT '换手率(%)',
-    `pctChg` decimal(12,6) DEFAULT NULL COMMENT '涨跌幅(%)',
-    `peTTM` decimal(20,6) DEFAULT NULL COMMENT '滚动市盈率',
-    `pbMRQ` decimal(20,6) DEFAULT NULL COMMENT '市净率',
-    `psTTM` decimal(20,6) DEFAULT NULL COMMENT '滚动市销率',
-    `pcfNcfTTM` decimal(20,6) DEFAULT NULL COMMENT '滚动市现率',
-    `update_date` date DEFAULT NULL COMMENT '数据更新日期',
-    `created_at` timestamp DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
-    PRIMARY KEY (`date`, `code`),
-    KEY `idx_code` (`code`),
-    KEY `idx_date` (`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='A股日K线数据表(前复权)';
+  `date` date NOT NULL COMMENT '交易日期',
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '股票代码 (如: sh.600000)',
+  `open` decimal(12, 4) NULL DEFAULT NULL COMMENT '开盘价',
+  `high` decimal(12, 4) NULL DEFAULT NULL COMMENT '最高价',
+  `low` decimal(12, 4) NULL DEFAULT NULL COMMENT '最低价',
+  `close` decimal(12, 4) NULL DEFAULT NULL COMMENT '收盘价',
+  `preclose` decimal(12, 4) NULL DEFAULT NULL COMMENT '前收盘价',
+  `volume` bigint NULL DEFAULT NULL COMMENT '成交量 (股)',
+  `amount` decimal(20, 4) NULL DEFAULT NULL COMMENT '成交额(元)',
+  `adjustflag` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '复权状态 (1:后复权, 2:前复权, 3:不复权)',
+  `tradestatus` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '交易状态 (1:正常, 0:停牌)',
+  `isST` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '是否ST股 (1:是, 0:否)',
+  `update_date` date NULL DEFAULT NULL COMMENT '这条记录的最后更新时间',
+  `turn` decimal(12, 6) NULL DEFAULT NULL COMMENT '换手率 (%)',
+  `pctChg` decimal(12, 6) NULL DEFAULT NULL COMMENT '涨跌幅 (%)',
+  `peTTM` decimal(20, 6) NULL DEFAULT NULL COMMENT '滚动市盈率',
+  `pbMRQ` decimal(20, 6) NULL DEFAULT NULL COMMENT '市净率',
+  `psTTM` decimal(20, 6) NULL DEFAULT NULL COMMENT '滚动市销率',
+  `pcfNcfTTM` decimal(20, 6) NULL DEFAULT NULL COMMENT '滚动市现率',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `is_dividend` tinyint NULL DEFAULT 0 COMMENT '是否除权除息日(1:是,0:否)',
+  PRIMARY KEY (`date`, `code`) USING BTREE,
+  INDEX `idx_code`(`code` ASC) USING BTREE,
+  INDEX `idx_date`(`date` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = 'A股日线K线数据表' ROW_FORMAT = Dynamic;
 
 -- ============================================================
 -- 6. 股票周K线数据表（前复权）
@@ -165,22 +166,21 @@ CREATE TABLE `stock_profit_quarterly` (
 -- 10. 季频营运能力数据
 -- ============================================================
 CREATE TABLE `stock_operation_quarterly` (
-    `code` varchar(20) NOT NULL COMMENT '证券代码',
-    `statDate` date NOT NULL COMMENT '财报统计季度最后一天',
-    `pubDate` date DEFAULT NULL COMMENT '财报发布日期',
-    `NRTurnRatio` decimal(20,6) DEFAULT NULL COMMENT '应收账款周转率(次)',
-    `NRTurnDays` decimal(20,6) DEFAULT NULL COMMENT '应收账款周转天数(天)',
-    `INVTurnRatio` decimal(20,6) DEFAULT NULL COMMENT '存货周转率(次)',
-    `INVTurnDays` decimal(20,6) DEFAULT NULL COMMENT '存货周转天数(天)',
-    `CATurnRatio` decimal(20,6) DEFAULT NULL COMMENT '流动资产周转率(次)',
-    `AssetTurnRatio` decimal(20,6) DEFAULT NULL COMMENT '总资产周转率(次)',
-    `year` int NOT NULL COMMENT '统计年份',
-    `quarter` int NOT NULL COMMENT '统计季度',
-    `update_date` date DEFAULT NULL COMMENT '数据更新日期',
-    `created_at` timestamp DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
-    PRIMARY KEY (`code`, `statDate`, `year`, `quarter`),
-    KEY `idx_code` (`code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='季频营运能力数据';
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '证券代码',
+  `pub_date` date NULL DEFAULT NULL COMMENT '财报发布日期',
+  `stat_date` date NOT NULL COMMENT '财报统计季度最后一天',
+  `NRTurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '应收账款周转率(次)',
+  `NRTurnDays` decimal(20, 6) NULL DEFAULT NULL COMMENT '应收账款周转天数(天)',
+  `INVTurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '存货周转率(次)',
+  `INVTurnDays` decimal(20, 6) NULL DEFAULT NULL COMMENT '存货周转天数(天)',
+  `CATurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '流动资产周转率(次)',
+  `AssetTurnRatio` decimal(20, 6) NULL DEFAULT NULL COMMENT '总资产周转率(次)',
+  `year` int NOT NULL COMMENT '统计年份',
+  `quarter` int NOT NULL COMMENT '统计季度',
+  `update_date` date NULL DEFAULT NULL COMMENT '数据更新日期',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`code`, `stat_date`, `year`, `quarter`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '季频营运能力数据' ROW_FORMAT = Dynamic;
 
 -- ============================================================
 -- 11. 季频成长能力数据
