@@ -72,14 +72,10 @@ def flush_db_buffer(conn, batch_data):
         return conn
     
     sql = build_insert_sql()
-    flat_args = []
-    for record in batch_data:
-        flat_args.extend(record)
-    
     for attempt in range(1, 4):
         try:
             with conn.cursor() as cursor:
-                cursor.execute(sql, flat_args)
+                cursor.executemany(sql, batch_data)
             return conn
         except Exception as e:
             print(f"  [DB ERROR] Bulk insert failed (attempt {attempt}/3): {e}", flush=True)
@@ -216,7 +212,10 @@ def main():
             bs.logout()
         except Exception:
             pass
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

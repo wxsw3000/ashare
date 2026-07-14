@@ -162,4 +162,4 @@ def print_progress(current, total, start_time=None, prefix=""):
         remaining_str = "计算中..."
     
     print(f"  {prefix}PROGRESS: {current}/{total} ({pct:.1f}%) "
-          f"已用: {format_time(elapsed)} 剩余: {remaining_str}")
+          f"已用: {format_time(elapsed)} 剩余: {remaining_str}", flush=True)

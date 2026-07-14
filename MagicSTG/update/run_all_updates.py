@@ -343,7 +343,7 @@ def run_script_with_progress(script_name, task_date, conn):
     
     try:
         process = subprocess.Popen(
-            [sys.executable, script_path],
+            [sys.executable, "-u", script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
