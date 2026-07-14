@@ -332,18 +332,14 @@ def print_status_panel(task_date, mode, scripts, script_statuses, start_time):
         # 状态图标
         if status == 'success':
             icon = "✅"
+            status_text = "已完成"
+            if status_info.get('started_at') and status_info.get('completed_at'):
+                elapsed_text = f"耗时: {format_time((status_info['completed_at'] - status_info['started_at']).total_seconds())}"
+            else:
+                elapsed_text = "耗时: N/A"
         elif status == 'running':
             icon = "🔄"
-        elif status == 'failed':
-            icon = "❌"
-        else:
-            icon = "⏳"
-        
-        # 状态文字
-        if status == 'success':
-            status_text = "已完成"
-            elapsed_text = f"耗时: {format_time((status_info.get('completed_at') - status_info.get('started_at')).total_seconds()) if status_info.get('started_at') and status_info.get('completed_at') else 'N/A'}"
-        elif status == 'running':
+            status_text = "执行中"
             started = status_info.get('started_at')
             if started:
                 run_time = time.time() - started.timestamp()
@@ -351,17 +347,20 @@ def print_status_panel(task_date, mode, scripts, script_statuses, start_time):
             else:
                 elapsed_text = "已用: N/A"
         elif status == 'failed':
+            icon = "❌"
+            status_text = "失败"
             elapsed_text = f"错误: {status_info.get('error_msg', '未知错误')[:30]}"
         else:
+            icon = "⏳"
+            status_text = "等待执行"
             elapsed_text = "等待执行"
         
         # 进度信息
         progress = status_info.get('progress', (0, 0))
+        progress_text = ""
         if progress[1] > 0:
             pct = (progress[0] / progress[1]) * 100
             progress_text = f"进度: {pct:.1f}% ({progress[0]}/{progress[1]})"
-        else:
-            progress_text = ""
         
         # 估算剩余时间（仅对 running 状态）
         if status == 'running' and progress[1] > 0 and progress[0] > 0:
@@ -517,7 +516,6 @@ def main():
             # 输出脚本的详细日志（缩进显示）
             if output:
                 print(f"\n  详细日志 ({script_name}):")
-                # 修复：将 split('\n') 移到 f-string 外面
                 lines = output.split('\n')
                 for line in lines[:20]:
                     if line.strip():
