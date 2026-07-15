@@ -97,6 +97,7 @@ def get_all_kline_latest_info(conn):
 def delete_stock_kline_data(conn, code):
     """删除某支股票的全部日K线数据"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute("DELETE FROM stock_kline_day WHERE code = %s", (code,))
             deleted = cur.rowcount
@@ -153,6 +154,7 @@ def flush_db_buffer(conn, batch_data, table_name="stock_kline_day"):
     
     for attempt in range(1, 4):
         try:
+            conn.ping(reconnect=True)
             with conn.cursor() as cursor:
                 cursor.execute(sql, flat_args)
             return conn
@@ -161,10 +163,9 @@ def flush_db_buffer(conn, batch_data, table_name="stock_kline_day"):
             if attempt < 3:
                 time.sleep(2)
                 try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = get_connection_with_retry()
+                    conn.ping(reconnect=True)
+                except Exception as ex:
+                    print(f"  [DB ERROR] Reconnect failed: {ex}", flush=True)
             else:
                 raise e
     return conn
@@ -178,10 +179,6 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
     """从 Baostock 查询日K线数据（前复权）"""
     for attempt in range(max_retries):
         try:
-            if not ensure_bs_login():
-                time.sleep(2)
-                continue
-            
             rs = bs.query_history_k_data_plus(
                 code,
                 KLINE_FIELDS,
@@ -191,9 +188,10 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
                 adjustflag="2"
             )
             if rs.error_code != '0':
+                print(f"  [Baostock ERROR] Query failed (code={rs.error_code}, msg={rs.error_msg}), attempting re-login...", flush=True)
                 if attempt < max_retries - 1:
-                    time.sleep(random.uniform(2, 4))
-                    ensure_bs_login()
+                    time.sleep(random.uniform(1, 3))
+                    ensure_bs_login(force=True)
                     continue
                 return None, False
             
@@ -205,14 +203,15 @@ def fetch_stock_kline(code, start_date, end_date, max_retries=3):
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
             print(f"  [WARN] Connection error: {e}, reconnecting...", flush=True)
             if attempt < max_retries - 1:
-                ensure_bs_login()
+                ensure_bs_login(force=True)
                 time.sleep(random.uniform(2, 4))
             else:
                 return None, False
         except Exception as e:
             print(f"  [WARN] Fetch error (attempt {attempt+1}/{max_retries}): {e}", flush=True)
             if attempt < max_retries - 1:
-                time.sleep(random.uniform(3, 6))
+                ensure_bs_login(force=True)
+                time.sleep(random.uniform(2, 5))
             else:
                 return None, False
     return None, False
@@ -367,6 +366,7 @@ def main():
         
         print("\n[2] Loading all latest K-line date & close info in bulk...")
         latest_info = get_all_kline_latest_info(conn)
+        conn.commit()  # Release initial read transaction snapshot lock
         
         print(f"\n[3] Updating {len(all_stocks)} stocks (target: {target_date})...")
         print("-" * 70, flush=True)

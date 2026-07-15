@@ -7,8 +7,16 @@
 
 import random
 import time
+import sys
 from datetime import datetime, timedelta
 import pandas as pd
+
+# 避免 Windows 控制台下打印 Emoji/中文 出现 GBK 编码错误
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -100,17 +108,28 @@ def random_sleep(min_sec=0.3, max_sec=0.8):
 # Baostock 相关工具
 # ============================================================
 
-def ensure_bs_login():
+_LAST_LOGIN_CHECK_TIME = 0
+
+def ensure_bs_login(force=False):
     """确保 Baostock 已登录"""
+    global _LAST_LOGIN_CHECK_TIME
     import baostock as bs
+    import time
+    
+    current_time = time.time()
+    # 如果在最近300秒内已成功检查，且不强制校验，则直接返回在线
+    if not force and (current_time - _LAST_LOGIN_CHECK_TIME < 300):
+        return True
+        
     try:
-        rs = bs.query_stock_basic()
+        rs = bs.query_stock_basic(code="sh.600000")
         if rs.error_code == '0':
+            _LAST_LOGIN_CHECK_TIME = current_time
             return True
     except Exception:
         pass
     
-    print("[Baostock] Session expired or not logged in, re-logging...")
+    print("[Baostock] Session expired or not logged in, re-logging...", flush=True)
     try:
         bs.logout()
     except Exception:
@@ -118,9 +137,10 @@ def ensure_bs_login():
     time.sleep(1)
     lg = bs.login()
     if lg.error_code != '0':
-        print(f"[Baostock] Login failed: {lg.error_msg}")
+        print(f"[Baostock] Login failed: {lg.error_msg}", flush=True)
         return False
-    print("[Baostock] Login successful")
+    print("[Baostock] Login successful", flush=True)
+    _LAST_LOGIN_CHECK_TIME = time.time()
     return True
 
 

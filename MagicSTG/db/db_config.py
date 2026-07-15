@@ -19,6 +19,7 @@ try:
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ENV_PATHS = [
         os.path.join(PROJECT_ROOT, '.env'),
+        os.path.join(PROJECT_ROOT, 'dbconfig', '.env'),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env'),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'update', '.env'),
     ]
@@ -82,8 +83,8 @@ def get_connection():
         "database": DB_NAME,
         "charset": "utf8mb4",
         "autocommit": False,
-        "connect_timeout": 15,
-        "read_timeout": 60,
+        "connect_timeout": 30,
+        "read_timeout": 300,
     }
     
     if ssl_ca and os.path.exists(ssl_ca):

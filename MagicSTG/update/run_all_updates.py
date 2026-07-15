@@ -404,12 +404,13 @@ def run_script_with_progress(script_name, task_date):
             env=os.environ.copy()
         )
         
+        script_tag = script_name.replace(".py", "")
         for line in process.stdout:
             line = line.strip()
             output_lines.append(line)
             
             if line:
-                print(f"  {line}", flush=True)
+                print(f"[{script_tag}] {line}", flush=True)
             
             if 'PROGRESS:' in line:
                 match = re.search(r'PROGRESS:\s*(\d+)\s*/\s*(\d+)', line)

@@ -143,6 +143,7 @@ def flush_db_buffer(conn, batch_data):
     
     for attempt in range(1, 4):
         try:
+            conn.ping(reconnect=True)
             with conn.cursor() as cursor:
                 cursor.execute(sql, flat_args)
             return conn
@@ -151,10 +152,9 @@ def flush_db_buffer(conn, batch_data):
             if attempt < 3:
                 time.sleep(2)
                 try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = get_connection_with_retry()
+                    conn.ping(reconnect=True)
+                except Exception as ex:
+                    print(f"  [DB ERROR] Reconnect failed: {ex}", flush=True)
             else:
                 raise e
     return conn
@@ -168,15 +168,12 @@ def fetch_operation_data(code, year, quarter, max_retries=3):
     """从 Baostock 查询营运能力数据"""
     for attempt in range(max_retries):
         try:
-            if not ensure_bs_login():
-                time.sleep(2)
-                continue
-            
             rs = bs.query_operation_data(code=code, year=year, quarter=quarter)
             if rs.error_code != '0':
+                print(f"  [Baostock ERROR] Query failed (code={rs.error_code}, msg={rs.error_msg}), attempting re-login...", flush=True)
                 if attempt < max_retries - 1:
                     time.sleep(random.uniform(1, 3))
-                    ensure_bs_login()
+                    ensure_bs_login(force=True)
                     continue
                 return None, False
             
@@ -188,13 +185,14 @@ def fetch_operation_data(code, year, quarter, max_retries=3):
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
             print(f"  [WARN] Connection error: {e}, reconnecting...", flush=True)
             if attempt < max_retries - 1:
-                ensure_bs_login()
+                ensure_bs_login(force=True)
                 time.sleep(random.uniform(2, 4))
             else:
                 return None, False
         except Exception as e:
             print(f"  [WARN] Fetch error (attempt {attempt+1}/{max_retries}): {e}", flush=True)
             if attempt < max_retries - 1:
+                ensure_bs_login(force=True)
                 time.sleep(random.uniform(2, 5))
             else:
                 return None, False
@@ -332,6 +330,7 @@ def main():
         operation_status = get_operation_latest_dates(conn, all_stocks)
         with_data_count = len([v for v in operation_status.values() if v is not None])
         print(f"  [INFO] {with_data_count} stocks already have data")
+        conn.commit()  # Release initial read transaction snapshot lock
         
         target_year, target_quarter = get_target_quarter()
         print(f"\n[3] Target quarter: {target_year} Q{target_quarter}")
