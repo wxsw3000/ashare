@@ -31,6 +31,7 @@ from .utils import (
     get_target_date,
     # 进度输出
     print_progress,
+    get_progress_prefix,
 )
 
 # 导出所有公共接口
@@ -57,4 +58,5 @@ __all__ = [
     'get_target_date',
     # 进度输出
     'print_progress',
+    'get_progress_prefix',
 ]

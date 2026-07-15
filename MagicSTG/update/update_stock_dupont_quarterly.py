@@ -28,6 +28,7 @@ from db import (
     random_sleep,
     format_time,
     print_progress,
+    get_progress_prefix,
 )
 
 # ============================================================
@@ -347,6 +348,7 @@ def main():
             last_date = dupont_status.get(code)
             
             stock_start_time = time.time()
+            prefix = get_progress_prefix(idx, total_stocks, start_time)
             if last_date:
                 last_dt = pd.to_datetime(last_date)
                 last_year = last_dt.year
@@ -354,7 +356,7 @@ def main():
                 if last_year > target_year or (last_year == target_year and last_quarter >= target_quarter):
                     skip_count += 1
                     stock_elapsed = time.time() - stock_start_time
-                    print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    print(f"  {prefix} {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
                     
                     if idx % 100 == 0 or idx == 1 or idx == total_stocks:
                         print_progress(idx, total_stocks, start_time, "[进度] ")
@@ -365,7 +367,7 @@ def main():
             
             if rows == -1:
                 fail_count += 1
-                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif rows > 0:
                 updated_count += 1
                 total_rows += rows
@@ -381,7 +383,7 @@ def main():
                 else:
                     start_year = START_YEAR
                     start_quarter = 1
-                print(f"  {code} | 写入 {rows} 条数据 | {start_year}Q{start_quarter} ~ {target_year}Q{target_quarter} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 写入 {rows} 条数据 | {start_year}Q{start_quarter} ~ {target_year}Q{target_quarter} | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
                 if last_date:
                     last_dt = pd.to_datetime(last_date)
@@ -395,7 +397,7 @@ def main():
                 else:
                     start_year = START_YEAR
                     start_quarter = 1
-                print(f"  {code} | 无新数据 | {start_year}Q{start_quarter} ~ {target_year}Q{target_quarter} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 无新数据 | {start_year}Q{start_quarter} ~ {target_year}Q{target_quarter} | 耗时: {stock_elapsed:.3f}s", flush=True)
             
             if idx % 100 == 0 or idx == 1 or idx == total_stocks:
                 print_progress(idx, total_stocks, start_time, "[进度] ")

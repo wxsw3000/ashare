@@ -29,6 +29,7 @@ from db import (
     get_target_date,
     format_time,
     print_progress,
+    get_progress_prefix,
 )
 
 # ============================================================
@@ -351,6 +352,7 @@ def main():
             ipo_date = stock['ipo_date']
             
             stock_start_time = time.time()
+            prefix = get_progress_prefix(idx, total_stocks, start_time)
             rows, updated, skipped, failed, db_buffer, has_div = update_stock_data(
                 conn, code, ipo_date, target_date, update_date,
                 db_buffer, db_buffer_limit, latest_info
@@ -364,16 +366,16 @@ def main():
             
             # 针对每一只股票输出处理情况
             if skipped > 0:
-                print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif failed > 0:
-                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
                 last_date = latest_info.get(code)
                 start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else ipo_date
                 if has_div:
-                    print(f"  {code} | 写入 {rows} 条数据 | {ipo_date} ~ {target_date} (检测到除权，全量重刷) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    print(f"  {prefix} {code} | 写入 {rows} 条数据 | {ipo_date} ~ {target_date} (检测到除权，全量重刷) | 耗时: {stock_elapsed:.3f}s", flush=True)
                 else:
-                    print(f"  {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    print(f"  {prefix} {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
             
             # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
             if idx % 100 == 0 or idx == 1 or idx == total_stocks:

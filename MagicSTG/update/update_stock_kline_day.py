@@ -29,6 +29,7 @@ from db import (
     get_target_date,
     format_time,
     print_progress,
+    get_progress_prefix,
 )
 
 # ============================================================
@@ -410,7 +411,7 @@ def main():
                 dividend_count += 1
             
             # 针对每一只股票输出处理情况
-            prefix = f"【{idx}/{total_stocks}】"
+            prefix = get_progress_prefix(idx, total_stocks, start_time)
             if skipped > 0:
                 print(f"  {prefix} {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif failed > 0:

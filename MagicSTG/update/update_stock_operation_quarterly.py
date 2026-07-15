@@ -28,6 +28,7 @@ from db import (
     random_sleep,
     format_time,
     print_progress,
+    get_progress_prefix,
 )
 
 # ============================================================
@@ -350,7 +351,7 @@ def main():
             last_date = operation_status.get(code)
             
             stock_start_time = time.time()
-            prefix = f"【{idx}/{total_stocks}】"
+            prefix = get_progress_prefix(idx, total_stocks, start_time)
             if last_date:
                 last_dt = pd.to_datetime(last_date)
                 last_year = last_dt.year

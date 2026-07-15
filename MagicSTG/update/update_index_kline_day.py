@@ -29,6 +29,7 @@ from db import (
     get_target_date,
     format_time,
     print_progress,
+    get_progress_prefix,
 )
 
 # ============================================================
@@ -334,10 +335,11 @@ def main():
             last_date = index_status.get(code)
             
             stock_start_time = time.time()
+            prefix = get_progress_prefix(idx, total_indices, start_time)
             if last_date and last_date >= target_date:
                 skip_count += 1
                 stock_elapsed = time.time() - stock_start_time
-                print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
                 
                 # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
                 if idx % 100 == 0 or idx == 1 or idx == total_indices:
@@ -355,15 +357,15 @@ def main():
             
             if rows == -1:
                 fail_count += 1
-                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif rows > 0:
                 updated_count += 1
                 total_rows += rows
                 start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else START_DATE
-                print(f"  {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
                 start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else START_DATE
-                print(f"  {code} | 无新数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 无新数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
                 
             # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
             if idx % 100 == 0 or idx == 1 or idx == total_indices:

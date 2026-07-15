@@ -183,3 +183,20 @@ def print_progress(current, total, start_time=None, prefix=""):
     
     print(f"  {prefix}PROGRESS: {current}/{total} ({pct:.1f}%) "
           f"已用: {format_time(elapsed)} 剩余: {remaining_str}", flush=True)
+
+
+def get_progress_prefix(idx, total, start_time):
+    """
+    生成格式化进度前缀，包含当前进度、总数、已用时间、预估剩余时间
+    格式: 【idx/total, 已用: XX, 剩余: YY】
+    """
+    elapsed = time.time() - start_time
+    if idx > 0 and total > 0:
+        avg_time = elapsed / idx
+        remaining = avg_time * (total - idx)
+        remaining_str = format_time(remaining)
+    else:
+        remaining_str = "计算中"
+    
+    elapsed_str = format_time(elapsed)
+    return f"【{idx}/{total}, 已用:{elapsed_str}, 剩余:{remaining_str}】"
