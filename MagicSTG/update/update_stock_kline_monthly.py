@@ -99,10 +99,11 @@ def has_dividend_in_range(conn, code, start_date, end_date):
 def delete_stock_kline_data(conn, code):
     """删除某支股票的全部月K线数据"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute("DELETE FROM stock_kline_monthly WHERE code = %s", (code,))
             deleted = cur.rowcount
-            print(f"  [DELETE] 删除了 {deleted} 条历史月K线数据", flush=True)
+            print(f"  [DELETE] 删除了 {code} 的 {deleted} 条历史月K线数据", flush=True)
             return deleted
     except Exception as e:
         print(f"  [ERROR] Failed to delete data for {code}: {e}", flush=True)

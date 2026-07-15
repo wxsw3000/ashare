@@ -101,7 +101,7 @@ def delete_stock_kline_data(conn, code):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM stock_kline_day WHERE code = %s", (code,))
             deleted = cur.rowcount
-            print(f"  [DELETE] 删除了 {deleted} 条历史数据", flush=True)
+            print(f"  [DELETE] 删除了 {code} 的 {deleted} 条历史数据", flush=True)
             return deleted
     except Exception as e:
         print(f"  [ERROR] Failed to delete data for {code}: {e}", flush=True)
@@ -410,17 +410,18 @@ def main():
                 dividend_count += 1
             
             # 针对每一只股票输出处理情况
+            prefix = f"【{idx}/{total_stocks}】"
             if skipped > 0:
-                print(f"  {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 跳过 (已是最新) | 耗时: {stock_elapsed:.3f}s", flush=True)
             elif failed > 0:
-                print(f"  {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
+                print(f"  {prefix} {code} | 失败 | 耗时: {stock_elapsed:.3f}s", flush=True)
             else:
                 last_date, _ = latest_info.get(code, (None, None))
                 start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d') if last_date else ipo_date
                 if dividend_detected:
-                    print(f"  {code} | 写入 {rows} 条数据 | {ipo_date} ~ {target_date} (检测到除权，全量重刷) | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    print(f"  {prefix} {code} | 写入 {rows} 条数据 | {ipo_date} ~ {target_date} (检测到除权，全量重刷) | 耗时: {stock_elapsed:.3f}s", flush=True)
                 else:
-                    print(f"  {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
+                    print(f"  {prefix} {code} | 写入 {rows} 条数据 | {start_date} ~ {target_date} | 耗时: {stock_elapsed:.3f}s", flush=True)
             
             # 每 100 只输出一次包含 PROGRESS 格式的进度（供主控解析并维持简洁）
             if idx % 100 == 0 or idx == 1 or idx == total_stocks:
