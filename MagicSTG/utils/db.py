@@ -95,6 +95,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
             FROM stock_kline_day
             WHERE date >= %s
+            ORDER BY date ASC
             """
             params = [min_date_str]
             df = pd.read_sql(query, conn, params=params)
@@ -119,6 +120,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             if max_date_str is not None:
                 query += " AND date <= %s"
                 params.append(max_date_str)
+            query += " ORDER BY date ASC"
                 
             df = pd.read_sql(query, conn, params=params)
             
@@ -147,6 +149,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 if max_date_str is not None:
                     query += " AND date <= %s"
                     params.append(max_date_str)
+                query += " ORDER BY date ASC"
                 
                 # Try executing the query, recreate connection if lost
                 try:
