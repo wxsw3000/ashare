@@ -261,5 +261,38 @@ def load_roe_data_db():
         conn.close()
 
 
+def get_last_check_date_db(strategy_name: str) -> Optional[pd.Timestamp]:
+    """从数据库读取特定策略的最后检查检查点"""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT last_check_date FROM strategy_checkpoints WHERE strategy = %s", (strategy_name,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return pd.Timestamp(row[0])
+        return None
+    except Exception as e:
+        print(f"  [DB] ⚠️ 读取策略 {strategy_name} 检查点失败: {e}", flush=True)
+        return None
+    finally:
+        conn.close()
+
+def save_checkpoint_db(strategy_name: str, date: pd.Timestamp):
+    """保存策略的最后检查检查点到数据库"""
+    conn = get_connection()
+    try:
+        date_str = date.strftime('%Y-%m-%d')
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO strategy_checkpoints (strategy, last_check_date)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE last_check_date = %s
+            """, (strategy_name, date_str, date_str))
+        print(f"  [DB] ✅ 已成功将策略 {strategy_name} 的检查点保存至数据库: {date_str}", flush=True)
+    except Exception as e:
+        print(f"  [DB] ❌ 写入策略 {strategy_name} 检查点失败: {e}", flush=True)
+    finally:
+        conn.close()
+
 # ========== 兼容 db_writer.py 的导入 ==========
 get_db_connection = get_connection

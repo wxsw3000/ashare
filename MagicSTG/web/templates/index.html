@@ -176,8 +176,6 @@
             font-size: 0.8rem;
         }
         .date-selector select {
-            flex: 1;
-            min-width: 120px;
             background: rgba(26, 29, 54, 0.8);
             border: 1px solid rgba(255,255,255,0.1);
             color: #f0f3fa;
@@ -747,13 +745,25 @@
                 </button>
             </div>
 
-            <!-- Date Selector -->
+            <!-- Date Selector & Event Filter Selector -->
             <div class="date-selector">
-                <label for="dateSelect"><i class="fa-regular fa-calendar"></i> 日期</label>
-                <select id="dateSelect" onchange="loadRecommendations()">
-                    <option value="">加载中...</option>
-                </select>
-                <span class="update-time" id="updateTime2"></span>
+                <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; width: 100%;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <label for="dateSelect"><i class="fa-regular fa-calendar"></i> 日期</label>
+                        <select id="dateSelect" onchange="loadRecommendations()">
+                            <option value="">加载中...</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <label for="eventSelect"><i class="fa-solid fa-filter"></i> 信号事件类型</label>
+                        <select id="eventSelect" onchange="filterSignals()" style="background: rgba(26, 29, 54, 0.8); border: 1px solid rgba(255,255,255,0.1); color: #f0f3fa; padding: 0.4rem 0.8rem; border-radius: 8px; font-size: 0.85rem; cursor: pointer; outline: none;">
+                            <option value="ALL">全部信号</option>
+                            <option value="BUY">仅看买入 (BUY)</option>
+                            <option value="SELL">仅看卖出 (SELL)</option>
+                        </select>
+                    </div>
+                    <span class="update-time" id="updateTime2" style="margin-left: auto;"></span>
+                </div>
             </div>
 
             <!-- Stats -->
@@ -1005,6 +1015,7 @@
         let currentStrategy = 'price';
         let currentDate = null;
         let equityChartInstance = null;
+        let currentRecommendations = []; // 保存当前日期/策略下的全部推荐，用于前端本地即时过滤信号
 
         // 主 Tab 切换
         function switchMainTab(tab) {
@@ -1030,6 +1041,45 @@
             loadRecommendations();
         }
 
+        // 渲染并应用信号类型过滤（高扩展性）
+        function filterSignals() {
+            const eventFilter = document.getElementById('eventSelect').value;
+            const signalList = document.getElementById('signalList');
+            
+            let filtered = currentRecommendations;
+            if (eventFilter !== 'ALL') {
+                filtered = currentRecommendations.filter(r => r.action === eventFilter);
+            }
+            
+            // 更新统计 (不论过滤与否，显示该日该策略的总量供对比)
+            const buys = currentRecommendations.filter(d => d.action === 'BUY');
+            const sells = currentRecommendations.filter(d => d.action === 'SELL');
+            document.getElementById('buyCount').textContent = buys.length;
+            document.getElementById('sellCount').textContent = sells.length;
+            document.getElementById('totalCount').textContent = currentRecommendations.length;
+
+            if (filtered.length === 0) {
+                signalList.innerHTML = `<div class="empty-state"><i class="fa-regular fa-check-circle"></i><p>无匹配的交易信号</p></div>`;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(item => {
+                const actionClass = item.action === 'BUY' ? 'buy' : 'sell';
+                const actionLabel = item.action === 'BUY' ? '买入' : '卖出';
+                const priceStr = item.price ? `¥${item.price.toFixed(2)}` : '--';
+                html += `
+                    <div class="signal-item">
+                        <span class="code">${item.code}</span>
+                        <span class="action-badge ${actionClass}">${actionLabel}</span>
+                        <span class="price">${priceStr}</span>
+                        <span class="reason">${item.reason || '-'}</span>
+                    </div>
+                `;
+            });
+            signalList.innerHTML = html;
+        }
+
         // 加载推荐数据
         async function loadRecommendations() {
             const signalList = document.getElementById('signalList');
@@ -1046,6 +1096,7 @@
                 }
 
                 const { data, date, available_dates } = result;
+                currentRecommendations = data; // 保存至全局变量
 
                 // 更新日期选择器
                 const dateSelect = document.getElementById('dateSelect');
@@ -1069,34 +1120,8 @@
                 document.getElementById('updateTime').textContent = timeStr;
                 document.getElementById('updateTime2').textContent = `更新 ${timeStr}`;
 
-                // 更新统计
-                const buys = data.filter(d => d.action === 'BUY');
-                const sells = data.filter(d => d.action === 'SELL');
-                document.getElementById('buyCount').textContent = buys.length;
-                document.getElementById('sellCount').textContent = sells.length;
-                document.getElementById('totalCount').textContent = data.length;
-
-                // 渲染信号列表
-                if (data.length === 0) {
-                    signalList.innerHTML = `<div class="empty-state"><i class="fa-regular fa-check-circle"></i><p>该日无交易信号</p></div>`;
-                    return;
-                }
-
-                let html = '';
-                data.forEach(item => {
-                    const actionClass = item.action === 'BUY' ? 'buy' : 'sell';
-                    const actionLabel = item.action === 'BUY' ? '买入' : '卖出';
-                    const priceStr = item.price ? `¥${item.price.toFixed(2)}` : '--';
-                    html += `
-                        <div class="signal-item">
-                            <span class="code">${item.code}</span>
-                            <span class="action-badge ${actionClass}">${actionLabel}</span>
-                            <span class="price">${priceStr}</span>
-                            <span class="reason">${item.reason || '-'}</span>
-                        </div>
-                    `;
-                });
-                signalList.innerHTML = html;
+                // 执行渲染和过滤展示
+                filterSignals();
 
             } catch (error) {
                 console.error('加载失败:', error);
@@ -1123,35 +1148,11 @@
                 }
 
                 const { data } = result;
+                currentRecommendations = data;
                 document.getElementById('signalDateBadge').textContent = date;
 
-                // 更新统计
-                const buys = data.filter(d => d.action === 'BUY');
-                const sells = data.filter(d => d.action === 'SELL');
-                document.getElementById('buyCount').textContent = buys.length;
-                document.getElementById('sellCount').textContent = sells.length;
-                document.getElementById('totalCount').textContent = data.length;
-
-                if (data.length === 0) {
-                    signalList.innerHTML = `<div class="empty-state"><i class="fa-regular fa-check-circle"></i><p>该日无交易信号</p></div>`;
-                    return;
-                }
-
-                let html = '';
-                data.forEach(item => {
-                    const actionClass = item.action === 'BUY' ? 'buy' : 'sell';
-                    const actionLabel = item.action === 'BUY' ? '买入' : '卖出';
-                    const priceStr = item.price ? `¥${item.price.toFixed(2)}` : '--';
-                    html += `
-                        <div class="signal-item">
-                            <span class="code">${item.code}</span>
-                            <span class="action-badge ${actionClass}">${actionLabel}</span>
-                            <span class="price">${priceStr}</span>
-                            <span class="reason">${item.reason || '-'}</span>
-                        </div>
-                    `;
-                });
-                signalList.innerHTML = html;
+                // 重新渲染和过滤显示
+                filterSignals();
 
             } catch (error) {
                 signalList.innerHTML = `<div class="empty-state"><i class="fa-regular fa-circle-exclamation"></i><p>加载失败</p></div>`;

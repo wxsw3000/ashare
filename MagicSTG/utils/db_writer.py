@@ -58,7 +58,7 @@ def save_recommendations(strategy_name, buy_signals, sell_signals, signal_date):
                     reason = f"买入信号 ({extra_info})"
                 
                 cursor.execute("""
-                    INSERT INTO recommendations 
+                    INSERT IGNORE INTO recommendations 
                     (strategy, stock_code, action, price, reason, signal_date)
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """, (strategy_name, code, 'BUY', price, reason, signal_date))
@@ -71,7 +71,7 @@ def save_recommendations(strategy_name, buy_signals, sell_signals, signal_date):
                 price = float(item[1])
                 
                 cursor.execute("""
-                    INSERT INTO recommendations 
+                    INSERT IGNORE INTO recommendations 
                     (strategy, stock_code, action, price, reason, signal_date)
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """, (strategy_name, code, 'SELL', price, '卖出信号', signal_date))

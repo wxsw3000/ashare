@@ -36,18 +36,13 @@ def load_all_data(data_dir: str):
 
 
 def get_last_check_date(strategy_name: str):
-    checkpoint_file = os.path.join(PROJECT_ROOT, f'last_check_{strategy_name}.json')
-    if os.path.exists(checkpoint_file):
-        with open(checkpoint_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return pd.Timestamp(data['last_date'])
-    return None
+    from utils.db import get_last_check_date_db
+    return get_last_check_date_db(strategy_name)
 
 
 def save_checkpoint(strategy_name: str, date: pd.Timestamp):
-    checkpoint_file = os.path.join(PROJECT_ROOT, f'last_check_{strategy_name}.json')
-    with open(checkpoint_file, 'w', encoding='utf-8') as f:
-        json.dump({'last_date': date.strftime('%Y-%m-%d')}, f)
+    from utils.db import save_checkpoint_db
+    save_checkpoint_db(strategy_name, date)
 
 
 def main():
