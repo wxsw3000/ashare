@@ -377,6 +377,8 @@ def run_dynamic_backtest():
         from decisions.maker import DecisionMaker
         
         class InMemoryPositionManager(PositionManager):
+            def _load(self):
+                pass
             def save(self):
                 pass
                 
