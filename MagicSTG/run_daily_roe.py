@@ -153,6 +153,46 @@ def main():
     # 执行交易决策
     decision_maker.execute_decisions(decisions, confirm=not config['mode'].get('simulation', True))
 
+    # ========== 新增：保存数据到数据库 ==========
+    print("\n[6] 保存数据到数据库...")
+    try:
+        from utils.db_writer import save_recommendations, save_positions
+        
+        # 收集买入信号
+        buy_signals = []
+        for date, buys in all_buy_signals.items():
+            for item in buys:
+                # 格式: (code, price, roe)
+                if len(item) >= 2:
+                    buy_signals.append(item)
+        
+        # 收集卖出信号
+        sell_signals = []
+        for date, sells in all_sell_signals.items():
+            for item in sells:
+                if len(item) >= 2:
+                    sell_signals.append(item)
+        
+        # 保存推荐信号
+        if buy_signals or sell_signals:
+            save_recommendations('roe', buy_signals, sell_signals, latest_date)
+        else:
+            print(f"  [DB] 📭 没有新的推荐信号需要保存")
+        
+        # 保存持仓
+        positions = position_manager.get_positions()
+        if positions:
+            save_positions('roe', positions)
+        else:
+            print(f"  [DB] 📭 当前策略无持仓")
+            
+    except ImportError as e:
+        print(f"  [DB] ⚠️ db_writer 模块未找到: {e}")
+        print(f"  [DB] 数据未写入数据库，请检查 utils/db_writer.py 是否存在")
+    except Exception as e:
+        print(f"  [DB] ❌ 保存数据到数据库失败: {e}")
+    # ========== 数据库保存结束 ==========
+
     save_checkpoint(STRATEGY_NAME, latest_date)
     print(f"\n✅ 已保存检查点: {latest_date.strftime('%Y-%m-%d')}")
 
