@@ -45,10 +45,10 @@ START_DATE = "2020-01-01"
 # ============================================================
 
 def get_all_indices_from_db(conn):
-    """从 stock_basic 获取所有指数（type='2' 且 status='1'）"""
+    """从 stock_basic 获取所有指数（type='2' 且 status='1'）并按代码排序"""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT code FROM stock_basic WHERE type = '2' AND status = '1'")
+            cur.execute("SELECT code FROM stock_basic WHERE type = '2' AND status = '1' ORDER BY code ASC")
             rows = cur.fetchall()
             indices = [row[0] for row in rows]
             print(f"  [DB] Found {len(indices)} indices from stock_basic", flush=True)
@@ -269,7 +269,7 @@ def update_index_data(conn, code, last_date, target_date, update_date, db_buffer
         if len(db_buffer) >= db_buffer_limit:
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
-            db_buffer = []
+            db_buffer.clear()
     
     return total_rows
 

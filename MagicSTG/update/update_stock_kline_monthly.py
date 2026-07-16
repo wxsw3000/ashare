@@ -45,10 +45,10 @@ START_DATE = "2020-01-01"
 # ============================================================
 
 def get_active_stocks_from_db(conn):
-    """从 stock_basic 获取上市股票列表（type='1' 且 status='1'）"""
+    """从 stock_basic 获取上市股票列表（type='1' 且 status='1'）并按代码排序"""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT code, ipo_date FROM stock_basic WHERE type = '1' AND status = '1'")
+            cur.execute("SELECT code, ipo_date FROM stock_basic WHERE type = '1' AND status = '1' ORDER BY code ASC")
             rows = cur.fetchall()
             stocks = []
             for row in rows:

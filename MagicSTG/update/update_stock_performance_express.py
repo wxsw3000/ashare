@@ -51,7 +51,7 @@ START_DATE = "2020-01-01"
 def get_active_stocks_from_db(conn):
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT code FROM stock_basic WHERE type = '1' AND status = '1'")
+            cur.execute("SELECT code FROM stock_basic WHERE type = '1' AND status = '1' ORDER BY code ASC")
             rows = cur.fetchall()
             stocks = [row[0] for row in rows]
             print(f"  [DB] Found {len(stocks)} active stocks from stock_basic", flush=True)
@@ -268,7 +268,7 @@ def update_stock_data(conn, code, last_date, start_date, end_date, update_date, 
         if len(db_buffer) >= db_buffer_limit:
             conn = flush_db_buffer(conn, db_buffer)
             conn.commit()
-            db_buffer = []
+            db_buffer.clear()
     
     return total_rows
 
