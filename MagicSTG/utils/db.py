@@ -77,10 +77,10 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             # Daily check mode: load the latest limit_days of trading days
             print(f"  [DB] Determining the latest {limit_days} trading dates from DB...", flush=True)
             with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT date FROM stock_kline ORDER BY date DESC LIMIT %s", (limit_days,))
+                cur.execute("SELECT DISTINCT date FROM stock_kline_day ORDER BY date DESC LIMIT %s", (limit_days,))
                 dates = [r[0] for r in cur.fetchall()]
                 if not dates:
-                    print("  [ERROR] No dates found in stock_kline!", flush=True)
+                    print("  [ERROR] No dates found in stock_kline_day!", flush=True)
                     return {}
                 min_date_str = min(dates).strftime('%Y-%m-%d')
             print(f"  [DB] Fetching latest {limit_days} trading days of K-line data since {min_date_str}...", flush=True)
@@ -92,8 +92,8 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         if not limit_to_csi300 and start_date is None:
             print("  [DB] Performing a single range query for the entire A-share market (5135 stocks)...", flush=True)
             query = """
-            SELECT stock_code, date, open, close, high, low, volume, pe_ttm
-            FROM stock_kline
+            SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+            FROM stock_kline_day
             WHERE date >= %s
             """
             params = [min_date_str]
@@ -102,18 +102,18 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         # Scenario 2: CSI 300 Mode (limit_to_csi300=True)
         # We fetch the codes from stock_roe_history and execute a single IN query (very fast).
         elif limit_to_csi300:
-            print("  [DB] Retrieving CSI 300 stock codes from stock_roe_history...", flush=True)
+            print("  [DB] Retrieving stock codes from stock_profit_quarterly...", flush=True)
             with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT code FROM stock_roe_history")
+                cur.execute("SELECT DISTINCT code FROM stock_profit_quarterly ORDER BY code ASC LIMIT 300")
                 raw_csi_codes = [r[0] for r in cur.fetchall()]
-            db_codes = [c.replace('.', '_') for c in raw_csi_codes]
-            print(f"  [DB] Target universe limited to {len(db_codes)} stocks in stock_roe_history.", flush=True)
+            db_codes = raw_csi_codes
+            print(f"  [DB] Target universe limited to {len(db_codes)} stocks from stock_profit_quarterly.", flush=True)
             
             format_strings = ','.join(['%s'] * len(db_codes))
             query = f"""
-            SELECT stock_code, date, open, close, high, low, volume, pe_ttm
-            FROM stock_kline
-            WHERE stock_code IN ({format_strings}) AND date >= %s
+            SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+            FROM stock_kline_day
+            WHERE code IN ({format_strings}) AND date >= %s
             """
             params = db_codes + [min_date_str]
             if max_date_str is not None:
@@ -125,9 +125,9 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         # Scenario 3: Backtest mode for all stocks (limit_to_csi300=False, start_date is not None)
         # We query in small batches of 100 stocks, and sleep between batches to avoid connection loss/throttling.
         else:
-            print("  [DB] Retrieving all stock codes from stock_kline...", flush=True)
+            print("  [DB] Retrieving all stock codes from stock_kline_day...", flush=True)
             with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT stock_code FROM stock_kline")
+                cur.execute("SELECT DISTINCT code FROM stock_kline_day")
                 target_codes = [r[0] for r in cur.fetchall()]
             print(f"  [DB] Target universe contains all {len(target_codes)} stocks. Fetching in batches of 100...", flush=True)
             
@@ -139,9 +139,9 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 format_strings = ','.join(['%s'] * len(batch))
                 
                 query = f"""
-                SELECT stock_code, date, open, close, high, low, volume, pe_ttm
-                FROM stock_kline
-                WHERE stock_code IN ({format_strings}) AND date >= %s
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                FROM stock_kline_day
+                WHERE code IN ({format_strings}) AND date >= %s
                 """
                 params = batch + [min_date_str]
                 if max_date_str is not None:
@@ -216,10 +216,10 @@ def load_roe_data_db():
     """
     conn = get_connection()
     try:
-        print("  [DB] Querying ROE history data from DB...", flush=True)
+        print("  [DB] Querying ROE history data from stock_profit_quarterly...", flush=True)
         query = """
-        SELECT code, stat_date, pub_date, year, quarter, roe
-        FROM stock_roe_history
+        SELECT code, stat_date, pub_date, YEAR(stat_date) AS year, QUARTER(stat_date) AS quarter, roe_avg AS roe
+        FROM stock_profit_quarterly
         """
         df = pd.read_sql(query, conn)
         if df.empty:

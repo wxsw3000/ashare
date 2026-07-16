@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>MagicSTG 量化看板</title>
+    <title>MagicSTG 量化看板与策略回测</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- 引入 Chart.js 用于渲染资产净值曲线 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -75,7 +77,49 @@
             color: #2ebd85;
         }
 
-        /* Strategy Tabs - 响应式滚动 */
+        /* 主Tab导航栏 */
+        .main-nav {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 0.25rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .main-nav::-webkit-scrollbar {
+            display: none;
+        }
+        .nav-btn {
+            background: transparent;
+            border: none;
+            color: #8e95b2;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            white-space: nowrap;
+        }
+        .nav-btn:hover {
+            color: #f0f3fa;
+        }
+        .nav-btn.active {
+            color: #00d2c4;
+        }
+        .nav-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -0.25rem;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #00d2c4;
+            box-shadow: 0 0 10px rgba(0, 210, 196, 0.5);
+        }
+
+        /* Strategy Tabs */
         .strategy-tabs {
             display: flex;
             gap: 0.5rem;
@@ -84,7 +128,6 @@
             padding: 0.25rem;
             border: 1px solid rgba(255,255,255,0.08);
             overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
             scrollbar-width: none;
         }
         .strategy-tabs::-webkit-scrollbar {
@@ -143,7 +186,6 @@
             font-size: 0.85rem;
             cursor: pointer;
             outline: none;
-            -webkit-appearance: none;
             appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238e95b2' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
@@ -164,7 +206,7 @@
             }
         }
 
-        /* Stats Grid - 手机2列，平板4列 */
+        /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -279,7 +321,7 @@
             }
         }
 
-        /* Signal List - 手机优化 */
+        /* Signal List */
         .signal-list {
             display: flex;
             flex-direction: column;
@@ -385,6 +427,237 @@
             }
         }
 
+        /* Config Card & Forms */
+        .config-card {
+            background: rgba(26, 29, 54, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #00d2c4;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .form-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        .form-col {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .form-col h4 {
+            font-size: 0.9rem;
+            color: #ffb86c;
+            border-left: 3px solid #ffb86c;
+            padding-left: 0.5rem;
+            margin-bottom: 0.25rem;
+            font-weight: 600;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .form-group label {
+            font-size: 0.8rem;
+            color: #8e95b2;
+        }
+        .form-group input[type="number"],
+        .form-group select,
+        .meta-item select,
+        .meta-item input {
+            background: rgba(11, 12, 22, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #f0f3fa;
+            padding: 0.5rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            outline: none;
+            width: 100%;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .meta-item select:focus,
+        .meta-item input:focus {
+            border-color: #00d2c4;
+        }
+        .checkbox-group {
+            flex-direction: row;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .checkbox-group input {
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+            accent-color: #00d2c4;
+        }
+        .checkbox-group label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #f0f3fa;
+            font-size: 0.85rem;
+        }
+        .form-row-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+        }
+        .form-row-2 label {
+            font-size: 0.75rem;
+            color: #8e95b2;
+        }
+
+        /* Backtest Meta Configuration */
+        .backtest-meta {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 1.5rem;
+        }
+        @media (min-width: 576px) {
+            .backtest-meta {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (min-width: 992px) {
+            .backtest-meta {
+                grid-template-columns: repeat(5, 1fr);
+            }
+        }
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .meta-item label {
+            font-size: 0.8rem;
+            color: #8e95b2;
+        }
+        
+        .btn-run {
+            background: linear-gradient(to right, #00d2c4, #00b0ff);
+            border: none;
+            color: #0b0c16;
+            padding: 0.75rem 2rem;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 1.5rem;
+            width: 100%;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 15px rgba(0, 210, 196, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .btn-run:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 25px rgba(0, 210, 196, 0.4);
+            filter: brightness(1.1);
+        }
+        .btn-run:active {
+            transform: translateY(0);
+        }
+
+        /* Detail grids & Charts */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        @media (min-width: 992px) {
+            .detail-grid {
+                grid-template-columns: 2fr 1fr;
+            }
+        }
+        .detail-card {
+            background: rgba(26, 29, 54, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+        .detail-card h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            color: #f0f3fa;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        .metrics-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .metrics-table td {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 0.9rem;
+            color: #8e95b2;
+        }
+        .metrics-table tr:last-child td {
+            border-bottom: none;
+        }
+        .metrics-table td:last-child {
+            text-align: right;
+            color: #f0f3fa;
+            font-weight: 600;
+        }
+
+        .trade-log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+        .trade-log-table th {
+            padding: 0.75rem 1rem;
+            background: rgba(11, 12, 22, 0.4);
+            color: #8e95b2;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .trade-log-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #f0f3fa;
+        }
+        .trade-log-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .trade-log-table td.up { color: #2ebd85; font-weight: 600; }
+        .trade-log-table td.down { color: #df4b5e; font-weight: 600; }
+
         /* Empty & Loading States */
         .empty-state {
             text-align: center;
@@ -440,7 +713,7 @@
         <div class="header">
             <div>
                 <h1><i class="fa-solid fa-wand-magic-sparkles"></i> MagicSTG</h1>
-                <div class="subtitle">量化策略信号看板</div>
+                <div class="subtitle">量化策略探索系统</div>
             </div>
             <div class="header-status">
                 <i class="fa-solid fa-circle online"></i>
@@ -449,56 +722,281 @@
             </div>
         </div>
 
-        <!-- Strategy Tabs -->
-        <div class="strategy-tabs">
-            <button class="strategy-tab active" data-strategy="price" onclick="switchStrategy('price')">
-                <i class="fa-solid fa-chart-line"></i> 价格优先
+        <!-- 主Tab导航栏 -->
+        <div class="main-nav">
+            <button class="nav-btn active" id="tabSignals" onclick="switchMainTab('signals')">
+                <i class="fa-solid fa-list-check"></i> 实时信号推荐
             </button>
-            <button class="strategy-tab" data-strategy="pe" onclick="switchStrategy('pe')">
-                <i class="fa-solid fa-calculator"></i> PE优先
-            </button>
-            <button class="strategy-tab" data-strategy="roe" onclick="switchStrategy('roe')">
-                <i class="fa-solid fa-percent"></i> ROE优先
+            <button class="nav-btn" id="tabBacktest" onclick="switchMainTab('backtest')">
+                <i class="fa-solid fa-flask-vial"></i> 自定义策略回测
             </button>
         </div>
 
-        <!-- Date Selector -->
-        <div class="date-selector">
-            <label for="dateSelect"><i class="fa-regular fa-calendar"></i> 日期</label>
-            <select id="dateSelect" onchange="loadRecommendations()">
-                <option value="">加载中...</option>
-            </select>
-            <span class="update-time" id="updateTime2"></span>
+        <!-- ==================== 1. 交易信号推荐 Tab ==================== -->
+        <div id="signalsSection" class="tab-content">
+            <!-- Strategy Tabs -->
+            <div class="strategy-tabs">
+                <button class="strategy-tab active" data-strategy="price" onclick="switchStrategy('price')">
+                    <i class="fa-solid fa-chart-line"></i> 价格优先
+                </button>
+                <button class="strategy-tab" data-strategy="pe" onclick="switchStrategy('pe')">
+                    <i class="fa-solid fa-calculator"></i> PE优先
+                </button>
+                <button class="strategy-tab" data-strategy="roe" onclick="switchStrategy('roe')">
+                    <i class="fa-solid fa-percent"></i> ROE优先
+                </button>
+            </div>
+
+            <!-- Date Selector -->
+            <div class="date-selector">
+                <label for="dateSelect"><i class="fa-regular fa-calendar"></i> 日期</label>
+                <select id="dateSelect" onchange="loadRecommendations()">
+                    <option value="">加载中...</option>
+                </select>
+                <span class="update-time" id="updateTime2"></span>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="label"><i class="fa-regular fa-circle-up"></i> 买入</div>
+                    <div class="value buy" id="buyCount">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label"><i class="fa-regular fa-circle-down"></i> 卖出</div>
+                    <div class="value sell" id="sellCount">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label"><i class="fa-regular fa-signal"></i> 总信号</div>
+                    <div class="value total" id="totalCount">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label"><i class="fa-regular fa-tag"></i> 策略</div>
+                    <div class="value strategy-name" id="currentStrategy">价格优先</div>
+                </div>
+            </div>
+
+            <!-- Recommendations List -->
+            <div class="recommendations-section">
+                <div class="section-header">
+                    <h2><i class="fa-regular fa-bell"></i> 交易信号推荐</h2>
+                    <span class="badge" id="signalDateBadge">--</span>
+                </div>
+                <div id="signalList" class="signal-list">
+                    <div class="loading"><i class="fa-solid fa-spinner"></i> 加载中...</div>
+                </div>
+            </div>
         </div>
 
-        <!-- Stats -->
-        <div class="stats-grid" id="statsGrid">
-            <div class="stat-card">
-                <div class="label"><i class="fa-regular fa-circle-up"></i> 买入</div>
-                <div class="value buy" id="buyCount">-</div>
+        <!-- ==================== 2. 自定义策略回测 Tab ==================== -->
+        <div id="backtestSection" class="tab-content" style="display: none;">
+            <!-- Backtest configuration card -->
+            <div class="config-card">
+                <h3 class="card-title"><i class="fa-solid fa-sliders"></i> 自定义选股因子与风控</h3>
+                <form id="backtestForm" class="backtest-form">
+                    <div class="form-grid">
+                        <!-- Column 1: Technical Factors -->
+                        <div class="form-col">
+                            <h4>技术面指标</h4>
+                            <div class="form-group checkbox-group">
+                                <label><input type="checkbox" id="bt_enable_golden_cross" checked> 均线金叉 (MA5 > MA20)</label>
+                            </div>
+                            <div class="form-row-2">
+                                <div>
+                                    <label for="bt_short_ma">短期均线</label>
+                                    <input type="number" id="bt_short_ma" value="5" min="2" max="100">
+                                </div>
+                                <div>
+                                    <label for="bt_long_ma">长期均线</label>
+                                    <input type="number" id="bt_long_ma" value="20" min="5" max="250">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group checkbox-group" style="margin-top:0.5rem;">
+                                <label><input type="checkbox" id="bt_enable_volume_surge" checked> 成交量放量</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="bt_volume_surge_factor">放量倍数 (大于均量多少倍)</label>
+                                <input type="number" id="bt_volume_surge_factor" value="1.2" step="0.1" min="0.5" max="10">
+                            </div>
+                            
+                            <div class="form-group checkbox-group" style="margin-top:0.5rem;">
+                                <label><input type="checkbox" id="bt_enable_di_ratio" checked> DMI趋势强弱比 (PDI/NDI)</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="bt_buy_di_threshold">买入时比率门槛 (PDI/NDI)</label>
+                                <input type="number" id="bt_buy_di_threshold" value="0.70" step="0.05" min="0" max="10">
+                            </div>
+                        </div>
+                        
+                        <!-- Column 2: Fundamental Factors -->
+                        <div class="form-col">
+                            <h4>基本面财务因子</h4>
+                            <div class="form-group checkbox-group">
+                                <label><input type="checkbox" id="bt_enable_roe"> 净资产收益率最小限制</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="bt_roe_min">最低 ROE (年化 %)</label>
+                                <input type="number" id="bt_roe_min" value="5.0" step="0.5" min="0" max="100">
+                            </div>
+                            
+                            <div class="form-group checkbox-group" style="margin-top:0.5rem;">
+                                <label><input type="checkbox" id="bt_enable_pe"> 市盈率 PE 范围限制</label>
+                            </div>
+                            <div class="form-row-2">
+                                <div>
+                                    <label for="bt_pe_min">最小 PE</label>
+                                    <input type="number" id="bt_pe_min" value="0" step="1">
+                                </div>
+                                <div>
+                                    <label for="bt_pe_max">最大 PE</label>
+                                    <input type="number" id="bt_pe_max" value="35" step="1">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group checkbox-group" style="margin-top:0.5rem;">
+                                <label><input type="checkbox" id="bt_enable_growth"> 净利润同比增长率限制</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="bt_growth_min">最低增速 (%)</label>
+                                <input type="number" id="bt_growth_min" value="10.0" step="1.0" min="-100" max="1000">
+                            </div>
+                        </div>
+                        
+                        <!-- Column 3: Risk & Market Filter -->
+                        <div class="form-col">
+                            <h4>风控、大盘与排序</h4>
+                            <div class="form-group checkbox-group">
+                                <label><input type="checkbox" id="bt_enable_debt_limit"> 资产负债率安全值限制</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="bt_debt_max">最大负债率 (通常 <= 0.70)</label>
+                                <input type="number" id="bt_debt_max" value="0.7" step="0.05" min="0" max="1">
+                            </div>
+                            
+                            <div class="form-group checkbox-group" style="margin-top:0.5rem;">
+                                <label><input type="checkbox" id="bt_enable_cash_quality"> 盈利现金保障率限制</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="bt_cfo_np_min">最低现金流/净利润比例</label>
+                                <input type="number" id="bt_cfo_np_min" value="0.8" step="0.1" min="-10" max="10">
+                            </div>
+                            
+                            <div class="form-group checkbox-group" style="margin-top:0.5rem;">
+                                <label><input type="checkbox" id="bt_enable_market_trend"> 启用沪深300指数择时过滤</label>
+                            </div>
+                            
+                            <div class="form-group" style="margin-top:0.5rem;">
+                                <label for="bt_primary_factor">核心排序规则</label>
+                                <select id="bt_primary_factor">
+                                    <option value="price">价格优先（单股低股价股优先）</option>
+                                    <option value="roe">ROE 优先（高盈利股优先）</option>
+                                    <option value="pe">PE 优先（低估值股优先）</option>
+                                    <option value="growth">成长性优先（高利润增长优先）</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Parameters for backtest range & universe -->
+                    <div class="backtest-meta">
+                        <div class="meta-item">
+                            <label for="bt_universe">股票回测池</label>
+                            <select id="bt_universe">
+                                <option value="csi300">沪深 300 成分股池 (极速: ~3秒)</option>
+                                <option value="all">全市场 A 股股票 (慢速: ~1-2分钟)</option>
+                            </select>
+                        </div>
+                        <div class="meta-item">
+                            <label for="bt_start_date">开始日期</label>
+                            <input type="date" id="bt_start_date" value="2024-01-01">
+                        </div>
+                        <div class="meta-item">
+                            <label for="bt_end_date">结束日期</label>
+                            <input type="date" id="bt_end_date" value="2026-06-30">
+                        </div>
+                        <div class="meta-item">
+                            <label for="bt_max_holdings">持仓分仓数</label>
+                            <input type="number" id="bt_max_holdings" value="4" min="1" max="10">
+                        </div>
+                        <div class="meta-item">
+                            <label for="bt_per_stock_capital">单只股每仓本金 (元)</label>
+                            <input type="number" id="bt_per_stock_capital" value="10000" step="1000">
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="btn-run" onclick="runBacktest()"><i class="fa-solid fa-play"></i> 启动回测计算</button>
+                </form>
             </div>
-            <div class="stat-card">
-                <div class="label"><i class="fa-regular fa-circle-down"></i> 卖出</div>
-                <div class="value sell" id="sellCount">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="label"><i class="fa-regular fa-signal"></i> 总信号</div>
-                <div class="value total" id="totalCount">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="label"><i class="fa-regular fa-tag"></i> 策略</div>
-                <div class="value strategy-name" id="currentStrategy">价格优先</div>
-            </div>
-        </div>
-
-        <!-- Recommendations List -->
-        <div class="recommendations-section">
-            <div class="section-header">
-                <h2><i class="fa-regular fa-bell"></i> 交易信号</h2>
-                <span class="badge" id="signalDateBadge">--</span>
-            </div>
-            <div id="signalList" class="signal-list">
-                <div class="loading"><i class="fa-solid fa-spinner"></i> 加载中...</div>
+            
+            <!-- Backtest results (Hidden initially) -->
+            <div id="backtestResults" style="display: none; margin-top: 2rem;">
+                <!-- Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">策略累计收益率</div>
+                        <div class="value total" id="res_total_return">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">策略年化收益率</div>
+                        <div class="value" id="res_annual_return">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">历史最大回撤</div>
+                        <div class="value sell" id="res_max_drawdown">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">完成交易胜率</div>
+                        <div class="value buy" id="res_win_rate">-</div>
+                    </div>
+                </div>
+                
+                <!-- Detailed metrics and Chart -->
+                <div class="detail-grid">
+                    <div class="detail-card">
+                        <h4><i class="fa-solid fa-chart-line"></i> 账户资产总净值增长曲线</h4>
+                        <div class="chart-container">
+                            <canvas id="equityChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="detail-card">
+                        <h4>回测参数统计汇总</h4>
+                        <table class="metrics-table">
+                            <tr><td>初始配资额度</td><td id="res_init_equity">-</td></tr>
+                            <tr><td>期末总资产净值</td><td id="res_final_equity">-</td></tr>
+                            <tr><td>总成交记录笔数</td><td id="res_trades_count">-</td></tr>
+                            <tr><td>其中买入笔数</td><td id="res_buys_count">-</td></tr>
+                            <tr><td>其中卖出笔数</td><td id="res_sells_count">-</td></tr>
+                            <tr><td>累计印花税与佣金</td><td id="res_fees">-</td></tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Trade logs -->
+                <div class="recommendations-section" style="margin-top: 2rem;">
+                    <div class="section-header">
+                        <h2><i class="fa-solid fa-receipt"></i> 历史交易成交日志</h2>
+                        <span class="badge" id="res_trades_badge">0 笔成交</span>
+                    </div>
+                    <div class="table-container" style="overflow-x: auto; max-height: 500px;">
+                        <table class="trade-log-table">
+                            <thead>
+                                <tr>
+                                    <th>成交日期</th>
+                                    <th>股票代码</th>
+                                    <th>方向</th>
+                                    <th>成交价格</th>
+                                    <th>成交数量</th>
+                                    <th>交易损益 (元)</th>
+                                    <th>交易损益 (%)</th>
+                                    <th>成交触发原委</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tradeLogBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -506,6 +1004,16 @@
     <script>
         let currentStrategy = 'price';
         let currentDate = null;
+        let equityChartInstance = null;
+
+        // 主 Tab 切换
+        function switchMainTab(tab) {
+            document.getElementById('signalsSection').style.display = tab === 'signals' ? 'block' : 'none';
+            document.getElementById('backtestSection').style.display = tab === 'backtest' ? 'block' : 'none';
+            
+            document.getElementById('tabSignals').classList.toggle('active', tab === 'signals');
+            document.getElementById('tabBacktest').classList.toggle('active', tab === 'backtest');
+        }
 
         // 切换策略
         function switchStrategy(strategy) {
@@ -650,7 +1158,202 @@
             }
         });
 
-        // 页面加载完成后加载数据
+        // 启动回测
+        async function runBacktest() {
+            const btn = document.querySelector('.btn-run');
+            const resultsDiv = document.getElementById('backtestResults');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 回测计算中...请稍候';
+            resultsDiv.style.display = 'none';
+            
+            // 收集参数配置
+            const config = {
+                tech: {
+                    enable_golden_cross: document.getElementById('bt_enable_golden_cross').checked,
+                    enable_volume_surge: document.getElementById('bt_enable_volume_surge').checked,
+                    volume_surge_factor: parseFloat(document.getElementById('bt_volume_surge_factor').value || 1.2),
+                    enable_di_ratio: document.getElementById('bt_enable_di_ratio').checked,
+                    buy_di_threshold: parseFloat(document.getElementById('bt_buy_di_threshold').value || 0.7),
+                    short_ma: parseInt(document.getElementById('bt_short_ma').value || 5),
+                    long_ma: parseInt(document.getElementById('bt_long_ma').value || 20)
+                },
+                financial: {
+                    enable_roe: document.getElementById('bt_enable_roe').checked,
+                    roe_min: parseFloat(document.getElementById('bt_roe_min').value || 5.0) / 100.0,
+                    enable_pe: document.getElementById('bt_enable_pe').checked,
+                    pe_min: parseFloat(document.getElementById('bt_pe_min').value || 0),
+                    pe_max: parseFloat(document.getElementById('bt_pe_max').value || 35),
+                    enable_growth: document.getElementById('bt_enable_growth').checked,
+                    growth_min: parseFloat(document.getElementById('bt_growth_min').value || 10.0) / 100.0,
+                    enable_debt_limit: document.getElementById('bt_enable_debt_limit').checked,
+                    debt_max: parseFloat(document.getElementById('bt_debt_max').value || 0.7),
+                    enable_cash_quality: document.getElementById('bt_enable_cash_quality').checked,
+                    cfo_np_min: parseFloat(document.getElementById('bt_cfo_np_min').value || 0.8)
+                },
+                market: {
+                    enable_market_trend: document.getElementById('bt_enable_market_trend').checked,
+                    index_code: 'sh.000300',
+                    index_ma: 250
+                },
+                ranking: {
+                    primary_factor: document.getElementById('bt_primary_factor').value,
+                    // 对于 ROE/成长 等降序优先，对于股价/低PE 等升序优先
+                    reverse: ['roe', 'growth'].includes(document.getElementById('bt_primary_factor').value)
+                },
+                strategy: {
+                    max_holdings: parseInt(document.getElementById('bt_max_holdings').value || 4),
+                    per_stock_capital: parseFloat(document.getElementById('bt_per_stock_capital').value || 10000)
+                }
+            };
+            
+            const reqBody = {
+                start_date: document.getElementById('bt_start_date').value,
+                end_date: document.getElementById('bt_end_date').value,
+                universe: document.getElementById('bt_universe').value,
+                config: config
+            };
+            
+            try {
+                const response = await fetch('/api/backtest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqBody)
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'error') {
+                    alert('回测出错: ' + result.message);
+                    return;
+                }
+                
+                // 显示结果区
+                resultsDiv.style.display = 'block';
+                
+                const s = result.summary;
+                document.getElementById('res_total_return').textContent = `${s.total_return > 0 ? '+' : ''}${s.total_return.toFixed(2)}%`;
+                document.getElementById('res_total_return').className = 'value ' + (s.total_return >= 0 ? 'buy' : 'sell');
+                document.getElementById('res_annual_return').textContent = `${s.annual_return > 0 ? '+' : ''}${s.annual_return.toFixed(2)}%`;
+                document.getElementById('res_annual_return').className = 'value ' + (s.annual_return >= 0 ? 'buy' : 'sell');
+                document.getElementById('res_max_drawdown').textContent = `${s.max_drawdown.toFixed(2)}%`;
+                document.getElementById('res_win_rate').textContent = `${s.win_rate.toFixed(2)}%`;
+                
+                document.getElementById('res_init_equity').textContent = `¥${s.initial_equity.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+                document.getElementById('res_final_equity').textContent = `¥${s.final_equity.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+                document.getElementById('res_trades_count').textContent = s.trades_count;
+                document.getElementById('res_buys_count').textContent = s.buys_count;
+                document.getElementById('res_sells_count').textContent = s.sells_count;
+                document.getElementById('res_fees').textContent = `¥${s.total_fees.toFixed(2)}`;
+                document.getElementById('res_trades_badge').textContent = `${s.sells_count} 笔完成交易 / ${s.trades_count} 笔成交`;
+                
+                // 渲染 Chart.js 折线图
+                renderChart(result.equity_history);
+                
+                // 渲染成交记录表
+                const tbody = document.getElementById('tradeLogBody');
+                tbody.innerHTML = '';
+                if (result.trade_log.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#8e95b2;">无回测历史交易记录</td></tr>';
+                } else {
+                    result.trade_log.forEach(t => {
+                        const tr = document.createElement('tr');
+                        const pnlClass = t.action === 'BUY' ? '' : (t.pnl >= 0 ? 'up' : 'down');
+                        const pnlValStr = t.action === 'BUY' ? '--' : `¥${t.pnl.toFixed(2)}`;
+                        const pnlPctStr = t.action === 'BUY' ? '--' : `${t.pnl_pct > 0 ? '+' : ''}${t.pnl_pct.toFixed(2)}%`;
+                        
+                        tr.innerHTML = `
+                            <td>${t.date}</td>
+                            <td>${t.code}</td>
+                            <td><span class="action-badge ${t.action === 'BUY' ? 'buy' : 'sell'}">${t.action === 'BUY' ? '买入' : '卖出'}</span></td>
+                            <td>¥${t.price.toFixed(2)}</td>
+                            <td>${t.shares}</td>
+                            <td class="${pnlClass}">${pnlValStr}</td>
+                            <td class="${pnlClass}">${pnlPctStr}</td>
+                            <td style="color:#8e95b2;">${t.reason || '-'}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+                
+                // 滚动至结果展示
+                resultsDiv.scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (err) {
+                console.error(err);
+                alert('回测执行网络请求失败: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-play"></i> 启动回测计算';
+            }
+        }
+
+        // 渲染资产总值曲线
+        function renderChart(history) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            
+            if (equityChartInstance) {
+                equityChartInstance.destroy();
+            }
+            
+            const labels = history.map(item => item[0]);
+            const data = history.map(item => item[1]);
+            const initialVal = data[0] || 40000;
+            const benchmark = history.map(() => initialVal);
+            
+            equityChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '账户总资产净值 (元)',
+                            data: data,
+                            borderColor: '#00d2c4',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: true,
+                            backgroundColor: 'rgba(0, 210, 196, 0.04)',
+                            tension: 0.1
+                        },
+                        {
+                            label: '本金水平线',
+                            data: benchmark,
+                            borderColor: 'rgba(255, 255, 255, 0.15)',
+                            borderDash: [5, 5],
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#8e95b2' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                            ticks: { color: '#8e95b2', maxTicksLimit: 10 }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                            ticks: {
+                                color: '#8e95b2',
+                                callback: function(val) { return '¥' + val.toLocaleString(); }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 页面初始化完成加载
         document.addEventListener('DOMContentLoaded', loadRecommendations);
     </script>
 </body>
