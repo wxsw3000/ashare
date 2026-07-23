@@ -25,6 +25,7 @@ from db import (
     get_connection_with_retry,
     format_time,
     get_beijing_time,
+    get_target_date,
 )
 
 # ============================================================
@@ -509,7 +510,7 @@ def main():
     
     reset_flag = args.reset
     force_flag = args.force
-    task_date = get_beijing_time().strftime('%Y-%m-%d')
+    task_date = get_target_date()
     start_time = time.time()
     
     print("=" * 78)
