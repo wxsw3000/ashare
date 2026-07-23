@@ -2,6 +2,17 @@ name: 数据更新
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: '强制重新执行所有脚本（忽略今日已完成标记）'
+        required: false
+        type: boolean
+        default: false
+      reset:
+        description: '重置今日任务状态'
+        required: false
+        type: boolean
+        default: false
   repository_dispatch:
     types:
       - update-data
@@ -33,4 +44,7 @@ jobs:
           DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
           MAX_RUNTIME: 19000
         run: |
-          python run_all_updates.py
+          CMD_ARGS=""
+          if [ "${{ inputs.force }}" = "true" ]; then CMD_ARGS="$CMD_ARGS --force"; fi
+          if [ "${{ inputs.reset }}" = "true" ]; then CMD_ARGS="$CMD_ARGS --reset"; fi
+          python run_all_updates.py $CMD_ARGS

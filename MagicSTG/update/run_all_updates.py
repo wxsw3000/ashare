@@ -315,7 +315,6 @@ def reset_task(task_date, scripts):
                 UPDATE update_progress 
                 SET status = 'pending', started_at = NULL, completed_at = NULL, error_msg = NULL
                 WHERE task_date = %s AND script_name IN ({placeholders})
-                AND status IN ('running', 'failed')
             """, (task_date, *scripts))
             conn.commit()
             return cur.rowcount
@@ -564,11 +563,15 @@ def main():
             reset_count = reset_task(task_date, scripts)
             print(f"  [RESET] 重置了 {reset_count} 个脚本状态")
         
-        pending = get_pending_scripts(task_date, scripts)
-        for script in empty_tables:
-            if script not in pending:
-                pending.append(script)
-                mark_script_status(task_date, script, 'pending')
+        if force_flag:
+            pending = list(scripts)
+            print("  [FORCE] 忽略已有完成状态，强制重新执行所有脚本")
+        else:
+            pending = get_pending_scripts(task_date, scripts)
+            for script in empty_tables:
+                if script not in pending:
+                    pending.append(script)
+                    mark_script_status(task_date, script, 'pending')
         
         if not pending:
             print("  [SUCCESS] 所有脚本已完成")
