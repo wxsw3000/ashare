@@ -68,9 +68,13 @@ def safe_date(val, default=None):
 # 时间工具
 # ============================================================
 
+from datetime import datetime, timedelta, timezone
+
+
 def get_beijing_time():
     """获取当前北京时间 (UTC+8)"""
-    return datetime.utcnow() + timedelta(hours=8)
+    tz_bj = timezone(timedelta(hours=8))
+    return datetime.now(tz_bj)
 
 
 def format_time(seconds):
@@ -146,15 +150,17 @@ def ensure_bs_login(force=False):
 
 def get_target_date():
     """
-    根据当前时间确定目标拉取日期
-    18:00 之后拉取当天，之前拉取昨天
-    返回: date_str
+    根据当前北京时间确定目标拉取日期：
+    根据 Baostock 数据更新规范，日 K 线盘后推送在 17:30 开始，到 18:00~18:30 全市场数据完全清洗准备完毕。
+    - 18:00 之后（如 18:30 运行）：Baostock 当日全量数据已完全准备好，拉取当天 (today_str)；
+    - 18:00 之前（如 15:30 或 17:00）：Baostock 尚未完全准备好，拉取前一天 (yesterday)
+    返回: date_str (YYYY-MM-DD)
     """
     beijing_time = get_beijing_time()
     today_str = beijing_time.strftime('%Y-%m-%d')
-    current_hour = beijing_time.hour
     
-    if current_hour >= 18:
+    # 18:00 之后全市场数据 100% 准备就绪，拉取当天
+    if beijing_time.hour >= 18:
         return today_str
     else:
         return (beijing_time - timedelta(days=1)).strftime('%Y-%m-%d')

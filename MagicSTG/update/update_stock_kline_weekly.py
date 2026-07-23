@@ -47,6 +47,7 @@ START_DATE = "2020-01-01"
 def get_active_stocks_from_db(conn):
     """从 stock_basic 获取上市股票列表（type='1' 且 status='1'）并按代码排序"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute("SELECT code, ipo_date FROM stock_basic WHERE type = '1' AND status = '1' ORDER BY code ASC")
             rows = cur.fetchall()
@@ -67,6 +68,7 @@ def get_active_stocks_from_db(conn):
 def get_all_kline_latest_dates(conn, table_name="stock_kline_weekly"):
     """批量查询所有股票在指定表中的最新日期"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             sql = f"SELECT code, MAX(date) FROM `{table_name}` GROUP BY code"
             cur.execute(sql)
@@ -85,6 +87,7 @@ def get_all_kline_latest_dates(conn, table_name="stock_kline_weekly"):
 def has_dividend_in_range(conn, code, start_date, end_date):
     """查询日K线表，判断某股票在指定日期范围内是否有 is_dividend = 1"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(1) FROM stock_kline_day WHERE code = %s AND date >= %s AND date <= %s AND is_dividend = 1",
@@ -147,6 +150,7 @@ def flush_db_buffer(conn, batch_data, table_name="stock_kline_weekly"):
     
     for attempt in range(1, 4):
         try:
+            conn.ping(reconnect=True)
             with conn.cursor() as cursor:
                 cursor.execute(sql, flat_args)
             return conn

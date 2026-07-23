@@ -47,6 +47,7 @@ START_DATE = "2020-01-01"
 def get_active_stocks_from_db(conn):
     """从 stock_basic 获取上市股票列表（type='1' 且 status='1'）并按代码排序"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute("SELECT code, ipo_date FROM stock_basic WHERE type = '1' AND status = '1' ORDER BY code ASC")
             rows = cur.fetchall()
@@ -67,6 +68,7 @@ def get_active_stocks_from_db(conn):
 def get_all_kline_latest_dates(conn, table_name="stock_kline_monthly"):
     """批量查询所有股票在指定表中的最新日期"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             sql = f"SELECT code, MAX(date) FROM `{table_name}` GROUP BY code"
             cur.execute(sql)
@@ -85,6 +87,7 @@ def get_all_kline_latest_dates(conn, table_name="stock_kline_monthly"):
 def has_dividend_in_range(conn, code, start_date, end_date):
     """查询日K线表，判断某股票在指定日期范围内是否有 is_dividend = 1"""
     try:
+        conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(1) FROM stock_kline_day WHERE code = %s AND date >= %s AND date <= %s AND is_dividend = 1",
@@ -147,6 +150,7 @@ def flush_db_buffer(conn, batch_data, table_name="stock_kline_monthly"):
     
     for attempt in range(1, 4):
         try:
+            conn.ping(reconnect=True)
             with conn.cursor() as cursor:
                 cursor.execute(sql, flat_args)
             return conn
@@ -255,8 +259,11 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
         return 0, 0, 1, 0, db_buffer, False
     
     if last_date:
-        start_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime('%Y-%m-%d')
-        # 除权区间判断从 start_date 开始，直至 target_date
+        # 月K线特殊处理：如果上次更新在月中（如 2026-07-22），在月末/下月更新时，
+        # 需从 last_date 所在月份 1 号开始拉取，并清理 last_date 所在月份及以后的已有月K数据，
+        # 避免残留旧的月中未完结K线与月末完结K线产生双份记录。
+        month_start = pd.to_datetime(last_date).replace(day=1).strftime('%Y-%m-%d')
+        start_date = month_start
         has_div = has_dividend_in_range(conn, code, start_date, target_date)
     else:
         start_date = ipo_date
@@ -273,6 +280,15 @@ def update_stock_data(conn, code, ipo_date, target_date, update_date, db_buffer,
         if len(data_list) == 0:
             return 0, 0, 1, 0, db_buffer, True
     else:
+        if last_date:
+            try:
+                conn.ping(reconnect=True)
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM stock_kline_monthly WHERE code = %s AND date >= %s", (code, start_date))
+                conn.commit()
+            except Exception as e:
+                print(f"  [WARN] Clean up month data for {code} failed: {e}", flush=True)
+
         data_list, ok = fetch_stock_kline(code, start_date, target_date)
         if not ok or data_list is None:
             return 0, 0, 0, 1, db_buffer, False
