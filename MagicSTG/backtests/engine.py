@@ -26,26 +26,17 @@ def run_backtest_engine(
     end_date_str: str,
     strategy_name: str = "dynamic_factor",
     universe: str = "all",
-    save_to_db: bool = False
+    save_to_db: bool = False,
+    all_data: Optional[Dict[str, pd.DataFrame]] = None
 ) -> Dict[str, Any]:
     """
     Executes backtest loop with specified configuration.
-
-    Parameters:
-        config: Strategy and risk configuration dict
-        start_date_str: Backtest start date string (e.g. '2024-01-01')
-        end_date_str: Backtest end date string (e.g. '2026-06-30')
-        strategy_name: Strategy type name ('dynamic_factor', 'price', 'pe', 'roe')
-        universe: 'all' or 'csi300'
-        save_to_db: Whether to persist results to TiDB database
-
-    Returns:
-        Dict with metrics, equity_history, trade_log, and summary.
     """
-    limit_to_csi300 = (universe == 'csi300')
-    print(f"[BacktestEngine] Loading data for range {start_date_str} ~ {end_date_str} (universe={universe})...", flush=True)
+    if all_data is None:
+        limit_to_csi300 = (universe == 'csi300')
+        print(f"[BacktestEngine] Loading data for range {start_date_str} ~ {end_date_str} (universe={universe})...", flush=True)
+        all_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, limit_to_csi300=limit_to_csi300)
 
-    all_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, limit_to_csi300=limit_to_csi300)
     if not all_data:
         return {'status': 'error', 'message': '未加载到任何 K 线数据'}
 

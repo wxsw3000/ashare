@@ -31,11 +31,7 @@ def optimize_factors(
     Performs grid search over key technical and fundamental factor thresholds to find top combinations.
     """
     base_config = load_yaml_config()
-    print("=" * 75)
-    print("  🎯 MagicSTG 多因子网格搜索优化器启动")
-    print(f"  📅 回测区间: {start_date} ~ {end_date}")
-    print(f"  📊 股票池:   {universe.upper()} (全市场数据)")
-    print("=" * 75)
+
 
     # 1. Parameter Grid
     param_grid = {
@@ -51,7 +47,13 @@ def optimize_factors(
     # Generate combination matrix
     keys, values = zip(*param_grid.items())
     combos = [dict(zip(keys, v)) for v in itertools.product(*values)]
-    print(f"[Optimizer] 共生成 {len(combos)} 组因子组合进行评估对比...\n", flush=True)
+    print(f"[Optimizer] 共生成 {len(combos)} 组因子组合进行评估对比...", flush=True)
+
+    # Pre-load data ONCE to avoid repeated database queries
+    limit_to_csi300 = (universe == 'csi300')
+    print(f"[Optimizer] 开始一次性预加载股票数据 (universe={universe})...", flush=True)
+    all_data = load_all_data_db(start_date=start_date, end_date=end_date, limit_to_csi300=limit_to_csi300)
+    print(f"[Optimizer] 数据预加载完毕，共 {len(all_data)} 只股票。开始高速内存网格搜索...\n", flush=True)
 
     results = []
 
@@ -81,14 +83,15 @@ def optimize_factors(
             'reverse': (combo['primary_factor'] in ['roe', 'growth'])
         }
 
-        # Run fast backtest engine iteration
+        # Run fast in-memory backtest iteration
         res = run_backtest_engine(
             config=test_config,
             start_date_str=start_date,
             end_date_str=end_date,
             strategy_name="dynamic_factor",
             universe=universe,
-            save_to_db=False
+            save_to_db=False,
+            all_data=all_data
         )
 
         if res.get('status') == 'success':
@@ -121,7 +124,7 @@ def optimize_factors(
         top_df = res_df.head(top_n)
 
         print("\n" + "=" * 85)
-        print(f"  🏆 最优因子组合 TOP {top_n} 排行榜 (按累计收益率排序)")
+        print(f"  [RESULT] 最优因子组合 TOP {top_n} 排行榜 (按累计收益率排序)")
         print("=" * 85)
         print(top_df.to_string(index=False))
         print("=" * 85)
