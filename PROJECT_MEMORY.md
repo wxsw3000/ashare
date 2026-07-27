@@ -33,25 +33,30 @@ The database `asharedb` contains both raw data tables and system tables created 
 
 ---
 
-## 3. Key Files & Roles
+## 3. Modular Architecture & Key Components
+
+The codebase has been refactored into a highly modular, plugin-based architecture for high scalability:
+
+* **`MagicSTG/config/`**:
+  * `settings.py`: Centralized environment variable loading (`.env`), SSL CA path resolution (`isrgrootx1.pem`), and YAML configuration loader.
+* **`MagicSTG/core/`**:
+  * `db.py`: Primary database connection, heartbeat pinging, data loaders (`load_all_data_db`, `load_roe_data_db`), and strategy checkpoints.
+  * `db_writer.py`: Persistence engine for recommendations, positions, and backtest results into TiDB Cloud.
+  * `cost.py` & `limit.py`: Transaction fee calculations and price limit-up/down checking.
+* **`MagicSTG/strategies/`**:
+  * `base.py`: Abstract `BaseStrategy` base class defining strategy contract (`generate_signals`).
+  * `dynamic_factor.py`: Plugin-based multi-factor dynamic strategy implementation (`DynamicFactorStrategy`).
+  * `registry.py`: Strategy factory and registry (`StrategyRegistry.get(name)`).
+  * `legacy/`: Archived single-factor legacy strategies (`pe_strategy`, `price_strategy`, `roe_strategy`).
+* **`MagicSTG/execution/`**:
+  * `position_manager.py`: Holding position manager (`PositionManager`, `InMemoryPositionManager`).
+  * `decisions.py`: Trade decision maker engine (`DecisionMaker`, `TradeDecision`).
+* **`MagicSTG/data/`**:
+  * `stock/`, `macro/`, `index/`: Categorized data collection modules.
+  * `runner.py`: Unified daily data update controller.
 * **`MagicSTG/web/server.py`**:
-  * Flask routing and REST API server.
-  * Endpoint `/api/recommendations`: Queries recommendations and dates.
-  * Endpoint `/api/backtest`: Executes the dynamic multi-factor backtest loop in memory using `InMemoryPositionManager` (overrides file load to avoid Unicode errors and file conflicts).
-* **`MagicSTG/web/templates/index.html`**:
-  * Dual-tab UI (Tab 1: Real-time Recommendations, Tab 2: Custom Backtester).
-  * Contains a client-side signal filter dropdown (All, Buy-only, Sell-only) and dynamic stats indicator.
-  * Renders assets curve using Chart.js.
-* **`MagicSTG/signals/generator_dynamic.py`**:
-  * Implements `SignalGeneratorDynamic` class. Calculates MAs, Volume Surge, and DMI ratios on the fly, and merges them with quarterly fundamental reports (ROE, Growth, Debt, CFO quality) aligned to `pub_date` for bias-free backtesting.
-* **`MagicSTG/utils/db.py`**:
-  * Establishes SSL connection to TiDB via `isrgrootx1.pem` certificate.
-  * Implements `load_all_data_db` (supports optimized `ORDER BY date ASC` SQL sorting to prevent Pandas memory sorting overhead).
-  * Implements database-backed checkpoints (`get_last_check_date_db`, `save_checkpoint_db`).
-* **`MagicSTG/utils/db_writer.py`**:
-  * Handles writing daily signals into database. Modified to use `INSERT IGNORE` to bypass duplicate entries when multiple signals are registered on the same day.
-* **`run_daily_price.py`, `run_daily_pe.py`, `run_daily_roe.py`**:
-  * Standard strategy runners. Fully migrated to database-backed checkpoints and SSL-based TiDB writing.
+  * Flask REST API & Web Dashboard server deployed on Render (`gunicorn --timeout 120 MagicSTG.web.server:app`).
+
 
 ---
 

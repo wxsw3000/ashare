@@ -1,0 +1,269 @@
+# -*- coding: utf-8 -*-
+"""
+MagicSTG Core Database Infrastructure
+Provides database connections, heartbeat ping, data loaders, and strategy checkpoints.
+"""
+
+import time
+import pymysql
+import pandas as pd
+from typing import Optional, Dict, Any
+
+from MagicSTG.config import (
+    DB_HOST,
+    DB_PORT,
+    DB_USER,
+    DB_PASSWORD,
+    DB_NAME,
+    get_ssl_ca_path
+)
+
+
+def get_connection() -> pymysql.Connection:
+    """
+    Establishes and returns a connection to TiDB Cloud with SSL support.
+    """
+    conn_params = {
+        "host": DB_HOST,
+        "port": DB_PORT,
+        "user": DB_USER,
+        "password": DB_PASSWORD,
+        "database": DB_NAME,
+        "charset": "utf8mb4",
+        "autocommit": True,
+        "connect_timeout": 15,
+        "read_timeout": 90
+    }
+
+    ssl_ca = get_ssl_ca_path()
+    if ssl_ca:
+        conn_params["ssl"] = {"ca": ssl_ca}
+
+    return pymysql.connect(**conn_params)
+
+
+def ensure_connection_alive(conn: pymysql.Connection) -> pymysql.Connection:
+    """
+    Ensures that the MySQL connection is active. Reconnects if dropped.
+    """
+    try:
+        if conn is None:
+            return get_connection()
+        conn.ping(reconnect=True)
+        return conn
+    except Exception:
+        return get_connection()
+
+
+def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_csi300=False) -> Dict[str, pd.DataFrame]:
+    """
+    Load stock K-line daily data from TiDB Cloud database.
+    """
+    conn = get_connection()
+    try:
+        min_date_str = None
+        max_date_str = None
+
+        if start_date is not None:
+            start_dt = pd.Timestamp(start_date)
+            min_date = start_dt - pd.Timedelta(days=365)
+            min_date_str = min_date.strftime('%Y-%m-%d')
+            if end_date is not None:
+                max_date_str = pd.Timestamp(end_date).strftime('%Y-%m-%d')
+        else:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT date FROM stock_kline_day ORDER BY date DESC LIMIT %s", (limit_days,))
+                dates = [r[0] for r in cur.fetchall()]
+                if dates:
+                    min_date_str = min(dates).strftime('%Y-%m-%d')
+                    max_date_str = max(dates).strftime('%Y-%m-%d')
+
+        df = None
+
+        # Daily screening mode (limit_days)
+        if start_date is None and min_date_str is not None:
+            print(f"  [DB] Fetching all stock daily K-lines for date range: {min_date_str} to {max_date_str}...", flush=True)
+            query = """
+            SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+            FROM stock_kline_day
+            WHERE date >= %s AND date <= %s
+            ORDER BY date ASC
+            """
+            df = pd.read_sql(query, conn, params=[min_date_str, max_date_str])
+
+        elif limit_to_csi300:
+            print("  [DB] Retrieving stock codes from stock_profit_quarterly...", flush=True)
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT code FROM stock_profit_quarterly ORDER BY code ASC LIMIT 300")
+                db_codes = [r[0] for r in cur.fetchall()]
+            print(f"  [DB] Target universe limited to {len(db_codes)} stocks.", flush=True)
+
+            format_strings = ','.join(['%s'] * len(db_codes))
+            query = f"""
+            SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+            FROM stock_kline_day
+            WHERE code IN ({format_strings}) AND date >= %s
+            """
+            params = db_codes + [min_date_str]
+            if max_date_str is not None:
+                query += " AND date <= %s"
+                params.append(max_date_str)
+            query += " ORDER BY date ASC"
+
+            df = pd.read_sql(query, conn, params=params)
+
+        else:
+            print("  [DB] Retrieving all stock codes from stock_kline_day...", flush=True)
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT code FROM stock_kline_day")
+                target_codes = [r[0] for r in cur.fetchall()]
+            print(f"  [DB] Target universe contains {len(target_codes)} stocks. Fetching in batches...", flush=True)
+
+            batch_size = 100
+            all_dfs = []
+
+            for i in range(0, len(target_codes), batch_size):
+                batch = target_codes[i:i+batch_size]
+                format_strings = ','.join(['%s'] * len(batch))
+
+                query = f"""
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                FROM stock_kline_day
+                WHERE code IN ({format_strings}) AND date >= %s
+                """
+                params = batch + [min_date_str]
+                if max_date_str is not None:
+                    query += " AND date <= %s"
+                    params.append(max_date_str)
+                query += " ORDER BY date ASC"
+
+                try:
+                    batch_df = pd.read_sql(query, conn, params=params)
+                except (pymysql.err.OperationalError, pymysql.err.InterfaceError):
+                    print("  [DB] Connection lost, reconnecting...", flush=True)
+                    conn.close()
+                    conn = get_connection()
+                    batch_df = pd.read_sql(query, conn, params=params)
+
+                if not batch_df.empty:
+                    all_dfs.append(batch_df)
+
+                time.sleep(0.1)
+
+            if all_dfs:
+                df = pd.concat(all_dfs, ignore_index=True)
+
+        if df is None or df.empty:
+            print("  [WARN] No data returned from database query.", flush=True)
+            return {}
+
+        print(f"  [SUCCESS] Loaded {len(df)} rows. Formatting into dict...", flush=True)
+
+        df['code'] = df['stock_code'].str.replace('_', '.', regex=False)
+        df['date'] = pd.to_datetime(df['date'])
+        df.rename(columns={'pe_ttm': 'peTTM'}, inplace=True)
+
+        for col in ['open', 'close', 'high', 'low', 'volume', 'peTTM']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        all_data = {}
+        grouped = df.groupby('code')
+        for code, group in grouped:
+            group = group.sort_values('date')
+            group.set_index('date', inplace=True)
+            cols_to_keep = [c for c in ['open', 'close', 'high', 'low', 'volume', 'peTTM'] if c in group.columns]
+            group = group[cols_to_keep]
+
+            if len(group) < 200:
+                continue
+
+            all_data[code] = group
+
+        print(f"  [SUCCESS] Loaded and parsed {len(all_data)} stocks data.", flush=True)
+        return all_data
+
+    finally:
+        conn.close()
+
+
+def load_roe_data_db() -> Dict[str, pd.DataFrame]:
+    """
+    Load ROE history data from TiDB Cloud database.
+    """
+    conn = get_connection()
+    try:
+        print("  [DB] Querying ROE history data from stock_profit_quarterly...", flush=True)
+        query = """
+        SELECT code, stat_date, pub_date, YEAR(stat_date) AS year, QUARTER(stat_date) AS quarter, roe_avg AS roe
+        FROM stock_profit_quarterly
+        """
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            print("  [WARN] No ROE data returned from database query.", flush=True)
+            return {}
+
+        df.rename(columns={
+            'code': '代码',
+            'stat_date': '统计日期',
+            'pub_date': '发布日期',
+            'year': '年份',
+            'quarter': '季度',
+            'roe': 'ROE'
+        }, inplace=True)
+
+        df['统计日期'] = pd.to_datetime(df['统计日期'])
+        df['发布日期'] = pd.to_datetime(df['发布日期'])
+        df['ROE'] = pd.to_numeric(df['ROE'], errors='coerce')
+
+        df.dropna(subset=['统计日期', '发布日期', 'ROE'], inplace=True)
+
+        roe_data = {}
+        for code, group in df.groupby('代码'):
+            group = group.sort_values('统计日期')
+            roe_data[code] = group
+
+        print(f"  [SUCCESS] Loaded ROE data for {len(roe_data)} stocks.", flush=True)
+        return roe_data
+
+    finally:
+        conn.close()
+
+
+def get_last_check_date_db(strategy_name: str) -> Optional[pd.Timestamp]:
+    """Reads checkpoint for strategy from database."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT last_check_date FROM strategy_checkpoints WHERE strategy = %s", (strategy_name,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return pd.Timestamp(row[0])
+        return None
+    except Exception as e:
+        print(f"  [DB] ⚠️ Reading checkpoint for {strategy_name} failed: {e}", flush=True)
+        return None
+    finally:
+        conn.close()
+
+
+def save_checkpoint_db(strategy_name: str, date: pd.Timestamp):
+    """Saves checkpoint for strategy to database."""
+    conn = get_connection()
+    try:
+        date_str = date.strftime('%Y-%m-%d')
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO strategy_checkpoints (strategy, last_check_date)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE last_check_date = %s
+            """, (strategy_name, date_str, date_str))
+        print(f"  [DB] ✅ Saved checkpoint for {strategy_name}: {date_str}", flush=True)
+    except Exception as e:
+        print(f"  [DB] ❌ Saving checkpoint for {strategy_name} failed: {e}", flush=True)
+    finally:
+        conn.close()
+
+
+# Alias for backward compatibility
+get_db_connection = get_connection
