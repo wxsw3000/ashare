@@ -9,12 +9,19 @@ import sys
 import os
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+curr = SCRIPT_DIR
+while curr and os.path.dirname(curr) != curr:
+    if os.path.exists(os.path.join(curr, 'MagicSTG')):
+        if curr not in sys.path:
+            sys.path.insert(0, curr)
+        break
+    curr = os.path.dirname(curr)
 
 import baostock as bs
 import pandas as pd
 
-from db import (
+from MagicSTG.db import (
     get_connection,
     get_connection_with_retry,
     safe_float,
