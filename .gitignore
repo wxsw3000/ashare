@@ -86,7 +86,7 @@ share/python-wheels/
 *.tsv
 *.pkl
 *.pickle
-data/
+/data/
 *.h5
 *.pth
 *.pt
