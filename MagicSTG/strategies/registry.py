@@ -7,6 +7,7 @@ Allows dynamic registration and instantiation of strategies.
 from typing import Dict, Type, Optional, Any
 from MagicSTG.strategies.base import BaseStrategy
 from MagicSTG.strategies.dynamic_factor import DynamicFactorStrategy
+from MagicSTG.strategies.cb_double_low import CBDoubleLowStrategy
 
 
 class StrategyRegistry:
@@ -40,3 +41,5 @@ class StrategyRegistry:
 # Automatically register default strategies
 StrategyRegistry.register('dynamic_factor', DynamicFactorStrategy)
 StrategyRegistry.register('dynamic', DynamicFactorStrategy)
+StrategyRegistry.register('cb_double_low', CBDoubleLowStrategy)
+StrategyRegistry.register('cb_double_low_strategy', CBDoubleLowStrategy)

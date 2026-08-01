@@ -1,0 +1,71 @@
+name: 策略回测
+
+on:
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: '选择要回测的策略'
+        required: true
+        type: choice
+        options:
+          - cb_double_low
+          - dynamic_factor
+        default: cb_double_low
+      start_date:
+        description: '回测起始日期 (YYYY-MM-DD)'
+        required: false
+        type: string
+        default: '2022-01-01'
+      end_date:
+        description: '回测结束日期 (YYYY-MM-DD)'
+        required: false
+        type: string
+        default: '2026-07-30'
+      capital:
+        description: '初始资金 (元)'
+        required: false
+        type: string
+        default: '100000'
+      top_n:
+        description: '持仓数量 (只)'
+        required: false
+        type: string
+        default: '10'
+
+jobs:
+  backtest:
+    name: 执行策略回测
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+
+      - name: 运行策略回测
+        env:
+          DB_HOST: ${{ secrets.TIDB_HOST }}
+          DB_PORT: ${{ secrets.TIDB_PORT }}
+          DB_USER: ${{ secrets.TIDB_USER }}
+          DB_PASSWORD: ${{ secrets.TIDB_PASSWORD }}
+          DB_NAME: ${{ secrets.TIDB_DB_NAME }}
+          DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
+        run: |
+          STRATEGY="${{ inputs.strategy }}"
+          START_DATE="${{ inputs.start_date }}"
+          END_DATE="${{ inputs.end_date }}"
+          CAPITAL="${{ inputs.capital }}"
+          TOP_N="${{ inputs.top_n }}"
+
+          if [ "$STRATEGY" = "cb_double_low" ]; then
+            python MagicSTG/run_cb_backtest.py --start "$START_DATE" --end "$END_DATE" --capital "$CAPITAL" --top "$TOP_N"
+          else
+            python MagicSTG/run_backtest.py --strategy "$STRATEGY" --start "$START_DATE" --end "$END_DATE" --capital "$CAPITAL"
+          fi

@@ -230,6 +230,44 @@ def load_roe_data_db() -> Dict[str, pd.DataFrame]:
         conn.close()
 
 
+def load_cb_data_db(start_date=None, end_date=None) -> Dict[str, pd.DataFrame]:
+    """
+    Load convertible bond indicators and master info from TiDB Cloud database.
+    """
+    conn = get_connection()
+    try:
+        query = """
+        SELECT code, date, cb_price, stock_code, stock_price, convert_price, convert_value, convert_premium_rate, db_low_value
+        FROM cb_daily_indicator
+        """
+        params = []
+        if start_date is not None or end_date is not None:
+            query += " WHERE 1=1"
+            if start_date is not None:
+                query += " AND date >= %s"
+                params.append(start_date)
+            if end_date is not None:
+                query += " AND date <= %s"
+                params.append(end_date)
+
+        query += " ORDER BY date ASC, db_low_value ASC"
+
+        print(f"  [DB] Fetching convertible bond daily indicators ({start_date} ~ {end_date})...", flush=True)
+        df_indicators = pd.read_sql(query, conn, params=params if params else None)
+
+        query_basic = "SELECT code, name, stock_code, stock_name, convert_price, list_date, rating FROM cb_basic"
+        df_basic = pd.read_sql(query_basic, conn)
+
+        num_bonds = df_indicators['code'].nunique() if not df_indicators.empty else 0
+        print(f"  [SUCCESS] Loaded {len(df_indicators)} CB indicator records for {num_bonds} bonds.", flush=True)
+        return {
+            'cb_daily_indicator': df_indicators,
+            'cb_basic': df_basic
+        }
+    finally:
+        conn.close()
+
+
 def get_last_check_date_db(strategy_name: str) -> Optional[pd.Timestamp]:
     """Reads checkpoint for strategy from database."""
     conn = get_connection()
