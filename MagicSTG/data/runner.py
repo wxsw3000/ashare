@@ -45,13 +45,21 @@ def get_beijing_time():
     """获取北京时间 (UTC+8)"""
     return datetime.now(timezone(timedelta(hours=8)))
 
-def format_time(dt):
-    """格式化时间输出"""
-    if dt is None:
+def format_time(val):
+    """格式化时间输出 (支持 datetime, str, float/int 秒数)"""
+    if val is None:
         return "--:--:--"
-    if isinstance(dt, str):
-        return dt.split()[-1] if ' ' in dt else dt
-    return dt.strftime("%H:%M:%S")
+    if isinstance(val, (int, float)):
+        val = int(val)
+        hours = val // 3600
+        minutes = (val % 3600) // 60
+        seconds = val % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    if isinstance(val, str):
+        return val.split()[-1] if ' ' in val else val
+    if hasattr(val, 'strftime'):
+        return val.strftime("%H:%M:%S")
+    return str(val)
 
 def get_target_date():
     """确定当前运行的目标行情交易日"""
