@@ -4,5 +4,6 @@ pymysql>=1.0.0
 cryptography>=3.0.0
 pyyaml>=6.0
 baostock>=0.8.8
+akshare>=1.10.0
 python-dotenv>=1.0.0
 flask>=2.0.0

@@ -235,3 +235,24 @@ class DecisionMaker:
                         })
 
         return decision
+
+    def execute_decisions(self, decision: TradeDecision, confirm: bool = False):
+        """Executes buy/sell decisions when confirm is True."""
+        if not confirm:
+            return
+
+        for sell in decision.sells:
+            code = sell['code']
+            price = sell['price']
+            self.position_manager.remove_position(code, sell_price=price)
+            print(f"  [EXECUTE] 卖出执行: {code} 价格:{price:.2f}")
+
+        for buy in decision.buys:
+            code = buy['code']
+            price = buy['price']
+            shares = buy['shares']
+            total = buy.get('total', shares * price)
+            slot_idx = buy.get('slot_idx', -1)
+            self.position_manager.add_position(code, buy_price=price, shares=shares, cost_total=total, slot_idx=slot_idx)
+            print(f"  [EXECUTE] 买入执行: {code} 价格:{price:.2f} 股数:{shares}")
+

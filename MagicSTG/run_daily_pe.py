@@ -14,8 +14,10 @@ import yaml
 import json
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+PARENT_DIR = os.path.dirname(PROJECT_ROOT)
+for path in (PROJECT_ROOT, PARENT_DIR):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 from positions.manager import PositionManager
 from signals.generator_pe import SignalGeneratorPE

@@ -158,9 +158,10 @@ def get_target_date():
     """
     beijing_time = get_beijing_time()
     today_str = beijing_time.strftime('%Y-%m-%d')
+    current_time_str = beijing_time.strftime('%H:%M:%S')
     
-    # 18:00 之后全市场数据 100% 准备就绪，拉取当天
-    if beijing_time.hour >= 18:
+    # 18:30 之后全市场数据 100% 准备就绪，拉取当天
+    if current_time_str >= "18:30:00":
         return today_str
     else:
         return (beijing_time - timedelta(days=1)).strftime('%Y-%m-%d')
