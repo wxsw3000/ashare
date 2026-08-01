@@ -161,6 +161,10 @@ def update_cb_kline_day():
                 skip_count += 1
                 continue
                 
+            if code.startswith('bj.'):
+                skip_count += 1
+                continue
+
             try:
                 df = ak.bond_zh_hs_cov_daily(symbol=symbol)
                 if df is None or df.empty:
@@ -200,6 +204,8 @@ def update_cb_kline_day():
                     conn = flush_db_buffer(conn, batch_buffer)
                     batch_buffer = []
                     
+            except KeyError:
+                skip_count += 1
             except Exception as e:
                 fail_count += 1
                 print(f"  ⚠️ 处理 {code} ({symbol}) 异常: {e}")
