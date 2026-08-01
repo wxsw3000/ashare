@@ -1,5 +1,5 @@
 # MagicSTG Quantitative System - Project Memory & Handoff
-*Last Updated: 2026-07-31 17:33 (Local Time)*
+*Last Updated: 2026-08-02 00:08 (Local Time)*
 
 This document serves as a persistent context handoff for MagicSTG. It ensures future development sessions or different AI agents can pick up the work instantly without confusion.
 
@@ -45,12 +45,13 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 * **`MagicSTG/config/`**:
   * `settings.py`: Centralized environment variable loading (`.env`), SSL CA path resolution (`isrgrootx1.pem`), and YAML configuration loader.
 * **`MagicSTG/core/`**:
-  * `db.py`: Primary database connection, heartbeat pinging, data loaders (`load_all_data_db`, `load_roe_data_db`), and strategy checkpoints.
+  * `db.py`: Primary database connection, heartbeat pinging, data loaders (`load_all_data_db`, `load_roe_data_db`, `load_cb_data_db`), and strategy checkpoints.
   * `db_writer.py`: Persistence engine for recommendations, positions, and backtest results into TiDB Cloud.
   * `cost.py` & `limit.py`: Transaction fee calculations and price limit-up/down checking.
 * **`MagicSTG/strategies/`**:
   * `base.py`: Abstract `BaseStrategy` base class defining strategy contract (`generate_signals`).
   * `dynamic_factor.py`: Plugin-based multi-factor dynamic strategy implementation (`DynamicFactorStrategy`).
+  * `cb_double_low.py`: Convertible bond Double-Low strategy implementation (`CBDoubleLowStrategy`).
   * `registry.py`: Strategy factory and registry (`StrategyRegistry.get(name)`).
   * `legacy/`: Archived single-factor legacy strategies (`pe_strategy`, `price_strategy`, `roe_strategy`).
 * **`MagicSTG/execution/`**:
@@ -116,17 +117,37 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 ---
 
-## 6. Convertible Bond Data & Next Steps (2026-07-31)
-* **Completed Progress Today (2026-07-31)**:
+## 6. Convertible Bond Data (2026-07-31)
+* **Completed Progress (2026-07-31)**:
   * **Database Architecture**: Created `cb_basic`, `cb_kline_day`, and `cb_daily_indicator` in TiDB Cloud (`init_cb_tables.py`).
   * **Code Format Unification**: Fully migrated all convertible bond tables (`cb_basic`, `cb_kline_day`, `cb_daily_indicator`) to Baostock standard format (`sh.113008` / `sh.600000`), enabling native zero-overhead indexed SQL joins with `stock_kline_day`.
   * **Master Info (`cb_basic`)**: Fully loaded 1,044 convertible bonds (1,016 active records updated to `sh.113008`). Auto-filled转股价 for 702 historical/delisted bonds via AKShare detail API (`update_cb_basic.py`).
   * **Daily K-Lines (`cb_kline_day`)**: Fully loaded and updated 662,130 daily K-line records spanning 2020-01-01 to present in `sh.113008` format (`update_cb_kline_day.py`).
   * **Daily Metrics (`cb_daily_indicator`)**: Refactored `update_cb_daily_indicator.py` with SQL index optimization (`st.code = b.stock_code AND cb.date = st.date`). Fully calculated and updated **656,354** records spanning **2020-01-02 to 2026-07-30** (100% completed).
-  * **Daily Automation Pipeline**: Registered `update_cb_basic.py`, `update_cb_kline_day.py`, and `update_cb_daily_indicator.py` into `MagicSTG/data/runner.py` under `daily` group for automated daily post-market execution.
-  * **Directory Execution Support**: Added dynamic project root resolution in all bond scripts to support direct execution from any subdirectory (`MagicSTG/data/bond/` or `E:\ashare`).
-  * **Time Cutoff Alignment**: Aligned exact date boundary to **18:30:00 (Beijing Time)** across `runner.py` and `utils.py`.
+
+---
+
+## 7. Session Memory & Strategy Development (2026-08-01 ~ 2026-08-02)
+
+* **Completed Accomplishments**:
+  1. **Data Pipeline Fixes & GitHub Actions Integration**:
+     - Fixed `format_time` in `MagicSTG/data/runner.py` to handle elapsed seconds (`float`/`int`).
+     - Fixed `.gitignore` path matching rule (`data/` -> `/data/`) to track all update scripts in `MagicSTG/data/`.
+     - Fixed global import path `from MagicSTG.db import ...` across all 19 update scripts (`stock/`, `macro/`, `index/`).
+     - Enhanced `update_cb_kline_day.py` to filter out non-mainstream Beijing Stock Exchange bond codes (`bj.`) and handle AKShare `KeyError` gracefully.
+     - Backfilled `update_progress` status in TiDB Cloud for historical tracking.
+  2. **Convertible Bond Double-Low Strategy (`CBDoubleLowStrategy`)**:
+     - Implemented `CBDoubleLowStrategy` in `MagicSTG/strategies/cb_double_low.py` (Double-Low Value = Bond Price + Convert Premium Rate; Filters: Price <= 130, Premium Rate range, Top N ranking).
+     - Registered `'cb_double_low'` and `'cb_double_low_strategy'` in `StrategyRegistry` (`MagicSTG/strategies/registry.py`).
+  3. **Convertible Bond Backtesting & Workflow Isolation**:
+     - Added `load_cb_data_db()` to `MagicSTG/core/db.py` for loading `cb_daily_indicator` and `cb_basic`.
+     - Developed `MagicSTG/run_cb_backtest.py` backtest engine script.
+     - Executed 2022-2026 historical backtest (1,107 trading days, 50.6k records): Total Return **+20.86%**, Annualized **+4.24%**, Max Drawdown **-26.94%**, Win Rate **51.0%**, Final Capital **120,862.33 CNY**.
+     - Created dedicated GitHub Actions workflow `.github/workflows/run_backtest.yml` ("策略回测"), completely separating strategy backtests from daily data pipeline (`update_ashare_data.yml`).
+  4. **Architecture Consensus on Forced Redemption (强赎风控)**:
+     - Confirmed NO NEED to create redundant database fields for forced redemption. Forced redemption warning will be dynamically calculated via a 30-day rolling window (`stock_price >= 1.3 * convert_price` for >= 15 days) directly in strategy/backtest code and real-time API filters.
+
 * **Next Steps**:
-  * Implement Convertible Bond Strategy (e.g. Double-Low 双低策略, Low-Premium Rate 策略).
-  * Integrate Convertible Bond backtesting into `MagicSTG/backtests/engine.py` and Web Dashboard.
+  * Integrate Convertible Bond Double-Low Strategy into Web Dashboard (`MagicSTG/web/server.py`) and daily post-market recommendation generator.
+  * Optimize strategy parameters (e.g. testing `max_price=120.0` or `115.0` to minimize drawdown).
 
