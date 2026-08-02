@@ -25,6 +25,8 @@ class SignalGeneratorROE(BaseStrategy):
         self.roe_min = stg.get('roe_min', 0.05)
         self.roe_data = None
 
+        self.top_n = stg.get('top_n', 10)
+
     def compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'buy_signal' in df.columns:
             return df
@@ -118,8 +120,9 @@ class SignalGeneratorROE(BaseStrategy):
             if row.get('sell_signal', False):
                 sell_signals.append((code, price))
 
+        # 按 ROE 降序排列（收益率最高在前），并限制 Top N 精选
         buy_candidates.sort(key=lambda x: x[2], reverse=True)
-        return buy_candidates, sell_signals
+        return buy_candidates[:self.top_n], sell_signals[:self.top_n]
 
     def check_sell_signal(self, df: pd.DataFrame, date: pd.Timestamp) -> bool:
         if date not in df.index:

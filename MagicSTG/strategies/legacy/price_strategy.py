@@ -20,6 +20,7 @@ class SignalGenerator(BaseStrategy):
         self.sell_di_threshold = config.get('strategy', {}).get('sell_di_threshold', 0.70)
         self.short_ma = config.get('strategy', {}).get('short_ma', 5)
         self.long_ma = config.get('strategy', {}).get('long_ma', 20)
+        self.top_n = config.get('strategy', {}).get('top_n', 10)
 
     def compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'buy_signal' in df.columns:
@@ -93,7 +94,7 @@ class SignalGenerator(BaseStrategy):
                 sell_signals.append((code, price))
 
         buy_candidates.sort(key=lambda x: x[1])
-        return buy_candidates, sell_signals
+        return buy_candidates[:self.top_n], sell_signals[:self.top_n]
 
     def check_sell_signal(self, df: pd.DataFrame, date: pd.Timestamp) -> bool:
         if date not in df.index:

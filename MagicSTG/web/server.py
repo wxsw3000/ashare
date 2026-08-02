@@ -109,7 +109,7 @@ def index():
 @app.route('/api/recommendations')
 def get_recommendations():
     """获取每日推荐信号"""
-    strategy = request.args.get('strategy', 'price')
+    strategy = request.args.get('strategy', 'cb_double_low')
     date = request.args.get('date', None)
     
     conn = get_db_connection()

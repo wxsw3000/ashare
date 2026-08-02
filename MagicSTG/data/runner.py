@@ -692,6 +692,14 @@ def main():
         print(f"  ⏳ 待执行: {summary['pending'] + summary['running']}")
         print("=" * 78)
         
+        # 当全天所有数据拉取 100% 成功完成后，触发策略信号计算与落库
+        if summary['failed'] == 0 and (summary['pending'] + summary['running']) == 0:
+            try:
+                from MagicSTG.strategies.runner import run_all_strategy_recommendations
+                run_all_strategy_recommendations(task_date)
+            except Exception as stg_err:
+                print(f"  [WARN] ⚠️ 盘后策略推荐生成异常: {stg_err}")
+
         return 1 if summary['failed'] > 0 else 0
         
     except Exception as e:

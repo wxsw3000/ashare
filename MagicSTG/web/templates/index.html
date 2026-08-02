@@ -734,7 +734,13 @@
         <div id="signalsSection" class="tab-content">
             <!-- Strategy Tabs -->
             <div class="strategy-tabs">
-                <button class="strategy-tab active" data-strategy="price" onclick="switchStrategy('price')">
+                <button class="strategy-tab active" data-strategy="cb_double_low" onclick="switchStrategy('cb_double_low')">
+                    <i class="fa-solid fa-coins"></i> 可转债双低
+                </button>
+                <button class="strategy-tab" data-strategy="dynamic_factor" onclick="switchStrategy('dynamic_factor')">
+                    <i class="fa-solid fa-layer-group"></i> 动态多因子
+                </button>
+                <button class="strategy-tab" data-strategy="price" onclick="switchStrategy('price')">
                     <i class="fa-solid fa-chart-line"></i> 价格优先
                 </button>
                 <button class="strategy-tab" data-strategy="pe" onclick="switchStrategy('pe')">

@@ -23,6 +23,7 @@ class SignalGeneratorPE(BaseStrategy):
         self.long_ma = stg.get('long_ma', 20)
         self.pe_min = stg.get('pe_min', 0)
         self.pe_max = stg.get('pe_max', 500)
+        self.top_n = stg.get('top_n', 10)
 
     def compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'buy_signal' in df.columns:
@@ -99,8 +100,9 @@ class SignalGeneratorPE(BaseStrategy):
             if row.get('sell_signal', False):
                 sell_signals.append((code, price))
 
-        buy_candidates.sort(key=lambda x: x[2], reverse=True)
-        return buy_candidates, sell_signals
+        # 按 PE 升序排列（最便宜在前），并限制 Top N 精选
+        buy_candidates.sort(key=lambda x: x[2], reverse=False)
+        return buy_candidates[:self.top_n], sell_signals[:self.top_n]
 
     def check_sell_signal(self, df: pd.DataFrame, date: pd.Timestamp) -> bool:
         if date not in df.index:

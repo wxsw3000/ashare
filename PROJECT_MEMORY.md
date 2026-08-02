@@ -151,3 +151,17 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Integrate Convertible Bond Double-Low Strategy into Web Dashboard (`MagicSTG/web/server.py`) and daily post-market recommendation generator.
   * Optimize strategy parameters (e.g. testing `max_price=120.0` or `115.0` to minimize drawdown).
 
+---
+
+## 10. Strategy Signal Refinement & Top N Quota Enforcement (2026-08-02)
+
+* **Top N Recommendation Limit Enforcement**:
+  * Refactored legacy strategy generators ([`pe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/pe_strategy.py), [`roe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/roe_strategy.py), [`price_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/price_strategy.py)) to enforce strict `top_n` quotas (default Top 10).
+  * `PE`: Sorts buy candidates ascending by PE (cheapest first) and returns Top 10.
+  * `ROE`: Sorts buy candidates descending by ROE (highest quality first) and returns Top 10.
+  * `Price`: Sorts buy candidates ascending by price and returns Top 10.
+  * Guarantees that traders receive high-conviction, actionable recommendations (max 10 signals per strategy) rather than noisy unconstrained list dumps.
+
+
+
+
