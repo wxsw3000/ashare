@@ -153,14 +153,35 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 ---
 
-## 10. Strategy Signal Refinement & Top N Quota Enforcement (2026-08-02)
+## 8. Session Summary & Memory (2026-08-02)
 
-* **Top N Recommendation Limit Enforcement**:
+* **Architecture Refactoring & Streamlining**:
+  * Updated `.github/workflows/update_ashare_data.yml` to call `python -m MagicSTG.data.runner $CMD_ARGS` directly from project root.
+  * Moved root design documents (`Python API文档.txt`, `表设计文档.txt`) into [`docs/`](file:///E:/ashare/docs/).
+  * Removed obsolete zero-import forwarding folders (`MagicSTG/utils`, `MagicSTG/signals`, `MagicSTG/positions`, `MagicSTG/decisions`).
+  * Preserved core data pipeline modules (`MagicSTG/db/`, `MagicSTG/data/`) ensuring 100% data update pipeline safety.
+
+* **Automated Post-Market Strategy Execution & Web Integration**:
+  * Developed [`MagicSTG/strategies/runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py) to automatically execute `cb_double_low` and `dynamic_factor` strategy recommendations and save to TiDB Cloud.
+  * Appended strategy recommendation execution as the final step in [`MagicSTG/data/runner.py`](file:///E:/ashare/MagicSTG/data/runner.py)—triggering **only after 100% of daily market & indicator data updates finish successfully** (handling 2~5h data pull windows cleanly).
+  * Executed test run for `2026-07-30`; generated and saved 10 Double-Low Convertible Bond BUY recommendations and 119 Multi-factor BUY/SELL recommendations to `recommendations` table in TiDB Cloud.
+  * Added `cb_double_low` and `dynamic_factor` strategy tabs to Flask Web Dashboard ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html)), updated default strategy in [`server.py`](file:///E:/ashare/MagicSTG/web/server.py), and verified `/api/recommendations?strategy=cb_double_low` returns status 200 with live recommendation data.
+
+* **Strategy Signal Refinement & Top N Quota Enforcement**:
   * Refactored legacy strategy generators ([`pe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/pe_strategy.py), [`roe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/roe_strategy.py), [`price_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/price_strategy.py)) to enforce strict `top_n` quotas (default Top 10).
   * `PE`: Sorts buy candidates ascending by PE (cheapest first) and returns Top 10.
   * `ROE`: Sorts buy candidates descending by ROE (highest quality first) and returns Top 10.
   * `Price`: Sorts buy candidates ascending by price and returns Top 10.
   * Guarantees that traders receive high-conviction, actionable recommendations (max 10 signals per strategy) rather than noisy unconstrained list dumps.
+
+* **GitHub Repository Synchronization**:
+  * All refactored code, docs, and strategy runner updates committed and pushed to `main` branch (`https://github.com/wxsw3000/ashare.git`).
+  * Render web deployment automatically triggered.
+
+* **Next Steps**:
+  * Integrate custom user strategy configuration saving & run history querying into Flask Web UI.
+  * Further optimize strategy parameters (e.g. testing `max_price=120.0` or `115.0` to minimize drawdown).
+
 
 
 
