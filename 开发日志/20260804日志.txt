@@ -1,0 +1,32 @@
+# 2026-08-04 量化系统v1.0 架构全面落地与 Web UI 重构日志
+
+## 一、 活动总结与核心成果
+
+1. **量化系统 v1.0 脑图需求深入分析 (`开发日志/量化系统v1.0.md`)**：
+   - 全面解析了策略管理、回测记录与策略推荐三大模块需求。
+
+2. **数据库结构扩展与策略表初始化 (`custom_strategies`)**：
+   - 编写并执行了 `MagicSTG/core/init_v1_tables.py` 脚本，在 TiDB Cloud 中成功创建 `custom_strategies` 表。
+   - 预置初始化了 5 大核心策略记录（可转债双低、动态多因子、低估值PE、高ROE盈利、低股价优先）。
+
+3. **后端 RESTful API 升级 (`MagicSTG/web/server.py`)**：
+   - `GET /api/strategies`: 策略列表检索与分类筛选。
+   - `POST /api/strategies`: 创建自定义策略。
+   - `PUT /api/strategies/<id>`: 修改策略与因子配置。
+   - `DELETE /api/strategies/<id>`: 删除策略及同步清理推荐记录。
+   - `POST /api/strategies/<id>/run`: 计算目标日期推荐信号，带“当天已运行”防重提醒 (`already_run: true`)。
+   - `GET /api/recommendation-runs`: 按 `(signal_date, strategy)` 聚合返回策略执行履历卡片列表。
+   - `GET /api/recommendations`: 多表 JOIN 关联查询，提供可转债 9 大核心指标与股票推荐指标。
+
+4. **Web UI 界面焕新与交互升级 (`MagicSTG/web/templates/index.html`)**：
+   - **三大导航 Tab**：策略管理、回测记录、策略推荐结果。
+   - **可视化因子建构器 (Visual Factor Builder Form)**：在策略创建/编辑模态框中植入全面的均线、放量倍数、DMI/DI、ROE、PE范围、净利增速、负债率上限、现金保障率、排序规则与标的池表单。
+   - **移动端卡片化响应式适配**：为所有表格添加 CSS Media Queries (`@media (max-width: 767px)`) 和 `data-label` 属性，手机端无需左右滚动，自动转化为优雅卡片。
+   - **主从结构下钻交互**：策略推荐结果采用“行情时间+策略”历史履历卡片网格 -> 点击下钻推荐明细（带 `← 返回履历列表` 按钮）。
+
+5. **代码同步与 Render 部署**：
+   - 所有改动均已提交并推送至 GitHub 仓库 `main` 分支（Latest Commit: `aaacb95`）。
+   - Render 云平台已成功自动打包部署。
+
+---
+记录时间: 2026-08-04 23:30:42 (Local Time)
