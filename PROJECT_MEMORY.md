@@ -217,6 +217,7 @@ The codebase has been refactored into a highly modular, plugin-based architectur
     1. **策略管理** (Strategy Management): Table list, create/edit modal, delete, run with prevention alert, backtest log execution modal with 1-click copy log button.
     2. **回测记录** (Backtest Records): Historical performance metrics table & interactive equity chart / trade details viewer.
     3. **策略推荐结果** (Strategy Recommendations): Dedicated Stock and Convertible Bond tabs displaying full 9 metrics table for CBs and stock recommendations.
-  * **移动端卡片化适配 (Mobile Responsiveness)**: Added CSS media queries (`@media (max-width: 767px)`) and `data-label` attributes across all tables. On mobile screens (phones/tablets), all multi-column data tables automatically transform into vertical glassmorphic cards with key-value pairs—eliminating horizontal scrolling entirely on mobile devices.
+  * **可视化因子表单建构器 (Visual Factor Builder Form)**: Embedded comprehensive multi-column factor controls inside the Create/Edit Strategy Modal—including MA short/long, volume surge factor, DMI (PDI/NDI) threshold, ROE min %, PE range [min, max], Profit growth YoY %, Debt limit %, Cash ratio (CFO/NP), primary factor sorting rules (Price, ROE, PE, Growth, DB Low Value), and stock/CB universe selections. Saved directly into TiDB Cloud `custom_strategies.factors_config` JSON.
+
 
 
