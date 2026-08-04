@@ -212,9 +212,11 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Implemented `/api/strategies/<id>/run` for target-date strategy execution with "already run today" prevention alert (`already_run: true`).
   * Enhanced `/api/recommendations` to perform SQL JOINs with `cb_basic` and `cb_daily_indicator`, providing enriched multi-dimensional fields (转债代码, 名称, 价格, 转股价值, 纯债价值, YTM, 正股代码, 正股名称, 正股价格).
 
-* **Web UI Redesign (v1.0 Mindmap Alignment)**:
+* **Web UI Redesign & Mobile Device Responsiveness (v1.0 Mindmap Alignment)**:
   * Redesigned [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) into 3 main navigation tabs:
     1. **策略管理** (Strategy Management): Table list, create/edit modal, delete, run with prevention alert, backtest log execution modal with 1-click copy log button.
     2. **回测记录** (Backtest Records): Historical performance metrics table & interactive equity chart / trade details viewer.
     3. **策略推荐结果** (Strategy Recommendations): Dedicated Stock and Convertible Bond tabs displaying full 9 metrics table for CBs and stock recommendations.
+  * **移动端卡片化适配 (Mobile Responsiveness)**: Added CSS media queries (`@media (max-width: 767px)`) and `data-label` attributes across all tables. On mobile screens (phones/tablets), all multi-column data tables automatically transform into vertical glassmorphic cards with key-value pairs—eliminating horizontal scrolling entirely on mobile devices.
+
 
