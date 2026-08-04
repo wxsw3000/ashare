@@ -182,7 +182,7 @@
             background: rgba(255,255,255,0.03);
         }
 
-        /* 移动设备响应式卡片化改造 (CSS Media Query for Mobile) */
+        /* 移动设备响应式卡片化改造 */
         @media (max-width: 767px) {
             .table-responsive {
                 border: none;
@@ -193,7 +193,7 @@
                 width: 100%;
             }
             .custom-table thead {
-                display: none; /* 移动端隐藏桌面表头 */
+                display: none;
             }
             .custom-table tr {
                 display: block;
@@ -353,8 +353,8 @@
             border: 1px solid rgba(255,255,255,0.12);
             border-radius: 16px;
             width: 100%;
-            max-width: 680px;
-            max-height: 90vh;
+            max-width: 780px;
+            max-height: 92vh;
             overflow-y: auto;
             padding: 1.5rem;
             box-shadow: 0 20px 50px rgba(0,0,0,0.6);
@@ -368,7 +368,7 @@
             margin-bottom: 1.25rem;
         }
         .modal-header h3 {
-            font-size: 1.1rem;
+            font-size: 1.15rem;
             color: #00d2c4;
         }
         .modal-close {
@@ -460,7 +460,7 @@
                 <div class="section-title">
                     <span><i class="fa-solid fa-layer-group"></i> 已建策略列表</span>
                     <button class="btn btn-primary" onclick="openCreateStrategyModal()">
-                        <i class="fa-solid fa-plus"></i> 新建自定义策略
+                        <i class="fa-solid fa-plus"></i> 新建自定义因子策略
                     </button>
                 </div>
 
@@ -603,15 +603,17 @@
         </div>
     </div>
 
-    <!-- ==================== 模态框 1: 创建/编辑策略 ==================== -->
+    <!-- ==================== 模态框 1: 新建/编辑可视化策略 (含全面因子配置表单) ==================== -->
     <div class="modal-overlay" id="strategyModal">
         <div class="modal-container">
             <div class="modal-header">
-                <h3 id="modalStrategyTitle">新建策略</h3>
+                <h3 id="modalStrategyTitle"><i class="fa-solid fa-wand-magic-sparkles"></i> 新建自定义策略</h3>
                 <button class="modal-close" onclick="closeStrategyModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form id="strategyForm">
                 <input type="hidden" id="editStrategyDbId">
+                
+                <!-- 基础信息 -->
                 <div class="form-grid-2">
                     <div class="form-group">
                         <label>策略 ID (英文小写唯一标示)</label>
@@ -619,7 +621,7 @@
                     </div>
                     <div class="form-group">
                         <label>策略名称</label>
-                        <input type="text" id="stgFormName" class="form-control" style="width: 100%;" placeholder="如 低估值绩优选股策略" required>
+                        <input type="text" id="stgFormName" class="form-control" style="width: 100%;" placeholder="如 低估值高ROE绩优策略" required>
                     </div>
                 </div>
 
@@ -632,8 +634,131 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>选股/选债 Top N 限制</label>
+                        <label>选股 / 选债 Top N 选出限制</label>
                         <input type="number" id="stgFormTopN" class="form-control" style="width: 100%;" value="10">
+                    </div>
+                </div>
+
+                <!-- 可配置因子与风控表单组装器 -->
+                <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: rgba(15, 17, 32, 0.5);">
+                    <h4 style="color: #00d2c4; font-size: 0.95rem; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+                        <i class="fa-solid fa-sliders"></i> 因子与风控限制配置 (组合筛选)
+                    </h4>
+                    
+                    <!-- 1. 技术面指标 -->
+                    <div style="font-size: 0.82rem; color: #8e95b2; margin-bottom: 0.5rem; font-weight: 600;">技术面指标</div>
+                    <div class="form-grid-2">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_golden_cross" checked style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_golden_cross" style="margin: 0; color: #f0f3fa; cursor:pointer;">均线金拆 (MA5 > MA20)</label>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <div style="flex:1;">
+                                <label style="font-size:0.75rem;">短期均线</label>
+                                <input type="number" id="stg_short_ma" class="form-control" style="width:100%;" value="5" min="2" max="100">
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-size:0.75rem;">长期均线</label>
+                                <input type="number" id="stg_long_ma" class="form-control" style="width:100%;" value="20" min="5" max="250">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_volume_surge" checked style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_volume_surge" style="margin: 0; color: #f0f3fa; cursor:pointer;">成交量放量限制</label>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;">放量倍数 (大于均量多少倍)</label>
+                            <input type="number" id="stg_volume_surge_factor" class="form-control" style="width:100%;" value="1.2" step="0.1" min="0.5" max="10">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_di_ratio" checked style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_di_ratio" style="margin: 0; color: #f0f3fa; cursor:pointer;">DMI 趋势比率 (PDI/NDI)</label>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;">PDI/NDI 比率门槛</label>
+                            <input type="number" id="stg_buy_di_threshold" class="form-control" style="width:100%;" value="0.70" step="0.05" min="0" max="10">
+                        </div>
+                    </div>
+
+                    <!-- 2. 基本面财务因子 -->
+                    <div style="font-size: 0.82rem; color: #8e95b2; margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 600;">基本面财务因子</div>
+                    <div class="form-grid-2">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_roe" style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_roe" style="margin: 0; color: #f0f3fa; cursor:pointer;">最低 ROE (%)</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_roe_min" class="form-control" style="width:100%;" value="5.0" step="0.5" min="0" max="100">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_pe" style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_pe" style="margin: 0; color: #f0f3fa; cursor:pointer;">市盈率 PE 范围</label>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="number" id="stg_pe_min" class="form-control" style="width:100%;" placeholder="Min PE" value="0">
+                            <input type="number" id="stg_pe_max" class="form-control" style="width:100%;" placeholder="Max PE" value="35">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_growth" style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_growth" style="margin: 0; color: #f0f3fa; cursor:pointer;">净利润同比增速 (%)</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_growth_min" class="form-control" style="width:100%;" value="10.0" step="1">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_debt_limit" style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_debt_limit" style="margin: 0; color: #f0f3fa; cursor:pointer;">资产负债率上限</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_debt_max" class="form-control" style="width:100%;" value="0.70" step="0.05" min="0" max="1">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_enable_cash_quality" style="accent-color:#00d2c4; width:16px; height:16px;">
+                            <label for="stg_enable_cash_quality" style="margin: 0; color: #f0f3fa; cursor:pointer;">现金保障率 (CFO/NP)</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_cfo_np_min" class="form-control" style="width:100%;" value="0.80" step="0.1">
+                        </div>
+                    </div>
+
+                    <!-- 3. 排序规则与标的池 -->
+                    <div style="font-size: 0.82rem; color: #8e95b2; margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 600;">排序规则与标的池</div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label>核心排序规则</label>
+                            <select id="stg_primary_factor" class="form-control" style="width: 100%;">
+                                <option value="price">价格优先 (单股低股价优先)</option>
+                                <option value="roe">ROE 优先 (高盈利股优先)</option>
+                                <option value="pe">PE 优先 (低估值股优先)</option>
+                                <option value="growth">成长性优先 (高利润增长优先)</option>
+                                <option value="db_low_value">双低值优先 (仅可转债)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>股票 / 转债筛选池</label>
+                            <select id="stg_universe" class="form-control" style="width: 100%;">
+                                <option value="csi300">沪深 300 成分股池</option>
+                                <option value="all">全市场 A 股 / 转债标的池</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -645,11 +770,11 @@
                 <div class="form-grid-2">
                     <div class="form-group">
                         <label>买入信号规则</label>
-                        <textarea id="stgFormBuyRule" class="form-control" style="width: 100%; height: 60px;" placeholder="触发买入的具体条件说明"></textarea>
+                        <textarea id="stgFormBuyRule" class="form-control" style="width: 100%; height: 50px;" placeholder="触发买入的具体条件说明"></textarea>
                     </div>
                     <div class="form-group">
                         <label>卖出信号规则</label>
-                        <textarea id="stgFormSellRule" class="form-control" style="width: 100%; height: 60px;" placeholder="触发卖出或止盈止损条件说明"></textarea>
+                        <textarea id="stgFormSellRule" class="form-control" style="width: 100%; height: 50px;" placeholder="触发卖出或止盈止损条件说明"></textarea>
                     </div>
                 </div>
 
@@ -685,7 +810,6 @@
         // 全局变量
         let currentRecommendationsData = [];
         let allStrategiesList = [];
-        let backtestChartInstance = null;
 
         // 切换三大主 Tab
         function switchMainTab(tabName) {
@@ -707,7 +831,7 @@
             }
         }
 
-        // 1. 加载策略列表 (带有 data-label 的响应式移动端卡片适配)
+        // 1. 加载策略列表
         async function loadStrategies() {
             const search = document.getElementById('searchStrategyInput').value;
             const category = document.getElementById('filterCategorySelect').value;
@@ -762,7 +886,7 @@
 
         // 打开/关闭模态框
         function openCreateStrategyModal() {
-            document.getElementById('modalStrategyTitle').textContent = '新建自定义策略';
+            document.getElementById('modalStrategyTitle').textContent = '新建自定义因子策略';
             document.getElementById('editStrategyDbId').value = '';
             document.getElementById('stgFormId').value = '';
             document.getElementById('stgFormId').disabled = false;
@@ -770,6 +894,30 @@
             document.getElementById('stgFormDesc').value = '';
             document.getElementById('stgFormBuyRule').value = '';
             document.getElementById('stgFormSellRule').value = '';
+            
+            // 重置默认因子参数
+            document.getElementById('stg_enable_golden_cross').checked = true;
+            document.getElementById('stg_short_ma').value = 5;
+            document.getElementById('stg_long_ma').value = 20;
+            document.getElementById('stg_enable_volume_surge').checked = true;
+            document.getElementById('stg_volume_surge_factor').value = 1.2;
+            document.getElementById('stg_enable_di_ratio').checked = true;
+            document.getElementById('stg_buy_di_threshold').value = 0.70;
+            document.getElementById('stg_enable_roe').checked = false;
+            document.getElementById('stg_roe_min').value = 5.0;
+            document.getElementById('stg_enable_pe').checked = false;
+            document.getElementById('stg_pe_min').value = 0;
+            document.getElementById('stg_pe_max').value = 35;
+            document.getElementById('stg_enable_growth').checked = false;
+            document.getElementById('stg_growth_min').value = 10.0;
+            document.getElementById('stg_enable_debt_limit').checked = false;
+            document.getElementById('stg_debt_max').value = 0.70;
+            document.getElementById('stg_enable_cash_quality').checked = false;
+            document.getElementById('stg_cfo_np_min').value = 0.80;
+            document.getElementById('stg_primary_factor').value = 'price';
+            document.getElementById('stg_universe').value = 'csi300';
+            document.getElementById('stgFormTopN').value = 10;
+
             document.getElementById('strategyModal').classList.add('active');
         }
 
@@ -786,6 +934,37 @@
             document.getElementById('stgFormDesc').value = stg.description || '';
             document.getElementById('stgFormBuyRule').value = stg.buy_signals_rule || '';
             document.getElementById('stgFormSellRule').value = stg.sell_signals_rule || '';
+
+            const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+            if (cfg) {
+                if (cfg.top_n) document.getElementById('stgFormTopN').value = cfg.top_n;
+                if (cfg.stock_scope) document.getElementById('stg_universe').value = cfg.stock_scope;
+                if (cfg.sort_by || cfg.ranking?.primary_factor) document.getElementById('stg_primary_factor').value = cfg.sort_by || cfg.ranking?.primary_factor;
+
+                if (cfg.tech) {
+                    document.getElementById('stg_enable_golden_cross').checked = !!cfg.tech.enable_golden_cross;
+                    document.getElementById('stg_short_ma').value = cfg.tech.short_ma || 5;
+                    document.getElementById('stg_long_ma').value = cfg.tech.long_ma || 20;
+                    document.getElementById('stg_enable_volume_surge').checked = !!cfg.tech.enable_volume_surge;
+                    document.getElementById('stg_volume_surge_factor').value = cfg.tech.volume_surge_factor || 1.2;
+                    document.getElementById('stg_enable_di_ratio').checked = !!cfg.tech.enable_di_ratio;
+                    document.getElementById('stg_buy_di_threshold').value = cfg.tech.buy_di_threshold || 0.70;
+                }
+                if (cfg.financial) {
+                    document.getElementById('stg_enable_roe').checked = !!cfg.financial.enable_roe;
+                    document.getElementById('stg_roe_min').value = (cfg.financial.roe_min || 0.05) * 100;
+                    document.getElementById('stg_enable_pe').checked = !!cfg.financial.enable_pe;
+                    document.getElementById('stg_pe_min').value = cfg.financial.pe_min || 0;
+                    document.getElementById('stg_pe_max').value = cfg.financial.pe_max || 35;
+                    document.getElementById('stg_enable_growth').checked = !!cfg.financial.enable_growth;
+                    document.getElementById('stg_growth_min').value = (cfg.financial.growth_min || 0.10) * 100;
+                    document.getElementById('stg_enable_debt_limit').checked = !!cfg.financial.enable_debt_limit;
+                    document.getElementById('stg_debt_max').value = cfg.financial.debt_max || 0.70;
+                    document.getElementById('stg_enable_cash_quality').checked = !!cfg.financial.enable_cash_quality;
+                    document.getElementById('stg_cfo_np_min').value = cfg.financial.cfo_np_min || 0.80;
+                }
+            }
+
             document.getElementById('strategyModal').classList.add('active');
         }
 
@@ -796,6 +975,40 @@
         // 保存策略
         async function saveStrategySubmit() {
             const dbId = document.getElementById('editStrategyDbId').value;
+            const primaryFactor = document.getElementById('stg_primary_factor').value;
+
+            const factorsConfig = {
+                top_n: parseInt(document.getElementById('stgFormTopN').value || 10),
+                stock_scope: document.getElementById('stg_universe').value,
+                sort_by: primaryFactor,
+                tech: {
+                    enable_golden_cross: document.getElementById('stg_enable_golden_cross').checked,
+                    short_ma: parseInt(document.getElementById('stg_short_ma').value || 5),
+                    long_ma: parseInt(document.getElementById('stg_long_ma').value || 20),
+                    enable_volume_surge: document.getElementById('stg_enable_volume_surge').checked,
+                    volume_surge_factor: parseFloat(document.getElementById('stg_volume_surge_factor').value || 1.2),
+                    enable_di_ratio: document.getElementById('stg_enable_di_ratio').checked,
+                    buy_di_threshold: parseFloat(document.getElementById('stg_buy_di_threshold').value || 0.7)
+                },
+                financial: {
+                    enable_roe: document.getElementById('stg_enable_roe').checked,
+                    roe_min: parseFloat(document.getElementById('stg_roe_min').value || 5.0) / 100.0,
+                    enable_pe: document.getElementById('stg_enable_pe').checked,
+                    pe_min: parseFloat(document.getElementById('stg_pe_min').value || 0),
+                    pe_max: parseFloat(document.getElementById('stg_pe_max').value || 35),
+                    enable_growth: document.getElementById('stg_enable_growth').checked,
+                    growth_min: parseFloat(document.getElementById('stg_growth_min').value || 10.0) / 100.0,
+                    enable_debt_limit: document.getElementById('stg_enable_debt_limit').checked,
+                    debt_max: parseFloat(document.getElementById('stg_debt_max').value || 0.7),
+                    enable_cash_quality: document.getElementById('stg_enable_cash_quality').checked,
+                    cfo_np_min: parseFloat(document.getElementById('stg_cfo_np_min').value || 0.8)
+                },
+                ranking: {
+                    primary_factor: primaryFactor,
+                    reverse: ['roe', 'growth'].includes(primaryFactor)
+                }
+            };
+
             const payload = {
                 strategy_id: document.getElementById('stgFormId').value.trim(),
                 name: document.getElementById('stgFormName').value.trim(),
@@ -803,7 +1016,7 @@
                 description: document.getElementById('stgFormDesc').value.trim(),
                 buy_signals_rule: document.getElementById('stgFormBuyRule').value.trim(),
                 sell_signals_rule: document.getElementById('stgFormSellRule').value.trim(),
-                factors_config: { top_n: parseInt(document.getElementById('stgFormTopN').value || 10) }
+                factors_config: factorsConfig
             };
 
             const method = dbId ? 'PUT' : 'POST';
@@ -932,7 +1145,7 @@
             }).catch(e => alert('复制失败: ' + e));
         }
 
-        // 2. 加载历史回测记录 (移动端自动变形为卡片)
+        // 2. 加载历史回测记录
         async function loadBacktests() {
             const tbody = document.getElementById('backtestTableBody');
             try {
@@ -1058,7 +1271,7 @@
             renderRecommendationTable(isCB ? 'convertible_bond' : 'stock');
         }
 
-        // 渲染策略推荐表格 (在手机端依据 data-label 无缝卡片化)
+        // 渲染策略推荐表格
         function renderRecommendationTable(category) {
             const header = document.getElementById('recTableHeader');
             const tbody = document.getElementById('recTableBody');
