@@ -151,6 +151,97 @@
             gap: 0.5rem;
         }
 
+        /* 执行记录主视图卡片网格 (Master Run Cards Grid) */
+        .run-card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+        }
+        @media (min-width: 640px) {
+            .run-card-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (min-width: 1024px) {
+            .run-card-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .run-card {
+            background: rgba(26, 29, 54, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+        .run-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+            background: #00d2c4;
+            opacity: 0.7;
+        }
+        .run-card.cb-card::before {
+            background: #c084fc;
+        }
+        .run-card:hover {
+            background: rgba(26, 29, 54, 0.95);
+            border-color: #00d2c4;
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0, 210, 196, 0.2);
+        }
+        .run-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .run-card-date {
+            font-size: 0.85rem;
+            color: #8e95b2;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .run-card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #f0f3fa;
+            margin-bottom: 0.85rem;
+        }
+        .run-card-stats {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            margin-bottom: 1rem;
+            font-size: 0.82rem;
+        }
+        .run-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            padding-top: 0.75rem;
+            margin-top: 0.5rem;
+            font-size: 0.78rem;
+            color: #8e95b2;
+        }
+        .run-card-action {
+            color: #00d2c4;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
         /* 表格通用样式 (PC端) */
         .table-responsive {
             width: 100%;
@@ -556,31 +647,46 @@
             </div>
         </div>
 
-        <!-- ==================== 模块 3: 策略推荐结果 (Strategy Recommendations) ==================== -->
+        <!-- ==================== 模块 3: 策略推荐结果 (主从下钻: 行情时间+策略 履历卡片 -> 详情) ==================== -->
         <div id="sectionRecommendations" class="tab-section" style="display: none;">
-            <div class="section-card">
+            
+            <!-- 第一层：策略执行历史履历卡片列表 (Master Card View) -->
+            <div id="recRunsMasterContainer" class="section-card">
                 <div class="section-title">
-                    <span><i class="fa-solid fa-list-check"></i> 盘后推荐计算结果</span>
-                    <span id="recDateBadge" class="badge-tag badge-stock">--</span>
+                    <span><i class="fa-solid fa-clock-rotate-left"></i> 策略执行历史履历</span>
                 </div>
 
-                <!-- 推荐检索条件: 策略类型/选择、日期选择 -->
+                <!-- 履历检索条件 -->
+                <div class="filter-bar">
+                    <input type="text" id="recRunSearchInput" class="form-control" placeholder="搜索行情日期 / 策略名称..." oninput="loadRecommendationRuns()">
+                    <select id="recRunCategorySelect" class="form-control" onchange="loadRecommendationRuns()">
+                        <option value="all">全部分类</option>
+                        <option value="stock">股票策略</option>
+                        <option value="convertible_bond">可转债策略</option>
+                    </select>
+                </div>
+
+                <!-- 履历卡片网格列表 -->
+                <div class="run-card-grid" id="recRunsCardGrid">
+                    <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2rem;">加载策略执行记录中...</div>
+                </div>
+            </div>
+
+            <!-- 第二层：推荐结果详情视图 (Detail View) -->
+            <div id="recRunDetailContainer" class="section-card" style="display: none;">
+                <div class="section-title">
+                    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="backToRecRunsMaster()"><i class="fa-solid fa-arrow-left"></i> 返回履历列表</button>
+                        <span id="recDetailTitleHeader" style="font-weight: 700; color: #00d2c4;">--</span>
+                    </div>
+                    <span id="recDetailDateBadge" class="badge-tag badge-stock">--</span>
+                </div>
+
+                <!-- 详情方向过滤器 -->
                 <div class="filter-bar">
                     <div>
-                        <label style="font-size: 0.8rem; color:#8e95b2;">选择策略: </label>
-                        <select id="recStrategySelect" class="form-control" onchange="loadRecommendations()">
-                            <!-- JS 动态填充策略下拉 -->
-                        </select>
-                    </div>
-                    <div>
-                        <label style="font-size: 0.8rem; color:#8e95b2;">行情时间: </label>
-                        <select id="recDateSelect" class="form-control" onchange="loadRecommendationsByDate()">
-                            <option value="">加载中...</option>
-                        </select>
-                    </div>
-                    <div>
                         <label style="font-size: 0.8rem; color:#8e95b2;">信号方向: </label>
-                        <select id="recActionSelect" class="form-control" onchange="filterRecTable()">
+                        <select id="recDetailActionSelect" class="form-control" onchange="filterRecDetailTable()">
                             <option value="ALL">全部信号</option>
                             <option value="BUY">买入 (BUY)</option>
                             <option value="SELL">卖出 (SELL)</option>
@@ -588,22 +694,23 @@
                     </div>
                 </div>
 
-                <!-- 推荐结果展示区域 -->
-                <div class="table-responsive" id="recommendationsTableContainer">
+                <!-- 推荐结果表格 -->
+                <div class="table-responsive">
                     <table class="custom-table">
-                        <thead id="recTableHeader">
-                            <!-- 动态切换股票/可转债表头 -->
+                        <thead id="recDetailTableHeader">
+                            <!-- 动态表格头部 -->
                         </thead>
-                        <tbody id="recTableBody">
-                            <tr><td colspan="10" style="text-align: center; color: #8e95b2;">暂无推荐记录</td></tr>
+                        <tbody id="recDetailTableBody">
+                            <tr><td colspan="11" style="text-align: center; color: #8e95b2;">加载推荐详情...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+
         </div>
     </div>
 
-    <!-- ==================== 模态框 1: 新建/编辑可视化策略 (含全面因子配置表单) ==================== -->
+    <!-- ==================== 模态框 1: 新建/编辑可视化策略 ==================== -->
     <div class="modal-overlay" id="strategyModal">
         <div class="modal-container">
             <div class="modal-header">
@@ -650,7 +757,7 @@
                     <div class="form-grid-2">
                         <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
                             <input type="checkbox" id="stg_enable_golden_cross" checked style="accent-color:#00d2c4; width:16px; height:16px;">
-                            <label for="stg_enable_golden_cross" style="margin: 0; color: #f0f3fa; cursor:pointer;">均线金拆 (MA5 > MA20)</label>
+                            <label for="stg_enable_golden_cross" style="margin: 0; color: #f0f3fa; cursor:pointer;">均线金叉 (MA5 > MA20)</label>
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
                             <div style="flex:1;">
@@ -808,8 +915,9 @@
 
     <script>
         // 全局变量
-        let currentRecommendationsData = [];
         let allStrategiesList = [];
+        let currentDetailRunData = [];
+        let currentDetailCategory = 'stock';
 
         // 切换三大主 Tab
         function switchMainTab(tabName) {
@@ -827,7 +935,7 @@
             } else if (tabName === 'recommendations') {
                 document.getElementById('tabNavRecommendations').classList.add('active');
                 document.getElementById('sectionRecommendations').style.display = 'block';
-                initRecommendationTab();
+                loadRecommendationRuns();
             }
         }
 
@@ -895,7 +1003,6 @@
             document.getElementById('stgFormBuyRule').value = '';
             document.getElementById('stgFormSellRule').value = '';
             
-            // 重置默认因子参数
             document.getElementById('stg_enable_golden_cross').checked = true;
             document.getElementById('stg_short_ma').value = 5;
             document.getElementById('stg_long_ma').value = 20;
@@ -1219,67 +1326,110 @@
             }
         }
 
-        // 3. 策略推荐结果 (Recommendations)
-        async function initRecommendationTab() {
-            const select = document.getElementById('recStrategySelect');
-            if (allStrategiesList.length === 0) {
-                const res = await fetch('/api/strategies');
-                const r = await res.json();
-                if (r.status === 'success') allStrategiesList = r.data;
+        // 3. 策略推荐结果 (主从下钻: 行情时间+策略 履历卡片列表 -> 推荐详情)
+        async function loadRecommendationRuns() {
+            const search = document.getElementById('recRunSearchInput').value;
+            const category = document.getElementById('recRunCategorySelect').value;
+            const grid = document.getElementById('recRunsCardGrid');
+
+            try {
+                const res = await fetch(`/api/recommendation-runs?search=${encodeURIComponent(search)}&category=${category}`);
+                const result = await res.json();
+
+                if (result.status !== 'success') {
+                    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #df4b5e;">${result.message}</div>`;
+                    return;
+                }
+
+                const runs = result.data || [];
+                if (runs.length === 0) {
+                    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2rem;">暂无策略执行历史履历</div>`;
+                    return;
+                }
+
+                grid.innerHTML = runs.map(run => {
+                    const isCB = run.category === 'convertible_bond';
+                    const catBadge = isCB 
+                        ? `<span class="badge-tag badge-cb"><i class="fa-solid fa-coins"></i> 可转债</span>` 
+                        : `<span class="badge-tag badge-stock"><i class="fa-solid fa-layer-group"></i> 股票</span>`;
+
+                    return `
+                        <div class="run-card ${isCB ? 'cb-card' : ''}" onclick="openRecRunDetail('${run.signal_date}', '${run.strategy_id}', '${run.strategy_name}', '${run.category}')">
+                            <div>
+                                <div class="run-card-header">
+                                    <span class="run-card-date"><i class="fa-regular fa-calendar"></i> ${run.signal_date}</span>
+                                    ${catBadge}
+                                </div>
+                                <div class="run-card-title">${run.strategy_name}</div>
+                                <div class="run-card-stats">
+                                    <span class="badge-tag badge-buy"><i class="fa-solid fa-arrow-up"></i> 买入 ${run.buy_count}</span>
+                                    <span class="badge-tag badge-sell"><i class="fa-solid fa-arrow-down"></i> 卖出 ${run.sell_count}</span>
+                                    <span style="color:#8e95b2; margin-left:auto;">共 ${run.total_count} 条信号</span>
+                                </div>
+                            </div>
+                            <div class="run-card-footer">
+                                <span><i class="fa-regular fa-clock"></i> ${run.run_time || '-'}</span>
+                                <span class="run-card-action">查看推荐明细 <i class="fa-solid fa-chevron-right"></i></span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #df4b5e;">加载失败: ${e.message}</div>`;
             }
-
-            select.innerHTML = allStrategiesList.map(s => `<option value="${s.strategy_id}">${s.name} (${s.category === 'convertible_bond' ? '可转债' : '股票'})</option>`).join('');
-            loadRecommendations();
         }
 
-        async function loadRecommendations() {
-            const stg = document.getElementById('recStrategySelect').value || 'cb_double_low';
-            const res = await fetch(`/api/recommendations?strategy=${stg}`);
-            const result = await res.json();
+        // 点击卡片下钻进入详情视图
+        async function openRecRunDetail(signalDate, strategyId, strategyName, category) {
+            currentDetailCategory = category;
+            document.getElementById('recRunsMasterContainer').style.display = 'none';
+            document.getElementById('recRunDetailContainer').style.display = 'block';
 
-            if (result.status !== 'success') {
-                document.getElementById('recTableBody').innerHTML = `<tr><td colspan="10" style="text-align:center; color:#df4b5e;">${result.message}</td></tr>`;
-                return;
-            }
+            document.getElementById('recDetailTitleHeader').textContent = `${signalDate} ${strategyName} 盘后推荐明细`;
+            document.getElementById('recDetailDateBadge').textContent = signalDate;
+            document.getElementById('recDetailDateBadge').className = category === 'convertible_bond' ? 'badge-tag badge-cb' : 'badge-tag badge-stock';
 
-            const { data, date, available_dates, category } = result;
-            currentRecommendationsData = data || [];
+            const tbody = document.getElementById('recDetailTableBody');
+            tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; color: #8e95b2;"><i class="fa-solid fa-spinner fa-spin"></i> 加载明细中...</td></tr>`;
 
-            // 更新日期下拉
-            const dateSel = document.getElementById('recDateSelect');
-            dateSel.innerHTML = (available_dates || []).map(d => `<option value="${d}" ${d === date ? 'selected' : ''}>${d}</option>`).join('');
-            document.getElementById('recDateBadge').textContent = date || '--';
+            try {
+                const res = await fetch(`/api/recommendations?strategy=${strategyId}&date=${signalDate}`);
+                const result = await res.json();
 
-            renderRecommendationTable(category);
-        }
+                if (result.status !== 'success') {
+                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#df4b5e;">${result.message}</td></tr>`;
+                    return;
+                }
 
-        async function loadRecommendationsByDate() {
-            const stg = document.getElementById('recStrategySelect').value;
-            const date = document.getElementById('recDateSelect').value;
-            const res = await fetch(`/api/recommendations?strategy=${stg}&date=${date}`);
-            const result = await res.json();
-            if (result.status === 'success') {
-                currentRecommendationsData = result.data || [];
-                document.getElementById('recDateBadge').textContent = date;
-                renderRecommendationTable(result.category);
+                currentDetailRunData = result.data || [];
+                renderRecDetailTable();
+
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#df4b5e;">加载失败: ${e.message}</td></tr>`;
             }
         }
 
-        function filterRecTable() {
-            const stg = document.getElementById('recStrategySelect').value;
-            const isCB = stg.includes('cb_') || (allStrategiesList.find(s => s.strategy_id === stg)?.category === 'convertible_bond');
-            renderRecommendationTable(isCB ? 'convertible_bond' : 'stock');
+        // 返回履历卡片主视图
+        function backToRecRunsMaster() {
+            document.getElementById('recRunDetailContainer').style.display = 'none';
+            document.getElementById('recRunsMasterContainer').style.display = 'block';
+            loadRecommendationRuns();
         }
 
-        // 渲染策略推荐表格
-        function renderRecommendationTable(category) {
-            const header = document.getElementById('recTableHeader');
-            const tbody = document.getElementById('recTableBody');
-            const actionFilter = document.getElementById('recActionSelect').value;
+        function filterRecDetailTable() {
+            renderRecDetailTable();
+        }
 
-            const filteredData = currentRecommendationsData.filter(d => actionFilter === 'ALL' || d.action === actionFilter);
+        // 渲染推荐明细表格 (包含完整 9 大可转债字段与股票字段)
+        function renderRecDetailTable() {
+            const header = document.getElementById('recDetailTableHeader');
+            const tbody = document.getElementById('recDetailTableBody');
+            const actionFilter = document.getElementById('recDetailActionSelect').value;
 
-            if (category === 'convertible_bond') {
+            const filteredData = currentDetailRunData.filter(d => actionFilter === 'ALL' || d.action === actionFilter);
+
+            if (currentDetailCategory === 'convertible_bond') {
                 header.innerHTML = `
                     <tr>
                         <th>转债代码</th>

@@ -336,6 +336,61 @@ def run_strategy(stg_id):
         conn.close()
 
 
+@app.route('/api/recommendation-runs', methods=['GET'])
+def get_recommendation_runs():
+    """获取所有『行情时间 + 策略』策略执行历史履历卡片列表"""
+    search = request.args.get('search', '').strip()
+    category = request.args.get('category', '').strip()
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        query = """
+            SELECT 
+                r.signal_date,
+                r.strategy,
+                COALESCE(s.name, r.strategy) AS strategy_name,
+                COALESCE(s.category, IF(r.strategy LIKE 'cb_%%', 'convertible_bond', 'stock')) AS category,
+                COUNT(*) AS total_count,
+                SUM(CASE WHEN r.action = 'BUY' THEN 1 ELSE 0 END) AS buy_count,
+                SUM(CASE WHEN r.action = 'SELL' THEN 1 ELSE 0 END) AS sell_count,
+                MAX(r.created_at) AS run_time
+            FROM recommendations r
+            LEFT JOIN custom_strategies s ON r.strategy = s.strategy_id
+            WHERE 1=1
+        """
+        params = []
+        if search:
+            query += " AND (r.strategy LIKE %s OR s.name LIKE %s OR r.signal_date LIKE %s)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        if category and category != 'all':
+            query += " AND (s.category = %s OR (s.category IS NULL AND %s = 'convertible_bond' AND r.strategy LIKE 'cb_%%'))"
+            params.extend([category, category])
+
+        query += " GROUP BY r.signal_date, r.strategy ORDER BY r.signal_date DESC, r.strategy ASC LIMIT 100"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        runs = []
+        for r in rows:
+            runs.append({
+                'signal_date': r[0].strftime('%Y-%m-%d') if r[0] else None,
+                'strategy_id': r[1],
+                'strategy_name': r[2],
+                'category': r[3],
+                'total_count': int(r[4]),
+                'buy_count': int(r[5]),
+                'sell_count': int(r[6]),
+                'run_time': r[7].strftime('%Y-%m-%d %H:%M:%S') if r[7] else None
+            })
+
+        return jsonify({'status': 'success', 'data': runs})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
 @app.route('/api/recommendations')
 def get_recommendations():
     """获取每日推荐信号（按 v1.0 架构区分股票策略与可转债策略展示指标）"""
