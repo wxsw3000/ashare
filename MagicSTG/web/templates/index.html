@@ -147,9 +147,11 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
 
-        /* 表格通用样式 */
+        /* 表格通用样式 (PC端) */
         .table-responsive {
             width: 100%;
             overflow-x: auto;
@@ -178,6 +180,75 @@
         }
         .custom-table tr:hover td {
             background: rgba(255,255,255,0.03);
+        }
+
+        /* 移动设备响应式卡片化改造 (CSS Media Query for Mobile) */
+        @media (max-width: 767px) {
+            .table-responsive {
+                border: none;
+                overflow-x: visible;
+            }
+            .custom-table, .custom-table tbody {
+                display: block;
+                width: 100%;
+            }
+            .custom-table thead {
+                display: none; /* 移动端隐藏桌面表头 */
+            }
+            .custom-table tr {
+                display: block;
+                background: rgba(26, 29, 54, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 14px;
+                margin-bottom: 1rem;
+                padding: 1rem;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            }
+            .custom-table td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0.55rem 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+                white-space: normal;
+                font-size: 0.85rem;
+                text-align: right;
+            }
+            .custom-table td:last-child {
+                border-bottom: none;
+                padding-top: 0.75rem;
+                justify-content: flex-end;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+            .custom-table td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: #8e95b2;
+                font-size: 0.8rem;
+                margin-right: 0.5rem;
+                text-align: left;
+                flex-shrink: 0;
+            }
+
+            .filter-bar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.75rem;
+            }
+            .filter-bar > div {
+                width: 100%;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .form-control {
+                width: 100%;
+            }
+            .btn {
+                padding: 0.55rem 0.9rem;
+                font-size: 0.82rem;
+            }
         }
 
         /* 按钮与 Badge */
@@ -311,8 +382,13 @@
 
         .form-grid-2 {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 1rem;
+        }
+        @media (min-width: 576px) {
+            .form-grid-2 {
+                grid-template-columns: 1fr 1fr;
+            }
         }
         .form-group {
             margin-bottom: 1rem;
@@ -398,7 +474,7 @@
                     </select>
                 </div>
 
-                <!-- Strategy Table -->
+                <!-- Strategy Table / Responsive Cards -->
                 <div class="table-responsive">
                     <table class="custom-table">
                         <thead>
@@ -585,7 +661,7 @@
         </div>
     </div>
 
-    <!-- ==================== 模态框 2: 回测计算 Log 弹窗 (按脑图要求：不存库明细、支持一键复制 Log) ==================== -->
+    <!-- ==================== 模态框 2: 回测计算 Log 弹窗 ==================== -->
     <div class="modal-overlay" id="backtestLogModal">
         <div class="modal-container" style="max-width: 800px;">
             <div class="modal-header">
@@ -595,7 +671,7 @@
 
             <div class="log-console" id="logConsoleOutput">准备执行回测计算...</div>
 
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                 <span style="font-size: 0.8rem; color: #8e95b2;">* 提示: 交易明细 Log 不保存至数据库，可点击下方一键复制</span>
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn btn-secondary" onclick="copyBacktestLog()"><i class="fa-regular fa-copy"></i> 一键复制 Log</button>
@@ -631,7 +707,7 @@
             }
         }
 
-        // 1. 加载策略列表
+        // 1. 加载策略列表 (带有 data-label 的响应式移动端卡片适配)
         async function loadStrategies() {
             const search = document.getElementById('searchStrategyInput').value;
             const category = document.getElementById('filterCategorySelect').value;
@@ -663,13 +739,13 @@
 
                     return `
                         <tr>
-                            <td><code>${stg.strategy_id}</code></td>
-                            <td style="font-weight: 700; color: #00d2c4;">${stg.name}</td>
-                            <td>${catBadge}</td>
-                            <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: #8e95b2; font-size: 0.8rem;" title="${cfgStr}">${cfgStr}</td>
-                            <td style="font-size: 0.8rem; color:#8e95b2;">${stg.buy_signals_rule || '-'}</td>
-                            <td>${stg.created_at || '-'}</td>
-                            <td style="text-align: right;">
+                            <td data-label="策略 ID"><code>${stg.strategy_id}</code></td>
+                            <td data-label="策略名称" style="font-weight: 700; color: #00d2c4;">${stg.name}</td>
+                            <td data-label="分类">${catBadge}</td>
+                            <td data-label="因子配置" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: #8e95b2; font-size: 0.8rem;" title="${cfgStr}">${cfgStr}</td>
+                            <td data-label="买/卖规则" style="font-size: 0.8rem; color:#8e95b2;">${stg.buy_signals_rule || '-'}</td>
+                            <td data-label="创建时间">${stg.created_at || '-'}</td>
+                            <td data-label="操作" style="text-align: right;">
                                 <button class="btn btn-secondary" onclick="openEditStrategyModal(${stg.id})"><i class="fa-solid fa-pen"></i> 编辑</button>
                                 <button class="btn btn-primary" onclick="runStrategyAction(${stg.id})"><i class="fa-solid fa-play"></i> 运行</button>
                                 <button class="btn btn-warning" onclick="triggerBacktestLogModal(${stg.id})"><i class="fa-solid fa-flask"></i> 回测</button>
@@ -782,7 +858,6 @@
                 const result = await res.json();
 
                 if (result.status === 'already_run') {
-                    // 防重提醒 (严格按 v1.0.md 脑图要求)
                     if (confirm(`⚠️ 提示: ${result.message}\n\n是否需要强制重新运行并覆盖该日的计算结果？`)) {
                         runStrategyAction(dbId, true);
                     }
@@ -857,7 +932,7 @@
             }).catch(e => alert('复制失败: ' + e));
         }
 
-        // 2. 加载历史回测记录
+        // 2. 加载历史回测记录 (移动端自动变形为卡片)
         async function loadBacktests() {
             const tbody = document.getElementById('backtestTableBody');
             try {
@@ -877,15 +952,15 @@
 
                 tbody.innerHTML = list.map(b => `
                     <tr>
-                        <td>${b.id}</td>
-                        <td><code>${b.strategy}</code></td>
-                        <td>${b.run_date}</td>
-                        <td>${b.date_range}</td>
-                        <td class="${b.total_return >= 0 ? 'up-val' : 'down-val'}">${b.total_return >= 0 ? '+' : ''}${b.total_return.toFixed(2)}%</td>
-                        <td class="${b.annual_return >= 0 ? 'up-val' : 'down-val'}">${b.annual_return >= 0 ? '+' : ''}${b.annual_return.toFixed(2)}%</td>
-                        <td class="down-val">${b.max_drawdown.toFixed(2)}%</td>
-                        <td style="color:#ffb86c;">${b.win_rate.toFixed(2)}%</td>
-                        <td style="text-align: right;">
+                        <td data-label="ID">${b.id}</td>
+                        <td data-label="策略 ID"><code>${b.strategy}</code></td>
+                        <td data-label="运行日期">${b.run_date}</td>
+                        <td data-label="回测区间">${b.date_range}</td>
+                        <td data-label="总回报率" class="${b.total_return >= 0 ? 'up-val' : 'down-val'}">${b.total_return >= 0 ? '+' : ''}${b.total_return.toFixed(2)}%</td>
+                        <td data-label="年化收益率" class="${b.annual_return >= 0 ? 'up-val' : 'down-val'}">${b.annual_return >= 0 ? '+' : ''}${b.annual_return.toFixed(2)}%</td>
+                        <td data-label="最大回撤" class="down-val">${b.max_drawdown.toFixed(2)}%</td>
+                        <td data-label="胜率" style="color:#ffb86c;">${b.win_rate.toFixed(2)}%</td>
+                        <td data-label="操作" style="text-align: right;">
                             <button class="btn btn-secondary" onclick="viewBacktestTrades(${b.id}, '${b.strategy}')"><i class="fa-solid fa-eye"></i> 详情</button>
                         </td>
                     </tr>
@@ -913,15 +988,15 @@
 
                 tbody.innerHTML = trades.map(t => `
                     <tr>
-                        <td>${t.date}</td>
-                        <td><code>${t.code}</code></td>
-                        <td><span class="badge-tag ${t.action === 'BUY' ? 'badge-buy' : 'badge-sell'}">${t.action === 'BUY' ? '买入' : '卖出'}</span></td>
-                        <td>¥${t.price.toFixed(2)}</td>
-                        <td>${t.shares}</td>
-                        <td>¥${t.fee.toFixed(2)}</td>
-                        <td class="${t.pnl >= 0 ? 'up-val' : 'down-val'}">${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'}</td>
-                        <td class="${t.pnl_pct >= 0 ? 'up-val' : 'down-val'}">${t.pnl_pct !== null ? (t.pnl_pct >= 0 ? '+' : '') + t.pnl_pct.toFixed(2) + '%' : '--'}</td>
-                        <td style="color:#8e95b2;">${t.reason || '-'}</td>
+                        <td data-label="交易日期">${t.date}</td>
+                        <td data-label="标的代码"><code>${t.code}</code></td>
+                        <td data-label="动作"><span class="badge-tag ${t.action === 'BUY' ? 'badge-buy' : 'badge-sell'}">${t.action === 'BUY' ? '买入' : '卖出'}</span></td>
+                        <td data-label="成交价格">¥${t.price.toFixed(2)}</td>
+                        <td data-label="成交数量">${t.shares}</td>
+                        <td data-label="手续费">¥${t.fee.toFixed(2)}</td>
+                        <td data-label="盈亏金额" class="${t.pnl >= 0 ? 'up-val' : 'down-val'}">${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'}</td>
+                        <td data-label="盈亏比例" class="${t.pnl_pct >= 0 ? 'up-val' : 'down-val'}">${t.pnl_pct !== null ? (t.pnl_pct >= 0 ? '+' : '') + t.pnl_pct.toFixed(2) + '%' : '--'}</td>
+                        <td data-label="原因" style="color:#8e95b2;">${t.reason || '-'}</td>
                     </tr>
                 `).join('');
 
@@ -983,7 +1058,7 @@
             renderRecommendationTable(isCB ? 'convertible_bond' : 'stock');
         }
 
-        // 渲染策略推荐表格 (涵盖脑图所有 9 大可转债字段与股票字段)
+        // 渲染策略推荐表格 (在手机端依据 data-label 无缝卡片化)
         function renderRecommendationTable(category) {
             const header = document.getElementById('recTableHeader');
             const tbody = document.getElementById('recTableBody');
@@ -1001,7 +1076,7 @@
                         <th>转股价值</th>
                         <th>纯债价值</th>
                         <th>到期收益率(YTM)</th>
-                        <th>对应正股代码</th>
+                        <th>正股代码</th>
                         <th>正股名称</th>
                         <th>正股价格</th>
                         <th>推荐原因</th>
@@ -1015,17 +1090,17 @@
 
                 tbody.innerHTML = filteredData.map(d => `
                     <tr>
-                        <td><code>${d.code}</code></td>
-                        <td style="font-weight:700; color:#00d2c4;">${d.name || '-'}</td>
-                        <td><span class="badge-tag ${d.action === 'BUY' ? 'badge-buy' : 'badge-sell'}">${d.action === 'BUY' ? '买入' : '卖出'}</span></td>
-                        <td>¥${d.price !== null ? d.price.toFixed(2) : '-'}</td>
-                        <td>${d.convert_value !== null ? '¥' + d.convert_value.toFixed(2) : '-'}</td>
-                        <td style="color:#8e95b2;">${d.pure_bond_value !== null ? '¥' + d.pure_bond_value.toFixed(2) : '-'}</td>
-                        <td style="color:#ffb86c;">${d.ytm !== null ? d.ytm.toFixed(2) + '%' : '-'}</td>
-                        <td><code>${d.stock_code || '-'}</code></td>
-                        <td>${d.stock_name || '-'}</td>
-                        <td>¥${d.stock_price !== null ? d.stock_price.toFixed(2) : '-'}</td>
-                        <td style="font-size:0.8rem; color:#8e95b2;">${d.reason || '-'}</td>
+                        <td data-label="转债代码"><code>${d.code}</code></td>
+                        <td data-label="转债名称" style="font-weight:700; color:#00d2c4;">${d.name || '-'}</td>
+                        <td data-label="信号动作"><span class="badge-tag ${d.action === 'BUY' ? 'badge-buy' : 'badge-sell'}">${d.action === 'BUY' ? '买入' : '卖出'}</span></td>
+                        <td data-label="当前价格">¥${d.price !== null ? d.price.toFixed(2) : '-'}</td>
+                        <td data-label="转股价值">${d.convert_value !== null ? '¥' + d.convert_value.toFixed(2) : '-'}</td>
+                        <td data-label="纯债价值" style="color:#8e95b2;">${d.pure_bond_value !== null ? '¥' + d.pure_bond_value.toFixed(2) : '-'}</td>
+                        <td data-label="到期收益率(YTM)" style="color:#ffb86c;">${d.ytm !== null ? d.ytm.toFixed(2) + '%' : '-'}</td>
+                        <td data-label="正股代码"><code>${d.stock_code || '-'}</code></td>
+                        <td data-label="正股名称">${d.stock_name || '-'}</td>
+                        <td data-label="正股价格">¥${d.stock_price !== null ? d.stock_price.toFixed(2) : '-'}</td>
+                        <td data-label="推荐原因" style="font-size:0.8rem; color:#8e95b2;">${d.reason || '-'}</td>
                     </tr>
                 `).join('');
             } else {
@@ -1047,12 +1122,12 @@
 
                 tbody.innerHTML = filteredData.map(d => `
                     <tr>
-                        <td><code>${d.code}</code></td>
-                        <td style="font-weight:700; color:#00d2c4;">${d.name || d.code}</td>
-                        <td><span class="badge-tag ${d.action === 'BUY' ? 'badge-buy' : 'badge-sell'}">${d.action === 'BUY' ? '买入' : '卖出'}</span></td>
-                        <td>¥${d.price !== null ? d.price.toFixed(2) : '-'}</td>
-                        <td>${d.date || '-'}</td>
-                        <td style="font-size:0.8rem; color:#8e95b2;">${d.reason || '-'}</td>
+                        <td data-label="股票代码"><code>${d.code}</code></td>
+                        <td data-label="股票名称" style="font-weight:700; color:#00d2c4;">${d.name || d.code}</td>
+                        <td data-label="信号动作"><span class="badge-tag ${d.action === 'BUY' ? 'badge-buy' : 'badge-sell'}">${d.action === 'BUY' ? '买入' : '卖出'}</span></td>
+                        <td data-label="股票价格">¥${d.price !== null ? d.price.toFixed(2) : '-'}</td>
+                        <td data-label="推荐时间">${d.date || '-'}</td>
+                        <td data-label="推荐原因" style="font-size:0.8rem; color:#8e95b2;">${d.reason || '-'}</td>
                     </tr>
                 `).join('');
             }
