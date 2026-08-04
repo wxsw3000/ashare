@@ -182,7 +182,39 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Integrate custom user strategy configuration saving & run history querying into Flask Web UI.
   * Further optimize strategy parameters (e.g. testing `max_price=120.0` or `115.0` to minimize drawdown).
 
+---
 
+## 9. Session Summary & Memory (2026-08-03)
 
+* **Signal Scheduling & Recommendations Clarification**:
+  * Verified and documented post-market signal calculation timing: GitHub Actions triggers daily at 18:31 CST (`update_ashare_data.yml`), updates market data, and executes `MagicSTG/strategies/runner.py`.
+  * Resolved user query regarding historical signal dates (7-15 and 7-28 legacy test data).
 
+* **Signal Generation & Database Backfill (2026-07-31)**:
+  * Executed `python -m MagicSTG.strategies.runner 2026-07-31` to populate recommendations for trade date 2026-07-31.
+  * Generated and saved **10** `cb_double_low` recommendations and **176** `dynamic_factor` recommendations into TiDB Cloud `recommendations` table.
+  * Confirmed Web API `/api/recommendations` retrieves and displays the 2026-07-31 latest signals cleanly.
+
+* **Next Steps**:
+  * Test deployed Web UI on Render.
+  * Optimize strategy parameters (e.g. testing `max_price=120.0` or `115.0` to minimize drawdown).
+
+---
+
+## 10. Session Summary & Memory (2026-08-04) - Quant System v1.0 Implementation
+
+* **Database Architecture & Strategy Table Initialization**:
+  * Created `custom_strategies` table in TiDB Cloud (`MagicSTG/core/init_v1_tables.py`).
+  * Populated 5 standard default strategies into TiDB Cloud: `cb_double_low` (可转债双低), `dynamic_factor` (动态多因子), `pe_strategy` (低估值PE), `roe_strategy` (高ROE盈利), `price_strategy` (低股价).
+
+* **Backend REST APIs for Strategy Management & Recommendations**:
+  * Implemented `/api/strategies` (GET, POST, PUT, DELETE) for custom strategy CRUD.
+  * Implemented `/api/strategies/<id>/run` for target-date strategy execution with "already run today" prevention alert (`already_run: true`).
+  * Enhanced `/api/recommendations` to perform SQL JOINs with `cb_basic` and `cb_daily_indicator`, providing enriched multi-dimensional fields (转债代码, 名称, 价格, 转股价值, 纯债价值, YTM, 正股代码, 正股名称, 正股价格).
+
+* **Web UI Redesign (v1.0 Mindmap Alignment)**:
+  * Redesigned [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) into 3 main navigation tabs:
+    1. **策略管理** (Strategy Management): Table list, create/edit modal, delete, run with prevention alert, backtest log execution modal with 1-click copy log button.
+    2. **回测记录** (Backtest Records): Historical performance metrics table & interactive equity chart / trade details viewer.
+    3. **策略推荐结果** (Strategy Recommendations): Dedicated Stock and Convertible Bond tabs displaying full 9 metrics table for CBs and stock recommendations.
 

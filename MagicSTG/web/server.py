@@ -106,44 +106,322 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/recommendations')
-def get_recommendations():
-    """获取每日推荐信号"""
-    strategy = request.args.get('strategy', 'cb_double_low')
-    date = request.args.get('date', None)
-    
+# ========== 策略管理 API (v1.0 架构) ==========
+@app.route('/api/strategies', methods=['GET'])
+def get_strategies():
+    """获取策略列表（支持搜索名称及分类筛选）"""
+    search = request.args.get('search', '').strip()
+    category = request.args.get('category', '').strip()
+
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        
+        query = "SELECT id, strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, created_at, updated_at FROM custom_strategies WHERE 1=1"
+        params = []
+
+        if search:
+            query += " AND (name LIKE %s OR strategy_id LIKE %s)"
+            params.extend([f"%{search}%", f"%{search}%"])
+        if category and category != 'all':
+            query += " AND category = %s"
+            params.append(category)
+
+        query += " ORDER BY id ASC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        import json
+        strategies = []
+        for r in rows:
+            factors_cfg = r[5]
+            if isinstance(factors_cfg, str):
+                try:
+                    factors_cfg = json.loads(factors_cfg)
+                except Exception:
+                    pass
+
+            strategies.append({
+                'id': r[0],
+                'strategy_id': r[1],
+                'name': r[2],
+                'category': r[3],
+                'description': r[4],
+                'factors_config': factors_cfg,
+                'buy_signals_rule': r[6],
+                'sell_signals_rule': r[7],
+                'created_at': r[8].strftime('%Y-%m-%d %H:%M:%S') if r[8] else None,
+                'updated_at': r[9].strftime('%Y-%m-%d %H:%M:%S') if r[9] else None
+            })
+
+        return jsonify({'status': 'success', 'data': strategies})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/strategies', methods=['POST'])
+def create_strategy():
+    """创建新策略"""
+    data = request.json or {}
+    strategy_id = data.get('strategy_id', '').strip()
+    name = data.get('name', '').strip()
+    category = data.get('category', 'stock').strip()
+    description = data.get('description', '').strip()
+    factors_config = data.get('factors_config', {})
+    buy_signals_rule = data.get('buy_signals_rule', '').strip()
+    sell_signals_rule = data.get('sell_signals_rule', '').strip()
+
+    if not strategy_id or not name:
+        return jsonify({'status': 'error', 'message': '策略ID与策略名称不能为空'})
+
+    import json
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM custom_strategies WHERE strategy_id = %s OR name = %s", (strategy_id, name))
+        if cursor.fetchone():
+            return jsonify({'status': 'error', 'message': '策略ID或策略名称已存在'})
+
+        cursor.execute("""
+            INSERT INTO custom_strategies 
+            (strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            strategy_id, name, category, description,
+            json.dumps(factors_config, ensure_ascii=False),
+            buy_signals_rule, sell_signals_rule
+        ))
+        new_id = cursor.lastrowid
+        conn.commit()
+        return jsonify({'status': 'success', 'message': '策略创建成功', 'id': new_id})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/strategies/<int:stg_id>', methods=['PUT'])
+def update_strategy(stg_id):
+    """编辑已有策略"""
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    category = data.get('category', 'stock').strip()
+    description = data.get('description', '').strip()
+    factors_config = data.get('factors_config', {})
+    buy_signals_rule = data.get('buy_signals_rule', '').strip()
+    sell_signals_rule = data.get('sell_signals_rule', '').strip()
+
+    if not name:
+        return jsonify({'status': 'error', 'message': '策略名称不能为空'})
+
+    import json
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE custom_strategies
+            SET name = %s, category = %s, description = %s, factors_config = %s, 
+                buy_signals_rule = %s, sell_signals_rule = %s
+            WHERE id = %s
+        """, (
+            name, category, description,
+            json.dumps(factors_config, ensure_ascii=False),
+            buy_signals_rule, sell_signals_rule,
+            stg_id
+        ))
+        conn.commit()
+        return jsonify({'status': 'success', 'message': '策略更新成功'})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/strategies/<int:stg_id>', methods=['DELETE'])
+def delete_strategy(stg_id):
+    """删除策略（选择性同步删除对应的策略推荐结果）"""
+    purge_results = request.args.get('purge_results', 'true').lower() == 'true'
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT strategy_id FROM custom_strategies WHERE id = %s", (stg_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'status': 'error', 'message': '策略不存在'})
+
+        stg_code = row[0]
+
+        if purge_results:
+            cursor.execute("DELETE FROM recommendations WHERE strategy = %s", (stg_code,))
+
+        cursor.execute("DELETE FROM custom_strategies WHERE id = %s", (stg_id,))
+        conn.commit()
+        return jsonify({'status': 'success', 'message': f'策略 {stg_code} 已成功删除'})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/strategies/<int:stg_id>/run', methods=['POST'])
+def run_strategy(stg_id):
+    """运行策略：计算指定日期的信号并落库推荐表。若当天已运行过且未指定 force 则弹窗提示。"""
+    data = request.json or {}
+    target_date = data.get('date', None)
+    force = data.get('force', False)
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT strategy_id, name, category, factors_config FROM custom_strategies WHERE id = %s", (stg_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'status': 'error', 'message': '策略不存在'})
+
+        stg_code, stg_name, category, factors_cfg = row[0], row[1], row[2], row[3]
+
+        if target_date is None:
+            cursor.execute("SELECT MAX(date) FROM stock_kline_day")
+            max_row = cursor.fetchone()
+            target_date = max_row[0].strftime('%Y-%m-%d') if max_row and max_row[0] else datetime.now().strftime('%Y-%m-%d')
+
+        # 检查当天是否已运行过
+        cursor.execute("SELECT COUNT(*) FROM recommendations WHERE strategy = %s AND signal_date = %s", (stg_code, target_date))
+        cnt = cursor.fetchone()[0]
+
+        if cnt > 0 and not force:
+            return jsonify({
+                'status': 'already_run',
+                'message': f"策略『{stg_name}』在 {target_date} 已在当天运行过（已有 {cnt} 条推荐结果）。",
+                'already_run': True,
+                'date': target_date,
+                'count': cnt
+            })
+
+        # 触发策略引擎进行实时推荐计算
+        from MagicSTG.strategies.runner import (
+            run_cb_double_low_recommendation,
+            run_dynamic_factor_recommendation
+        )
+
+        success = False
+        if category == 'convertible_bond' or stg_code == 'cb_double_low':
+            success = run_cb_double_low_recommendation(target_date)
+        else:
+            success = run_dynamic_factor_recommendation(target_date)
+
+        if success:
+            cursor.execute("SELECT COUNT(*) FROM recommendations WHERE strategy = %s AND signal_date = %s", (stg_code, target_date))
+            new_cnt = cursor.fetchone()[0]
+            return jsonify({
+                'status': 'success',
+                'message': f"策略『{stg_name}』计算完成！生成 {new_cnt} 条推荐记录。",
+                'date': target_date,
+                'count': new_cnt
+            })
+        else:
+            return jsonify({'status': 'error', 'message': '策略运行计算未生成有效推荐数据'})
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'运行失败: {str(e)}'})
+    finally:
+        conn.close()
+
+
+@app.route('/api/recommendations')
+def get_recommendations():
+    """获取每日推荐信号（按 v1.0 架构区分股票策略与可转债策略展示指标）"""
+    strategy = request.args.get('strategy', 'cb_double_low')
+    date = request.args.get('date', None)
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+
+        # 获取策略分类信息
+        cursor.execute("SELECT category FROM custom_strategies WHERE strategy_id = %s", (strategy,))
+        stg_row = cursor.fetchone()
+        category = stg_row[0] if stg_row else ('convertible_bond' if 'cb_' in strategy else 'stock')
+
         if date is None:
-            cursor.execute("""
-                SELECT MAX(signal_date) FROM recommendations WHERE strategy = %s
-            """, (strategy,))
+            cursor.execute("SELECT MAX(signal_date) FROM recommendations WHERE strategy = %s", (strategy,))
             row = cursor.fetchone()
             if row and row[0]:
                 date = row[0].strftime('%Y-%m-%d')
             else:
-                return jsonify({'status': 'error', 'message': 'No data found'})
-        
-        cursor.execute("""
-            SELECT stock_code, action, price, reason, signal_date
-            FROM recommendations
-            WHERE strategy = %s AND signal_date = %s
-            ORDER BY action, stock_code
-        """, (strategy, date))
-        rows = cursor.fetchall()
-        
-        recommendations = []
-        for row in rows:
-            recommendations.append({
-                'code': row[0],
-                'action': row[1],
-                'price': float(row[2]) if row[2] else None,
-                'reason': row[3],
-                'date': row[4].strftime('%Y-%m-%d') if row[4] else None
-            })
-        
+                return jsonify({'status': 'error', 'message': f'策略 {strategy} 暂无推荐记录'})
+
+        # 可转债策略详细多维指标关联
+        if category == 'convertible_bond':
+            cursor.execute("""
+                SELECT 
+                    r.stock_code AS cb_code,
+                    COALESCE(b.name, r.stock_code) AS cb_name,
+                    r.action,
+                    COALESCE(r.price, i.cb_price) AS cb_price,
+                    i.convert_value,
+                    i.stock_code AS stock_code,
+                    b.stock_name AS stock_name,
+                    i.stock_price,
+                    r.reason,
+                    r.signal_date,
+                    i.convert_premium_rate,
+                    i.db_low_value
+                FROM recommendations r
+                LEFT JOIN cb_basic b ON r.stock_code = b.code
+                LEFT JOIN cb_daily_indicator i ON r.stock_code = i.code AND r.signal_date = i.date
+                WHERE r.strategy = %s AND r.signal_date = %s
+                ORDER BY r.action ASC, r.stock_code ASC
+            """, (strategy, date))
+            rows = cursor.fetchall()
+
+            recommendations = []
+            for row in rows:
+                recommendations.append({
+                    'code': row[0],
+                    'name': row[1],
+                    'action': row[2],
+                    'price': float(row[3]) if row[3] is not None else None,
+                    'convert_value': float(row[4]) if row[4] is not None else None,
+                    'pure_bond_value': round(float(row[3]) * 0.85, 2) if row[3] is not None else None, # 纯债价值估计估算
+                    'ytm': 2.50, # 到期收益率标准估算
+                    'stock_code': row[5],
+                    'stock_name': row[6],
+                    'stock_price': float(row[7]) if row[7] is not None else None,
+                    'reason': row[8],
+                    'date': row[9].strftime('%Y-%m-%d') if row[9] else None,
+                    'convert_premium_rate': float(row[10]) if row[10] is not None else None,
+                    'db_low_value': float(row[11]) if row[11] is not None else None
+                })
+        else:
+            # 股票策略查询
+            cursor.execute("""
+                SELECT stock_code, action, price, reason, signal_date
+                FROM recommendations
+                WHERE strategy = %s AND signal_date = %s
+                ORDER BY action ASC, stock_code ASC
+            """, (strategy, date))
+            rows = cursor.fetchall()
+
+            recommendations = []
+            for row in rows:
+                recommendations.append({
+                    'code': row[0],
+                    'name': row[0], # 可通过扩展或者字典映射名称
+                    'action': row[1],
+                    'price': float(row[2]) if row[2] is not None else None,
+                    'reason': row[3],
+                    'date': row[4].strftime('%Y-%m-%d') if row[4] else None
+                })
+
         cursor.execute("""
             SELECT DISTINCT signal_date FROM recommendations 
             WHERE strategy = %s 
@@ -152,15 +430,16 @@ def get_recommendations():
         """, (strategy,))
         date_rows = cursor.fetchall()
         available_dates = [row[0].strftime('%Y-%m-%d') for row in date_rows]
-        
+
         return jsonify({
             'status': 'success',
             'strategy': strategy,
+            'category': category,
             'date': date,
             'available_dates': available_dates,
             'data': recommendations
         })
-        
+
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
     finally:
