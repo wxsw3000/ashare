@@ -216,8 +216,9 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Redesigned [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) into 3 main navigation tabs:
     1. **策略管理** (Strategy Management): Table list, create/edit modal, delete, run with prevention alert, backtest log execution modal with 1-click copy log button.
     2. **回测记录** (Backtest Records): Historical performance metrics table & interactive equity chart / trade details viewer.
-    3. **策略推荐结果** (Strategy Recommendations): Dedicated Stock and Convertible Bond tabs displaying full 9 metrics table for CBs and stock recommendations.
+    3. **策略推荐结果** (Strategy Recommendations): Master-Detail下钻交互架构。第一层为“行情时间 + 策略”执行履历卡片列表（显示行情日期、策略名称、买卖信号数量、生成时间）；点击任意卡片后平滑下钻进入第二层“推荐明细表格”（包含完整 9 大维度可转债数据/股票数据，并支持一键返回履历列表）。
   * **可视化因子表单建构器 (Visual Factor Builder Form)**: Embedded comprehensive multi-column factor controls inside the Create/Edit Strategy Modal—including MA short/long, volume surge factor, DMI (PDI/NDI) threshold, ROE min %, PE range [min, max], Profit growth YoY %, Debt limit %, Cash ratio (CFO/NP), primary factor sorting rules (Price, ROE, PE, Growth, DB Low Value), and stock/CB universe selections. Saved directly into TiDB Cloud `custom_strategies.factors_config` JSON.
+
 
 
 
