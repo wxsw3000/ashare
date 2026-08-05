@@ -1428,6 +1428,12 @@
                                      `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
                                      `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
 
+            const todayObj = new Date();
+            const endDateStr = todayObj.toISOString().split('T')[0];
+            const startDateObj = new Date();
+            startDateObj.setFullYear(startDateObj.getFullYear() - 1);
+            const startDateStr = startDateObj.toISOString().split('T')[0];
+
             try {
                 const res = await fetch('/api/backtest', {
                     method: 'POST',
@@ -1435,8 +1441,8 @@
                     body: JSON.stringify({
                         strategy_name: stg.strategy_id,
                         universe: stg.category === 'convertible_bond' ? 'all' : (stg.factors_config?.stock_scope || 'csi300'),
-                        start_date: '2025-01-01',
-                        end_date: '2025-12-31',
+                        start_date: startDateStr,
+                        end_date: endDateStr,
                         save_db: true,
                         config: stg.factors_config
                     })
