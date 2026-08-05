@@ -12,7 +12,7 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
 
-from MagicSTG.core.db import load_all_data_db
+from MagicSTG.core.db import load_all_data_db, load_all_stock_codes_db, get_trading_dates_db
 from MagicSTG.core.cost import calc_buy_cost, calc_sell_cost
 from MagicSTG.core.limit import check_limit_up
 from MagicSTG.core.db_writer import save_backtest_result
@@ -119,33 +119,90 @@ def run_backtest_engine(
             return {'status': 'error', 'message': f'可转债策略回测执行失败: {str(e)}'}
     if all_data is None:
         limit_to_csi300 = (universe == 'csi300')
-        print(f"[BacktestEngine] Loading data for range {start_date_str} ~ {end_date_str} (universe={universe})...", flush=True)
-        all_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, limit_to_csi300=limit_to_csi300)
+        all_stock_codes = load_all_stock_codes_db(limit_to_csi300=limit_to_csi300)
+        backtest_dates = get_trading_dates_db(start_date_str, end_date_str)
 
-    if not all_data:
-        return {'status': 'error', 'message': '未加载到任何 K 线数据'}
+        if not backtest_dates:
+            return {'status': 'error', 'message': '所选时间段内没有交易日期'}
 
-    # Instantiate Strategy
-    strategy = StrategyRegistry.get(strategy_name, config)
+        strategy = StrategyRegistry.get(strategy_name, config)
 
-    # Pre-compute technical indicators
-    processed_data = {}
-    for code, df in all_data.items():
-        if hasattr(strategy, 'compute_indicators'):
-            processed_data[code] = strategy.compute_indicators(df)
-        else:
-            processed_data[code] = df
+        batch_size = 400
+        batches = [all_stock_codes[i:i+batch_size] for i in range(0, len(all_stock_codes), batch_size)]
+        print(f"[BacktestEngine] Chunked batch processing: {len(all_stock_codes)} stocks into {len(batches)} batches across {len(backtest_dates)} dates...", flush=True)
 
-    # Prepare trading dates
-    start_date = pd.Timestamp(start_date_str)
-    end_date = pd.Timestamp(end_date_str)
-    all_dates = sorted(set().union(*[set(df.index) for df in all_data.values()]))
-    backtest_dates = [d for d in all_dates if start_date <= d <= end_date]
+        if hasattr(strategy, 'load_financial_data'):
+            strategy.load_financial_data(target_codes=all_stock_codes)
 
-    if not backtest_dates:
-        return {'status': 'error', 'message': '所选时间段内没有交易日期'}
+        daily_buy_candidates = {d: [] for d in backtest_dates}
+        daily_sell_signals = {d: [] for d in backtest_dates}
 
-    # Initialize Position Manager & Decision Maker
+        for idx, b_codes in enumerate(batches):
+            print(f"  [BacktestEngine] Batch {idx+1}/{len(batches)} ({len(b_codes)} stocks)...", flush=True)
+            b_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=b_codes)
+            if not b_data:
+                continue
+
+            b_processed = {}
+            for code, df in b_data.items():
+                if hasattr(strategy, 'compute_indicators'):
+                    b_processed[code] = strategy.compute_indicators(df)
+                else:
+                    b_processed[code] = df
+
+            for d in backtest_dates:
+                if hasattr(strategy, 'get_signals'):
+                    buys, sells = strategy.get_signals(b_processed, d)
+                    if buys:
+                        for cand in buys:
+                            c_code, c_price = cand[0], cand[1]
+                            if c_code in b_processed and check_limit_up(b_processed[c_code], d, c_price):
+                                continue
+                            daily_buy_candidates[d].append(cand)
+                    if sells:
+                        daily_sell_signals[d].extend(sells)
+
+            del b_data, b_processed
+            gc.collect()
+
+        reverse_sort = getattr(strategy, 'reverse', False)
+        for d in backtest_dates:
+            cands = daily_buy_candidates[d]
+            if cands:
+                cands.sort(key=lambda x: x[2] if len(x) > 2 and not pd.isna(x[2]) else -9999.0, reverse=reverse_sort)
+
+    else:
+        # Backward compatibility if all_data passed directly
+        strategy = StrategyRegistry.get(strategy_name, config)
+        processed_data = {}
+        for code, df in all_data.items():
+            if hasattr(strategy, 'compute_indicators'):
+                processed_data[code] = strategy.compute_indicators(df)
+            else:
+                processed_data[code] = df
+
+        start_date = pd.Timestamp(start_date_str)
+        end_date = pd.Timestamp(end_date_str)
+        all_dates = sorted(set().union(*[set(df.index) for df in all_data.values()]))
+        backtest_dates = [d for d in all_dates if start_date <= d <= end_date]
+        if not backtest_dates:
+            return {'status': 'error', 'message': '所选时间段内没有交易日期'}
+
+        daily_buy_candidates = {d: [] for d in backtest_dates}
+        daily_sell_signals = {d: [] for d in backtest_dates}
+        for d in backtest_dates:
+            if hasattr(strategy, 'get_signals'):
+                buys, sells = strategy.get_signals(processed_data, d)
+                if buys:
+                    for cand in buys:
+                        c_code, c_price = cand[0], cand[1]
+                        if c_code in processed_data and check_limit_up(processed_data[c_code], d, c_price):
+                            continue
+                        daily_buy_candidates[d].append(cand)
+                if sells:
+                    daily_sell_signals[d].extend(sells)
+
+    # Initialize Position Manager & Simulation Loop
     position_manager = InMemoryPositionManager(config)
     max_holdings = config.get('strategy', {}).get('max_holdings', 5)
     per_stock_capital = config.get('strategy', {}).get('per_stock_capital', 20000.0)
@@ -155,26 +212,58 @@ def run_backtest_engine(
     position_manager.positions = []
     position_manager.realized_pnl = 0.0
 
-    decision_maker = DecisionMaker(config, position_manager, strategy)
-
     trade_log = []
     equity_history = []
+    holding_data = {}
 
     for date in backtest_dates:
+        # Load K-lines for active holdings if needed
+        active_codes = [p.code for p in position_manager.get_positions()]
+        missing_codes = [c for c in active_codes if c not in holding_data]
+        if missing_codes:
+            if all_data is not None:
+                for c in missing_codes:
+                    if c in all_data:
+                        holding_data[c] = processed_data[c]
+            else:
+                fresh_h_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=missing_codes)
+                for c, df in fresh_h_data.items():
+                    holding_data[c] = strategy.compute_indicators(df) if hasattr(strategy, 'compute_indicators') else df
+
         # 1. Update highest price for holdings if applicable
         for pos in position_manager.get_positions():
             code = pos.code
-            df = processed_data[code]
-            if date in df.index:
-                high_price = df.loc[date, 'high']
+            if code in holding_data and date in holding_data[code].index:
+                high_price = holding_data[code].loc[date, 'high']
                 if not pd.isna(high_price) and hasattr(pos, 'highest_price'):
                     pos.highest_price = max(getattr(pos, 'highest_price', pos.buy_price), high_price)
 
-        # 2. Make decisions
-        decisions = decision_maker.make_decisions(all_data, date)
+        # 2. Make sell decisions
+        sells_to_exec = []
+        for pos in position_manager.get_positions():
+            code = pos.code
+            if code in holding_data and date in holding_data[code].index:
+                df = holding_data[code]
+                price = df.loc[date, 'close']
+                pnl_pct = (price - pos.buy_price) / pos.buy_price
+                sell_reason = None
+
+                if config.get('risk', {}).get('enable_stop_loss', False) and pnl_pct <= config.get('risk', {}).get('stop_loss', -0.08):
+                    sell_reason = f"止损触发 (盈亏: {pnl_pct*100:.2f}%)"
+                elif strategy.check_sell_signal(df, date):
+                    sell_reason = "技术指标卖出信号"
+
+                if sell_reason:
+                    sells_to_exec.append({
+                        'code': code,
+                        'price': price,
+                        'shares': pos.shares,
+                        'reason': sell_reason
+                    })
 
         # 3. Execute Sell decisions
-        for sell in decisions.sells:
+        sold_codes = {s['code'] for s in sells_to_exec}
+        for sell in sells_to_exec:
             code = sell['code']
             pos = position_manager.get_position(code)
             if not pos:
@@ -201,18 +290,47 @@ def run_backtest_engine(
             })
 
         # 4. Execute Buy decisions
-        for buy in decisions.buys:
-            code = buy['code']
-            position_manager.add_position(code, buy['price'], buy['shares'], buy['total'], buy.get('slot_idx', -1))
+        holding_codes = [p.code for p in position_manager.get_positions()]
+        exclude_codes = set(holding_codes)
+        active_slots_after_sells = {
+            p.slot_idx for p in position_manager.get_positions()
+        }
+        empty_slots = sorted(list(set(range(max_holdings)) - active_slots_after_sells))
+
+        cands = daily_buy_candidates.get(date, [])
+        for cand in cands:
+            if not empty_slots:
+                break
+            code = cand[0]
+            price = cand[1]
+            if code in exclude_codes:
+                continue
+
+            slot_idx = empty_slots.pop(0)
+            available_cash = position_manager.slot_cash[slot_idx] if config.get('strategy', {}).get('enable_compounding', False) else per_stock_capital
+            max_shares = int(available_cash / price / 100) * 100
+
+            if max_shares <= 0:
+                continue
+
+            buy_amount = max_shares * price
+            cost_fee = calc_buy_cost(buy_amount)
+            total_cost = buy_amount + cost_fee
+
+            if total_cost > available_cash:
+                continue
+
+            position_manager.add_position(code, price, max_shares, total_cost, slot_idx)
+            exclude_codes.add(code)
 
             trade_log.append({
                 'trade_date': date.strftime('%Y-%m-%d'),
                 'stock_code': code,
                 'action': 'BUY',
-                'price': buy['price'],
-                'shares': buy['shares'],
-                'amount': buy['amount'],
-                'fee': buy['fee'],
+                'price': price,
+                'shares': max_shares,
+                'amount': round(buy_amount, 2),
+                'fee': round(cost_fee, 2),
                 'pnl': 0.0,
                 'pnl_pct': 0.0,
                 'reason': '买入信号'
@@ -222,9 +340,16 @@ def run_backtest_engine(
         current_prices = {}
         for pos in position_manager.get_positions():
             code = pos.code
-            df = processed_data[code]
-            if date in df.index:
-                current_prices[code] = df.loc[date, 'close']
+            if code not in holding_data:
+                if all_data is not None and code in all_data:
+                    holding_data[code] = processed_data[code]
+                else:
+                    fresh_h_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=[code])
+                    for c, df in fresh_h_data.items():
+                        holding_data[c] = strategy.compute_indicators(df) if hasattr(strategy, 'compute_indicators') else df
+
+            if code in holding_data and date in holding_data[code].index:
+                current_prices[code] = holding_data[code].loc[date, 'close']
             else:
                 current_prices[code] = pos.buy_price
 

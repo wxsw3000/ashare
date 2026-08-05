@@ -57,7 +57,36 @@ def ensure_connection_alive(conn: pymysql.Connection) -> pymysql.Connection:
         return get_connection()
 
 
-def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_csi300=False) -> Dict[str, pd.DataFrame]:
+def load_all_stock_codes_db(limit_to_csi300: bool = False) -> List[str]:
+    """
+    Retrieves all distinct stock codes from database.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            if limit_to_csi300:
+                cur.execute("SELECT DISTINCT code FROM stock_profit_quarterly ORDER BY code ASC LIMIT 300")
+            else:
+                cur.execute("SELECT DISTINCT code FROM stock_kline_day ORDER BY code ASC")
+            return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_trading_dates_db(start_date_str: str, end_date_str: str) -> List[pd.Timestamp]:
+    """
+    Retrieves sorted trading dates within specified date range.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT date FROM stock_kline_day WHERE date >= %s AND date <= %s ORDER BY date ASC", (start_date_str, end_date_str))
+            return [pd.Timestamp(r[0]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_csi300=False, target_codes=None) -> Dict[str, pd.DataFrame]:
     """
     Load stock K-line daily data from TiDB Cloud database.
     """
@@ -82,8 +111,39 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         df = None
 
+        # Direct target codes mode (for batch processing)
+        if target_codes is not None:
+            batch_size = 100
+            all_dfs = []
+            for i in range(0, len(target_codes), batch_size):
+                batch = target_codes[i:i+batch_size]
+                format_strings = ','.join(['%s'] * len(batch))
+                query = f"""
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                FROM stock_kline_day
+                WHERE code IN ({format_strings}) AND date >= %s
+                """
+                params = batch + [min_date_str]
+                if max_date_str is not None:
+                    query += " AND date <= %s"
+                    params.append(max_date_str)
+                query += " ORDER BY date ASC"
+
+                try:
+                    conn = ensure_connection_alive(conn)
+                    batch_df = pd.read_sql(query, conn, params=params)
+                except (pymysql.err.OperationalError, pymysql.err.InterfaceError):
+                    print("  [DB] Connection lost, reconnecting...", flush=True)
+                    conn = get_connection()
+                    batch_df = pd.read_sql(query, conn, params=params)
+
+                if not batch_df.empty:
+                    all_dfs.append(batch_df)
+
+            df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
         # Daily screening mode (limit_days)
-        if start_date is None and min_date_str is not None:
+        elif start_date is None and min_date_str is not None:
             print(f"  [DB] Fetching all stock daily K-lines for date range: {min_date_str} to {max_date_str}...", flush=True)
             query = """
             SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
@@ -95,9 +155,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         elif limit_to_csi300:
             print("  [DB] Retrieving csi300 stock codes from stock_profit_quarterly...", flush=True)
-            with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT code FROM stock_profit_quarterly ORDER BY code ASC LIMIT 300")
-                db_codes = [r[0] for r in cur.fetchall()]
+            db_codes = load_all_stock_codes_db(limit_to_csi300=True)
             print(f"  [DB] Target universe limited to {len(db_codes)} stocks. Fetching K-lines in batches...", flush=True)
 
             batch_size = 100
@@ -124,9 +182,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         else:
             print("  [DB] Retrieving all stock codes from stock_kline_day...", flush=True)
-            with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT code FROM stock_kline_day")
-                target_codes = [r[0] for r in cur.fetchall()]
+            target_codes = load_all_stock_codes_db(limit_to_csi300=False)
             print(f"  [DB] Target universe contains {len(target_codes)} stocks. Fetching in batches...", flush=True)
 
             batch_size = 100
