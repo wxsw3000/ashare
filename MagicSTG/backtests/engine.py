@@ -136,6 +136,7 @@ def run_backtest_engine(
 
         daily_buy_candidates = {d: [] for d in backtest_dates}
         daily_sell_signals = {d: [] for d in backtest_dates}
+        candidate_kline_pool = {}
 
         for idx, b_codes in enumerate(batches):
             print(f"  [BacktestEngine] Batch {idx+1}/{len(batches)} ({len(b_codes)} stocks)...", flush=True)
@@ -146,21 +147,34 @@ def run_backtest_engine(
             b_processed = {}
             for code, df in b_data.items():
                 if hasattr(strategy, 'compute_indicators'):
-                    b_processed[code] = strategy.compute_indicators(df)
+                    b_processed[code] = strategy.compute_indicators(df, code=code)
                 else:
                     b_processed[code] = df
 
-            for d in backtest_dates:
-                if hasattr(strategy, 'get_signals'):
-                    buys, sells = strategy.get_signals(b_processed, d)
-                    if buys:
-                        for cand in buys:
-                            c_code, c_price = cand[0], cand[1]
-                            if c_code in b_processed and check_limit_up(b_processed[c_code], d, c_price):
+            for code, df in b_processed.items():
+                c_code = str(code)
+                if 'buy_signal' in df.columns:
+                    b_rows = df[df['buy_signal']]
+                    for dt, row in b_rows.iterrows():
+                        if dt in daily_buy_candidates:
+                            c_price = float(row['close'])
+                            if check_limit_up(df, dt, c_price):
                                 continue
-                            daily_buy_candidates[d].append(cand)
-                    if sells:
-                        daily_sell_signals[d].extend(sells)
+                            rank_val = float(row['rank_val']) if 'rank_val' in row and not pd.isna(row['rank_val']) else c_price
+                            daily_buy_candidates[dt].append((c_code, c_price, rank_val))
+                            candidate_kline_pool[c_code] = df
+                            candidate_kline_pool[c_code.replace('.', '_')] = df
+                            candidate_kline_pool[c_code.replace('_', '.')] = df
+
+                if 'sell_signal' in df.columns:
+                    s_rows = df[df['sell_signal']]
+                    for dt, row in s_rows.iterrows():
+                        if dt in daily_sell_signals:
+                            s_price = float(row['close'])
+                            daily_sell_signals[dt].append((c_code, s_price))
+                            candidate_kline_pool[c_code] = df
+                            candidate_kline_pool[c_code.replace('.', '_')] = df
+                            candidate_kline_pool[c_code.replace('_', '.')] = df
 
             del b_data, b_processed
             gc.collect()
@@ -175,6 +189,7 @@ def run_backtest_engine(
         # Backward compatibility if all_data passed directly
         strategy = StrategyRegistry.get(strategy_name, config)
         processed_data = {}
+        candidate_kline_pool = {}
         for code, df in all_data.items():
             if hasattr(strategy, 'compute_indicators'):
                 processed_data[code] = strategy.compute_indicators(df)
@@ -226,9 +241,19 @@ def run_backtest_engine(
                     if c in all_data:
                         holding_data[c] = processed_data[c]
             else:
-                fresh_h_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=missing_codes)
-                for c, df in fresh_h_data.items():
-                    holding_data[c] = strategy.compute_indicators(df) if hasattr(strategy, 'compute_indicators') else df
+                for c in missing_codes:
+                    c_std = c.replace('_', '.')
+                    c_raw = c.replace('.', '_')
+                    if c in candidate_kline_pool:
+                        holding_data[c] = candidate_kline_pool[c]
+                    elif c_std in candidate_kline_pool:
+                        holding_data[c] = candidate_kline_pool[c_std]
+                    elif c_raw in candidate_kline_pool:
+                        holding_data[c] = candidate_kline_pool[c_raw]
+                    else:
+                        fresh_h_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=[c])
+                        for code_h, df in fresh_h_data.items():
+                            holding_data[c] = strategy.compute_indicators(df, code=c) if hasattr(strategy, 'compute_indicators') else df
 
         # 1. Update highest price for holdings if applicable
         for pos in position_manager.get_positions():
@@ -321,6 +346,10 @@ def run_backtest_engine(
                 continue
 
             position_manager.add_position(code, price, max_shares, total_cost, slot_idx)
+            if code in candidate_kline_pool:
+                holding_data[code] = candidate_kline_pool[code]
+            elif code.replace('_', '.') in candidate_kline_pool:
+                holding_data[code] = candidate_kline_pool[code.replace('_', '.')]
             exclude_codes.add(code)
 
             trade_log.append({

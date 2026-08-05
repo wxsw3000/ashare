@@ -97,7 +97,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         if start_date is not None:
             start_dt = pd.Timestamp(start_date)
-            min_date = start_dt - pd.Timedelta(days=365)
+            min_date = start_dt - pd.Timedelta(days=60)
             min_date_str = min_date.strftime('%Y-%m-%d')
             if end_date is not None:
                 max_date_str = pd.Timestamp(end_date).strftime('%Y-%m-%d')
@@ -113,7 +113,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         # Direct target codes mode (for batch processing)
         if target_codes is not None:
-            batch_size = 100
+            batch_size = 50
             all_dfs = []
             for i in range(0, len(target_codes), batch_size):
                 batch = target_codes[i:i+batch_size]

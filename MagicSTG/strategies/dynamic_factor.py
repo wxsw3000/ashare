@@ -23,41 +23,64 @@ class DynamicFactorStrategy(BaseStrategy):
         super().__init__(name, config)
 
         self.tech_config = self.config.get('tech', {})
-        self.buy_di_threshold = self.tech_config.get('buy_di_threshold', 0.70)
-        self.sell_di_threshold = self.tech_config.get('sell_di_threshold', 0.70)
-        self.short_ma = self.tech_config.get('short_ma', 5)
-        self.long_ma = self.tech_config.get('long_ma', 20)
-        self.volume_surge_factor = self.tech_config.get('volume_surge_factor', 1.2)
+        self.buy_di_threshold = float(self.config.get('buy_di_threshold', self.tech_config.get('buy_di_threshold', 0.70)))
+        self.sell_di_threshold = float(self.config.get('sell_di_threshold', self.tech_config.get('sell_di_threshold', 0.70)))
+        self.short_ma = int(self.config.get('short_ma', self.tech_config.get('short_ma', 5)))
+        self.long_ma = int(self.config.get('long_ma', self.tech_config.get('long_ma', 20)))
+        self.volume_surge_factor = float(self.config.get('volume_surge_factor', self.tech_config.get('volume_surge_factor', 1.2)))
 
-        self.enable_golden_cross = self.tech_config.get('enable_golden_cross', True)
-        self.enable_volume_surge = self.tech_config.get('enable_volume_surge', True)
-        self.enable_di_ratio = self.tech_config.get('enable_di_ratio', True)
+        self.enable_golden_cross = self.config.get('enable_golden_cross', self.tech_config.get('enable_golden_cross', True))
+        self.enable_volume_surge = self.config.get('enable_volume_surge', self.tech_config.get('enable_volume_surge', True))
+        self.enable_di_ratio = self.config.get('enable_di_ratio', self.tech_config.get('enable_di_ratio', True))
 
         self.fin_config = self.config.get('financial', {})
-        self.enable_roe = self.fin_config.get('enable_roe', False)
-        self.roe_min = self.fin_config.get('roe_min', 0.05)
+        self.enable_roe = ('min_roe' in self.config) or self.fin_config.get('enable_roe', False)
+        self.roe_min = float(self.config.get('min_roe', self.fin_config.get('roe_min', 0.05)))
 
-        self.enable_pe = self.fin_config.get('enable_pe', False)
-        self.pe_min = self.fin_config.get('pe_min', 0)
-        self.pe_max = self.fin_config.get('pe_max', 35)
+        self.enable_pe = ('pe_range' in self.config) or self.fin_config.get('enable_pe', False)
+        pe_range = self.config.get('pe_range', [self.fin_config.get('pe_min', 0), self.fin_config.get('pe_max', 35)])
+        if isinstance(pe_range, (list, tuple)) and len(pe_range) >= 2:
+            self.pe_min = float(pe_range[0])
+            self.pe_max = float(pe_range[1])
+        else:
+            self.pe_min = 0.0
+            self.pe_max = 35.0
 
-        self.enable_growth = self.fin_config.get('enable_growth', False)
-        self.growth_min = self.fin_config.get('growth_min', 0.1)
+        self.enable_growth = ('min_net_profit_yoy' in self.config) or self.fin_config.get('enable_growth', False)
+        self.growth_min = float(self.config.get('min_net_profit_yoy', self.fin_config.get('growth_min', 0.1)))
 
-        self.enable_debt_limit = self.fin_config.get('enable_debt_limit', False)
-        self.debt_max = self.fin_config.get('debt_max', 0.7)
+        self.enable_debt_limit = ('max_debt_ratio' in self.config) or self.fin_config.get('enable_debt_limit', False)
+        self.debt_max = float(self.config.get('max_debt_ratio', self.fin_config.get('debt_max', 0.7)))
 
-        self.enable_cash_quality = self.fin_config.get('enable_cash_quality', False)
-        self.cfo_np_min = self.fin_config.get('cfo_np_min', 0.8)
+        self.enable_cash_quality = ('min_cash_ratio' in self.config) or self.fin_config.get('enable_cash_quality', False)
+        self.cfo_np_min = float(self.config.get('min_cash_ratio', self.fin_config.get('cfo_np_min', 0.8)))
 
         self.market_config = self.config.get('market', {})
-        self.enable_market_trend = self.market_config.get('enable_market_trend', False)
+        self.enable_market_trend = self.config.get('enable_market_trend', self.market_config.get('enable_market_trend', False))
         self.index_code = self.market_config.get('index_code', 'sh.000300')
-        self.index_ma_period = self.market_config.get('index_ma', 250)
+        self.index_ma_period = int(self.market_config.get('index_ma', 250))
 
         self.ranking_config = self.config.get('ranking', {})
-        self.primary_factor = self.ranking_config.get('primary_factor', 'price')
-        self.reverse = self.ranking_config.get('reverse', False)
+        sort_by = self.config.get('sort_by')
+        if sort_by:
+            if sort_by == 'roe_desc':
+                self.primary_factor = 'roe'
+                self.reverse = True
+            elif sort_by == 'pe_asc':
+                self.primary_factor = 'pe'
+                self.reverse = False
+            elif sort_by == 'price_asc':
+                self.primary_factor = 'price'
+                self.reverse = False
+            elif sort_by == 'growth_desc':
+                self.primary_factor = 'growth'
+                self.reverse = True
+            else:
+                self.primary_factor = 'price'
+                self.reverse = False
+        else:
+            self.primary_factor = self.ranking_config.get('primary_factor', 'price')
+            self.reverse = self.ranking_config.get('reverse', False)
 
         self._indicator_cache = {}
         self.financial_data = None
@@ -115,6 +138,7 @@ class DynamicFactorStrategy(BaseStrategy):
 
             print(f"  [DynamicStrategy] Financial data loaded and indexed for {len(financial_dict)} stocks. GC executed.", flush=True)
             self._financial_data_cached = financial_dict
+            self.financial_data = financial_dict
             return financial_dict
         except Exception as e:
             print(f"  [DynamicStrategy ERROR] Failed to load financial data: {e}", flush=True)
@@ -153,14 +177,17 @@ class DynamicFactorStrategy(BaseStrategy):
             return True
         return close > ma
 
-    def compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Computes technical indicators and caches result."""
+    def compute_indicators(self, df: pd.DataFrame, code: str = None) -> pd.DataFrame:
+        """Computes technical indicators and pre-aligns financial reports."""
         if 'buy_signal' in df.columns:
             return df
 
         df_id = id(df)
         if df_id in self._indicator_cache:
             return self._indicator_cache[df_id]
+
+        if self.financial_data is None:
+            self.financial_data = self.load_financial_data(target_codes=[code] if code else None)
 
         df = df.copy()
 
@@ -196,8 +223,51 @@ class DynamicFactorStrategy(BaseStrategy):
         if self.enable_di_ratio:
             tech_buy &= (df['di_ratio'] >= self.buy_di_threshold)
 
-        df['buy_signal'] = tech_buy
+        roes = np.full(len(df), np.nan, dtype=np.float32)
+        growth = np.full(len(df), np.nan, dtype=np.float32)
+        debt = np.full(len(df), np.nan, dtype=np.float32)
+        cfo = np.full(len(df), np.nan, dtype=np.float32)
+
+        if code and self.financial_data and code in self.financial_data:
+            pub_dates, records = self.financial_data[code]
+            if len(pub_dates) > 0:
+                dt_indices = np.searchsorted(pub_dates, df.index.values, side='right') - 1
+                for idx_df, idx_rec in enumerate(dt_indices):
+                    if idx_rec >= 0:
+                        rec = records[idx_rec]
+                        roes[idx_df] = rec.get('roe_avg', np.nan)
+                        growth[idx_df] = rec.get('YOYNI', np.nan)
+                        debt[idx_df] = rec.get('liabilityToAsset', np.nan)
+                        cfo[idx_df] = rec.get('CFOToNP', np.nan)
+
+        df['fin_roe_avg'] = roes
+        df['fin_YOYNI'] = growth
+        df['fin_liabilityToAsset'] = debt
+        df['fin_CFOToNP'] = cfo
+
+        buy_cond = tech_buy & (df['close'] > 0)
+        if self.enable_roe:
+            buy_cond &= (df['fin_roe_avg'] >= self.roe_min)
+        if self.enable_pe and 'peTTM' in df.columns:
+            buy_cond &= (df['peTTM'] >= self.pe_min) & (df['peTTM'] <= self.pe_max)
+        if self.enable_growth:
+            buy_cond &= (df['fin_YOYNI'] >= self.growth_min)
+        if self.enable_debt_limit:
+            buy_cond &= (df['fin_liabilityToAsset'] <= self.debt_max)
+        if self.enable_cash_quality:
+            buy_cond &= (df['fin_CFOToNP'] >= self.cfo_np_min)
+
+        df['buy_signal'] = buy_cond
         df['sell_signal'] = df['death_cross'] & (df['di_ratio'] < self.sell_di_threshold)
+
+        if self.primary_factor == 'roe':
+            df['rank_val'] = df['fin_roe_avg'].fillna(-999.0)
+        elif self.primary_factor == 'pe':
+            df['rank_val'] = df['peTTM'].fillna(999.0 if self.reverse else -999.0)
+        elif self.primary_factor == 'growth':
+            df['rank_val'] = df['fin_YOYNI'].fillna(-999.0)
+        else:
+            df['rank_val'] = df['close']
 
         self._indicator_cache[df_id] = df
         return df
@@ -221,21 +291,13 @@ class DynamicFactorStrategy(BaseStrategy):
         if self.financial_data is None:
             self.financial_data = self.load_financial_data(target_codes=list(all_data.keys()))
 
-        if not self.check_market_trend(date):
-            for code, df in all_data.items():
-                if date not in df.index:
-                    continue
-                df_with_indicators = self.compute_indicators(df)
-                row = df_with_indicators.loc[date]
-                if row.get('sell_signal', False):
-                    sell_signals.append((code, row['close']))
-            return [], sell_signals
+        market_ok = self.check_market_trend(date)
 
         for code, df in all_data.items():
             if date not in df.index:
                 continue
 
-            df_with_indicators = self.compute_indicators(df)
+            df_with_indicators = self.compute_indicators(df, code=code)
             row = df_with_indicators.loc[date]
             price = row['close']
             if pd.isna(price) or price <= 0:
@@ -244,50 +306,11 @@ class DynamicFactorStrategy(BaseStrategy):
             if row.get('sell_signal', False):
                 sell_signals.append((code, price))
 
-            if code in exclude_codes:
+            if not market_ok or code in exclude_codes:
                 continue
 
-            if not row.get('buy_signal', False):
-                continue
-
-            fin = self.get_financials_at_date(code, date)
-
-            if self.enable_roe:
-                roe = fin.get('roe_avg') if fin else None
-                if roe is None or pd.isna(roe) or roe < (self.roe_min * 100):
-                    continue
-
-            pe = row.get('peTTM')
-            if self.enable_pe:
-                if pe is None or pd.isna(pe) or pe < self.pe_min or pe > self.pe_max:
-                    continue
-
-            if self.enable_growth:
-                yoy_ni = fin.get('YOYNI') if fin else None
-                if yoy_ni is None or pd.isna(yoy_ni) or yoy_ni < (self.growth_min * 100):
-                    continue
-
-            if self.enable_debt_limit:
-                debt = fin.get('liabilityToAsset') if fin else None
-                if debt is None or pd.isna(debt) or debt > self.debt_max:
-                    continue
-
-            if self.enable_cash_quality:
-                cfo_np = fin.get('CFOToNP') if fin else None
-                if cfo_np is None or pd.isna(cfo_np) or cfo_np < self.cfo_np_min:
-                    continue
-
-            rank_val = 0.0
-            if self.primary_factor == 'price':
-                rank_val = price
-            elif self.primary_factor == 'roe':
-                rank_val = fin.get('roe_avg', -999.0) if fin else -999.0
-            elif self.primary_factor == 'pe':
-                rank_val = pe if pe is not None and not pd.isna(pe) else (999.0 if self.reverse else -999.0)
-            elif self.primary_factor == 'growth':
-                rank_val = fin.get('YOYNI', -999.0) if fin else -999.0
-
-            buy_candidates.append((code, price, rank_val))
+            if row.get('buy_signal', False):
+                buy_candidates.append((code, price, row.get('rank_val', price)))
 
         buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=self.reverse)
 
