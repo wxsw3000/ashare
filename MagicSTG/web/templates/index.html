@@ -999,16 +999,27 @@
 
     <!-- ==================== 模态框 2: 回测计算 Log 弹窗 ==================== -->
     <div class="modal-overlay" id="backtestLogModal">
-        <div class="modal-container" style="max-width: 800px;">
+        <div class="modal-container" style="max-width: 840px;">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-terminal"></i> 策略回测运行 Log 与交易明细</h3>
+                <h3><i class="fa-solid fa-terminal"></i> 策略历史回测运行与交易明细</h3>
                 <button class="modal-close" onclick="closeBacktestLogModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- 动态灵活起止时间选择器 -->
+            <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; background: rgba(255,255,255,0.05); padding: 0.5rem 0.75rem; border-radius: 8px; flex-wrap: wrap;">
+                <span style="font-size: 0.82rem; color: #8e95b2; font-weight: 600;"><i class="fa-regular fa-calendar-days"></i> 回测时间区间:</span>
+                <input type="date" id="backtestStartDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;">
+                <span style="color: #8e95b2;">至</span>
+                <input type="date" id="backtestEndDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;">
+                <button class="btn btn-primary" id="btnReRunBacktest" style="padding: 0.25rem 0.75rem; font-size: 0.82rem;" onclick="reRunBacktestFromModal()">
+                    <i class="fa-solid fa-play"></i> 重新计算回测
+                </button>
             </div>
 
             <div class="log-console" id="logConsoleOutput">准备执行回测计算...</div>
 
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                <span style="font-size: 0.8rem; color: #8e95b2;">* 提示: 交易明细 Log 不保存至数据库，可点击下方一键复制</span>
+                <span style="font-size: 0.8rem; color: #8e95b2;">* 提示: 默认自动定位截至今天的近 1 年动态区间，支持自由修改起止日期</span>
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn btn-secondary" onclick="copyBacktestLog()"><i class="fa-regular fa-copy"></i> 一键复制 Log</button>
                     <button class="btn btn-primary" onclick="closeBacktestLogModal()">确定关闭</button>
@@ -1414,25 +1425,39 @@
             }
         }
 
-        // 触发回测 Log 实时弹窗
-        async function triggerBacktestLogModal(stgDbId) {
+        let activeBacktestStgDbId = null;
+
+        // 触发回测 Log 实时弹窗 (支持动态指定起止日期)
+        async function triggerBacktestLogModal(stgDbId, customStartDate = null, customEndDate = null) {
             const stg = allStrategiesList.find(s => s.id === stgDbId);
             if (!stg) return;
 
+            activeBacktestStgDbId = stgDbId;
             const modal = document.getElementById('backtestLogModal');
             const consoleBox = document.getElementById('logConsoleOutput');
+            const startInput = document.getElementById('backtestStartDateInput');
+            const endInput = document.getElementById('backtestEndDateInput');
             modal.classList.add('active');
 
+            const todayObj = new Date();
+            const defaultEndDateStr = todayObj.toISOString().split('T')[0];
+            const startDateObj = new Date();
+            startDateObj.setFullYear(startDateObj.getFullYear() - 1);
+            const defaultStartDateStr = startDateObj.toISOString().split('T')[0];
+
+            const startDateStr = customStartDate || (startInput ? startInput.value : '') || defaultStartDateStr;
+            const endDateStr = customEndDate || (endInput ? endInput.value : '') || defaultEndDateStr;
+
+            if (startInput) startInput.value = startDateStr;
+            if (endInput) endInput.value = endDateStr;
+
             consoleBox.textContent = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 引擎...\n` +
-                                     `[Params] 策略类别: ${stg.category}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
+                                     `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
                                      `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
                                      `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
 
-            const todayObj = new Date();
-            const endDateStr = todayObj.toISOString().split('T')[0];
-            const startDateObj = new Date();
-            startDateObj.setFullYear(startDateObj.getFullYear() - 1);
-            const startDateStr = startDateObj.toISOString().split('T')[0];
+            const reRunBtn = document.getElementById('btnReRunBacktest');
+            if (reRunBtn) reRunBtn.disabled = true;
 
             try {
                 const res = await fetch('/api/backtest', {
@@ -1470,7 +1495,16 @@
                 }
             } catch (e) {
                 consoleBox.textContent += `\n[NET ERROR] 网络异常: ${e.message}\n`;
+            } finally {
+                if (reRunBtn) reRunBtn.disabled = false;
             }
+        }
+
+        function reRunBacktestFromModal() {
+            if (!activeBacktestStgDbId) return;
+            const startStr = document.getElementById('backtestStartDateInput').value;
+            const endStr = document.getElementById('backtestEndDateInput').value;
+            triggerBacktestLogModal(activeBacktestStgDbId, startStr, endStr);
         }
 
         function closeBacktestLogModal() {
