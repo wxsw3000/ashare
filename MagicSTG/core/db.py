@@ -92,25 +92,33 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             df = pd.read_sql(query, conn, params=[min_date_str, max_date_str])
 
         elif limit_to_csi300:
-            print("  [DB] Retrieving stock codes from stock_profit_quarterly...", flush=True)
+            print("  [DB] Retrieving csi300 stock codes from stock_profit_quarterly...", flush=True)
             with conn.cursor() as cur:
                 cur.execute("SELECT DISTINCT code FROM stock_profit_quarterly ORDER BY code ASC LIMIT 300")
                 db_codes = [r[0] for r in cur.fetchall()]
-            print(f"  [DB] Target universe limited to {len(db_codes)} stocks.", flush=True)
+            print(f"  [DB] Target universe limited to {len(db_codes)} stocks. Fetching K-lines in batches...", flush=True)
 
-            format_strings = ','.join(['%s'] * len(db_codes))
-            query = f"""
-            SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
-            FROM stock_kline_day
-            WHERE code IN ({format_strings}) AND date >= %s
-            """
-            params = db_codes + [min_date_str]
-            if max_date_str is not None:
-                query += " AND date <= %s"
-                params.append(max_date_str)
-            query += " ORDER BY date ASC"
+            batch_size = 100
+            all_dfs = []
+            for i in range(0, len(db_codes), batch_size):
+                batch = db_codes[i:i+batch_size]
+                format_strings = ','.join(['%s'] * len(batch))
+                query = f"""
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                FROM stock_kline_day
+                WHERE code IN ({format_strings}) AND date >= %s
+                """
+                params = batch + [min_date_str]
+                if max_date_str is not None:
+                    query += " AND date <= %s"
+                    params.append(max_date_str)
+                query += " ORDER BY date ASC"
 
-            df = pd.read_sql(query, conn, params=params)
+                batch_df = pd.read_sql(query, conn, params=params)
+                if not batch_df.empty:
+                    all_dfs.append(batch_df)
+
+            df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
         else:
             print("  [DB] Retrieving all stock codes from stock_kline_day...", flush=True)
@@ -147,8 +155,6 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
                 if not batch_df.empty:
                     all_dfs.append(batch_df)
-
-                time.sleep(0.1)
 
             if all_dfs:
                 df = pd.concat(all_dfs, ignore_index=True)

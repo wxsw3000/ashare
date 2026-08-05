@@ -313,10 +313,11 @@ def run_strategy(stg_id):
         )
 
         success = False
+        parsed_cfg = json.loads(factors_cfg) if isinstance(factors_cfg, str) else (factors_cfg or {})
         if category == 'convertible_bond' or stg_code == 'cb_double_low':
-            success = run_cb_double_low_recommendation(target_date)
+            success = run_cb_double_low_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
         else:
-            success = run_dynamic_factor_recommendation(target_date)
+            success = run_dynamic_factor_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
 
         if success:
             cursor.execute("SELECT COUNT(*) FROM recommendations WHERE strategy = %s AND signal_date = %s", (stg_code, target_date))

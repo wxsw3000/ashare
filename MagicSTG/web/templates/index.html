@@ -1377,8 +1377,15 @@
             }
         }
 
-        // 运行策略 (防重机制)
-        async function runStrategyAction(dbId, force = false) {
+        // 运行策略 (防重机制 & 动态加载反馈)
+        async function runStrategyAction(dbId, force = false, btnElement = null) {
+            let origHtml = '';
+            if (btnElement) {
+                origHtml = btnElement.innerHTML;
+                btnElement.disabled = true;
+                btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 计算中...`;
+            }
+
             try {
                 const res = await fetch(`/api/strategies/${dbId}/run`, {
                     method: 'POST',
@@ -1389,7 +1396,8 @@
 
                 if (result.status === 'already_run') {
                     if (confirm(`⚠️ 提示: ${result.message}\n\n是否需要强制重新运行并覆盖该日的计算结果？`)) {
-                        runStrategyAction(dbId, true);
+                        runStrategyAction(dbId, true, btnElement);
+                        return;
                     }
                 } else if (result.status === 'success') {
                     alert('🎉 ' + result.message);
@@ -1398,6 +1406,11 @@
                 }
             } catch (e) {
                 alert('网络异常: ' + e.message);
+            } finally {
+                if (btnElement) {
+                    btnElement.disabled = false;
+                    btnElement.innerHTML = origHtml;
+                }
             }
         }
 
@@ -1421,7 +1434,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         strategy_name: stg.strategy_id,
-                        universe: stg.category === 'convertible_bond' ? 'all' : 'csi300',
+                        universe: stg.category === 'convertible_bond' ? 'all' : (stg.factors_config?.stock_scope || 'csi300'),
+                        start_date: '2025-01-01',
+                        end_date: '2026-06-30',
                         save_db: true,
                         config: stg.factors_config
                     })
@@ -1439,10 +1454,11 @@
                                 `================== 交易明细 Log ==================\n`;
 
                     (result.trade_log || []).forEach((t, i) => {
-                        logsText += `[${t.date}] ${t.action} ${t.code} | 价格: ¥${t.price} | 数量: ${t.shares} | 盈亏: ${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'} | 原因: ${t.reason || '-'}\n`;
+                        logsText += `[${t.trade_date || t.date}] ${t.action} ${t.stock_code || t.code} | 价格: ¥${t.price} | 数量: ${t.shares} | 盈亏: ${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'} | 原因: ${t.reason || '-'}\n`;
                     });
 
                     consoleBox.textContent = logsText;
+                    if (typeof loadBacktests === 'function') loadBacktests();
                 } else {
                     consoleBox.textContent += `\n[ERROR] 回测出错: ${result.message}\n`;
                 }

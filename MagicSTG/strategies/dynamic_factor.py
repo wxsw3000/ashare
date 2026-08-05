@@ -62,12 +62,26 @@ class DynamicFactorStrategy(BaseStrategy):
         self.financial_data = None
         self.index_data = None
 
-    def load_financial_data(self) -> Dict[str, pd.DataFrame]:
-        """Loads and merges quarterly financial reports from TiDB."""
+    def load_financial_data(self, target_codes: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Loads and merges quarterly financial reports from TiDB for target stocks."""
+        if hasattr(self, '_financial_data_cached') and self._financial_data_cached:
+            if not target_codes or all(c in self._financial_data_cached for c in target_codes):
+                return self._financial_data_cached
+
         conn = get_connection()
         try:
             print("  [DynamicStrategy] Loading merged quarterly financial reports...", flush=True)
-            query = """
+            where_clause = ""
+            params = None
+
+            if target_codes and len(target_codes) > 0:
+                db_codes = [c.replace('.', '_') for c in target_codes] + [c.replace('_', '.') for c in target_codes]
+                unique_codes = list(set(db_codes))
+                format_strings = ','.join(['%s'] * len(unique_codes))
+                where_clause = f" WHERE p.code IN ({format_strings}) "
+                params = unique_codes
+
+            query = f"""
             SELECT 
                 p.code, p.stat_date, p.pub_date, p.roe_avg,
                 g.YOYNI,
@@ -77,18 +91,22 @@ class DynamicFactorStrategy(BaseStrategy):
             LEFT JOIN stock_growth_quarterly g ON p.code = g.code AND p.stat_date = g.stat_date
             LEFT JOIN stock_balance_quarterly b ON p.code = b.code AND p.stat_date = b.stat_date
             LEFT JOIN stock_cash_flow_quarterly c ON p.code = c.code AND p.stat_date = c.stat_date
+            {where_clause}
             ORDER BY p.code, p.pub_date ASC
             """
-            merged = pd.read_sql(query, conn)
+            merged = pd.read_sql(query, conn, params=params)
             merged['pub_date'] = pd.to_datetime(merged['pub_date'])
             merged['code'] = merged['code'].str.replace('_', '.', regex=False)
 
-            financial_dict = {}
+            financial_dict = getattr(self, '_financial_data_cached', {}) or {}
             for code, group in merged.groupby('code'):
                 group = group.sort_values('pub_date')
-                financial_dict[code] = group
+                pub_dates = group['pub_date'].values
+                records = group.to_dict('records')
+                financial_dict[code] = (pub_dates, records)
 
-            print(f"  [DynamicStrategy] Financial data loaded for {len(financial_dict)} stocks.", flush=True)
+            print(f"  [DynamicStrategy] Financial data loaded and indexed for {len(financial_dict)} stocks.", flush=True)
+            self._financial_data_cached = financial_dict
             return financial_dict
         except Exception as e:
             print(f"  [DynamicStrategy ERROR] Failed to load financial data: {e}", flush=True)
@@ -96,36 +114,20 @@ class DynamicFactorStrategy(BaseStrategy):
         finally:
             conn.close()
 
-    def load_index_data(self) -> pd.DataFrame:
-        """Loads market index K-line data for trend filtering."""
-        conn = get_connection()
-        try:
-            print(f"  [DynamicStrategy] Loading index {self.index_code} data...", flush=True)
-            query = f"SELECT date, close FROM index_kline_day WHERE code = '{self.index_code}' ORDER BY date"
-            df = pd.read_sql(query, conn)
-            df['date'] = pd.to_datetime(df['date'])
-            df.set_index('date', inplace=True)
-            df['ma'] = df['close'].rolling(self.index_ma_period).mean()
-            return df
-        except Exception as e:
-            print(f"  [DynamicStrategy ERROR] Failed to load index data: {e}", flush=True)
-            return pd.DataFrame()
-        finally:
-            conn.close()
-
-    def get_financials_at_date(self, code: str, date: pd.Timestamp) -> Optional[dict]:
+    def get_financials_at_date(self, code: str, date: pd.Timestamp, target_codes: Optional[List[str]] = None) -> Optional[dict]:
         """Gets latest financial disclosure data prior to date."""
         if self.financial_data is None:
-            self.financial_data = self.load_financial_data()
+            self.financial_data = self.load_financial_data(target_codes=target_codes)
 
         if code not in self.financial_data:
             return None
 
-        df = self.financial_data[code]
-        available = df[df['pub_date'] <= date]
-        if available.empty:
-            return None
-        return available.iloc[-1].to_dict()
+        pub_dates, records = self.financial_data[code]
+        dt = np.datetime64(date)
+        idx = np.searchsorted(pub_dates, dt, side='right') - 1
+        if idx >= 0:
+            return records[idx]
+        return None
 
     def check_market_trend(self, date: pd.Timestamp) -> bool:
         """Checks if broader market index trend is positive."""
@@ -207,6 +209,9 @@ class DynamicFactorStrategy(BaseStrategy):
 
         buy_candidates = []
         sell_signals = []
+
+        if self.financial_data is None:
+            self.financial_data = self.load_financial_data(target_codes=list(all_data.keys()))
 
         if not self.check_market_trend(date):
             for code, df in all_data.items():

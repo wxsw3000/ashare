@@ -30,8 +30,92 @@ def run_backtest_engine(
     all_data: Optional[Dict[str, pd.DataFrame]] = None
 ) -> Dict[str, Any]:
     """
-    Executes backtest loop with specified configuration.
+    Executes backtest loop with specified configuration. Supports both Stock and CB strategies.
     """
+    # 区分可转债策略与股票策略
+    if strategy_name == 'cb_double_low' or strategy_name.startswith('cb_') or config.get('category') == 'convertible_bond':
+        try:
+            from MagicSTG.run_cb_backtest import run_cb_backtest
+
+            top_n = int(config.get('top_n', 10))
+            max_price = float(config.get('max_price', 130.0))
+
+            cb_res = run_cb_backtest(
+                start_date=start_date_str,
+                end_date=end_date_str,
+                initial_capital=100000.0,
+                top_n=top_n,
+                max_price=max_price,
+                rebalance_days=5
+            )
+
+            if not cb_res or 'perf_df' not in cb_res or cb_res['perf_df'].empty:
+                return {'status': 'error', 'message': '可转债策略计算未生成有效回测数据'}
+
+            perf_df = cb_res['perf_df']
+            trade_df = cb_res.get('trade_df', pd.DataFrame())
+
+            equity_history = []
+            for _, row in perf_df.iterrows():
+                dt_str = row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date'])
+                equity_history.append({
+                    'date': dt_str,
+                    'equity': round(float(row['total_asset']), 2),
+                    'cash': round(float(row['cash']), 2),
+                    'positions_count': int(row['num_holdings'])
+                })
+
+            trade_log = []
+            if not trade_df.empty:
+                for _, row in trade_df.iterrows():
+                    trade_log.append({
+                        'trade_date': str(row['date']),
+                        'stock_code': str(row['code']),
+                        'action': str(row['action']),
+                        'price': round(float(row['price']), 2),
+                        'shares': int(row['shares']),
+                        'amount': round(float(row['amount']), 2),
+                        'fee': 0.0,
+                        'pnl': round(float(row.get('pnl', 0.0)), 2),
+                        'pnl_pct': 0.0,
+                        'reason': str(row['reason'])
+                    })
+
+            initial_eq = 100000.0
+            final_eq = float(perf_df['total_asset'].iloc[-1])
+            tot_ret = float(cb_res.get('total_return', 0.0)) * 100
+            ann_ret = float(cb_res.get('annual_return', 0.0)) * 100
+            max_dd = float(cb_res.get('max_drawdown', 0.0)) * 100
+
+            result_summary = {
+                'status': 'success',
+                'strategy_name': strategy_name,
+                'date_range_start': start_date_str,
+                'date_range_end': end_date_str,
+                'initial_equity': initial_eq,
+                'final_equity': round(final_eq, 2),
+                'total_return': round(tot_ret, 2),
+                'annual_return': round(ann_ret, 2),
+                'max_drawdown': round(max_dd, 2),
+                'win_rate': round(float(cb_res.get('win_rate', 0.0)), 2),
+                'total_buys': len([t for t in trade_log if t['action'] == 'BUY']),
+                'total_sells': len([t for t in trade_log if t['action'] == 'SELL']),
+                'total_fees': 0.0,
+                'equity_history': equity_history,
+                'trades': trade_log
+            }
+
+            if save_to_db:
+                try:
+                    save_backtest_result(strategy_name, result_summary)
+                except Exception as e:
+                    print(f"  [BacktestEngine] ⚠️ Persistent DB saving failed: {e}", flush=True)
+
+            return result_summary
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'status': 'error', 'message': f'可转债策略回测执行失败: {str(e)}'}
     if all_data is None:
         limit_to_csi300 = (universe == 'csi300')
         print(f"[BacktestEngine] Loading data for range {start_date_str} ~ {end_date_str} (universe={universe})...", flush=True)

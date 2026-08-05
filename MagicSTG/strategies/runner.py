@@ -45,9 +45,9 @@ def update_strategy_checkpoint(strategy_name: str, target_date: str):
             conn.close()
 
 
-def run_cb_double_low_recommendation(target_date: str) -> bool:
+def run_cb_double_low_recommendation(target_date: str, strategy_id: str = 'cb_double_low', config: Optional[Dict[str, Any]] = None) -> bool:
     """运行可转债双低策略推荐并落库"""
-    print(f"\n  [Strategy] 运行可转债双低策略推荐 (日期: {target_date})...", flush=True)
+    print(f"\n  [Strategy] 运行可转债双低策略推荐 ({strategy_id}, 日期: {target_date})...", flush=True)
     try:
         data = load_cb_data_db(start_date=target_date, end_date=target_date)
         indicator_df = data.get('cb_daily_indicator')
@@ -56,15 +56,15 @@ def run_cb_double_low_recommendation(target_date: str) -> bool:
             print(f"  [Strategy] ⚠️ {target_date} 缺少可转债衍生指标数据，跳过双低策略信号计算。")
             return False
 
-        strategy = StrategyRegistry.get('cb_double_low')
+        strategy = StrategyRegistry.get('cb_double_low', config=config)
         buy_signals, sell_signals = strategy.generate_signals(
             date=pd.to_datetime(target_date),
             data={'cb_daily_indicator': indicator_df},
             current_holdings=[]
         )
 
-        save_recommendations('cb_double_low', buy_signals, sell_signals, target_date)
-        update_strategy_checkpoint('cb_double_low', target_date)
+        save_recommendations(strategy_id, buy_signals, sell_signals, target_date)
+        update_strategy_checkpoint(strategy_id, target_date)
         return True
 
     except Exception as e:
@@ -74,27 +74,27 @@ def run_cb_double_low_recommendation(target_date: str) -> bool:
         return False
 
 
-def run_dynamic_factor_recommendation(target_date: str) -> bool:
+def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dynamic_factor', config: Optional[Dict[str, Any]] = None) -> bool:
     """运行动态多因子股票策略推荐并落库"""
-    print(f"\n  [Strategy] 运行动态多因子股票策略推荐 (日期: {target_date})...", flush=True)
+    print(f"\n  [Strategy] 运行动态多因子股票策略推荐 ({strategy_id}, 日期: {target_date})...", flush=True)
     try:
-        # 加载近 60 天数据计算技术指标
         start_date = (pd.to_datetime(target_date) - pd.Timedelta(days=90)).strftime('%Y-%m-%d')
-        stock_data = load_all_data_db(start_date=start_date, end_date=target_date)
+        limit_csi300 = (config and config.get('stock_scope') == 'csi300')
+        stock_data = load_all_data_db(start_date=start_date, end_date=target_date, limit_to_csi300=limit_csi300)
 
         if not stock_data:
             print(f"  [Strategy] ⚠️ {target_date} 缺少股票数据，跳过多因子策略信号计算。")
             return False
 
-        strategy = StrategyRegistry.get('dynamic_factor')
+        strategy = StrategyRegistry.get('dynamic_factor', config=config)
         buy_signals, sell_signals = strategy.generate_signals(
             date=pd.to_datetime(target_date),
             data=stock_data,
             exclude_codes=[]
         )
 
-        save_recommendations('dynamic_factor', buy_signals, sell_signals, target_date)
-        update_strategy_checkpoint('dynamic_factor', target_date)
+        save_recommendations(strategy_id, buy_signals, sell_signals, target_date)
+        update_strategy_checkpoint(strategy_id, target_date)
         return True
 
     except Exception as e:

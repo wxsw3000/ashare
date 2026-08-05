@@ -11,12 +11,15 @@
    - 添加 `onCategoryChange()` 事件，支持下拉框在“股票策略”和“可转债策略”之间无缝动态切换与表单填充。
    - 升级 `saveStrategySubmit()`、`openCreateStrategyModal()` 与 `openEditStrategyModal()` 函数，完全适配两套不同的因子 JSON 字典结构（含 `stock_linkage` 正股联动映射）。
 
-3. **策略引擎与数据库配置全流程对齐**：
-   - **数据库端 (`MagicSTG/core/init_v1_tables.py`)**：重置 `cb_double_low` 的 `factors_config` 结构，补充 `min_convert_premium`, `max_convert_premium`, `max_pure_bond_premium`, `min_ytm`, `sort_by` 以及 `stock_linkage` 默认配置，并成功落地 TiDB Cloud。
-   - **算法引擎端 (`MagicSTG/strategies/cb_double_low.py`)**：增强 `CBDoubleLowStrategy` 的 `select_top_bonds` 函数，全面支持根据前端配置的 `sort_by`（双低值/转债价格/溢价率/YTM）进行多维排序，并支持正股 ROE、PE 等联动因子的动态筛选。
+3. **策略引擎、回测系统与数据库全流程对齐与性能极速优化**：
+   - **数据库端 (`MagicSTG/core/init_v1_tables.py` & `MagicSTG/core/db.py`)**：重置 `cb_double_low` 的 `factors_config` 结构，补充 `min_convert_premium`, `max_convert_premium`, `max_pure_bond_premium`, `min_ytm`, `sort_by` 以及 `stock_linkage` 默认配置。优化 `load_all_data_db` 批处理，移除冗余延迟。
+   - **财报检索极速优化 (`MagicSTG/strategies/dynamic_factor.py`)**：在 `DynamicFactorStrategy` 中按目标股票池（`target_codes`）精确按需加载财报，并将逐日财报查询算法升级为 `np.searchsorted` 二分查找（从原来的全表扫描 120 秒大幅压缩至毫秒级）。
+   - **回测引擎打通 (`MagicSTG/backtests/engine.py`)**：在 `run_backtest_engine` 中接入可转债策略路由机制（调用 `run_cb_backtest`），统一输出交易明细与资产曲线，彻底解决转债策略回测 500 HTML 报错问题。
+   - **推荐引擎落库 (`MagicSTG/strategies/runner.py` & `MagicSTG/web/server.py`)**：盘后推荐算法正式支持传入界面上用户保存的自定义因子字典 (`factors_config`)，实现个性化策略计算与落库。
+   - **Web UI 体验升级 (`index.html`)**：为策略“运行”按钮加上 `⏳ 计算中...` 的 Spinner 动画与禁用锁；为回测设定高效合理的默认起始时间（`2025-01-01`），防止长跨度请求造成浏览器网络超时。
 
 4. **代码同步与 Git 仓库更新**：
-   - 所有前端与后端解耦代码已全量提交并同步至 GitHub 仓库 `main` 分支。
+   - 所有前端与后端解耦及优化代码已全量提交并同步至 GitHub 仓库 `main` 分支。
 
 ---
-记录时间: 2026-08-05 09:35:00 (Local Time)
+记录时间: 2026-08-05 17:15:00 (Local Time)

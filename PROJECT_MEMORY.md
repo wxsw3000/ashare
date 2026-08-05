@@ -221,13 +221,18 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 ---
 
-## 11. Session Summary & Memory (2026-08-05) - Factor Decoupling & Stock Linkage
+## 11. Session Summary & Memory (2026-08-05) - Factor Decoupling & Performance Optimization
 
 * **Convertible Bond Factor Decoupling & Stock Linkage Implementation**:
   * **Dynamic Form Switching (`index.html`)**: Splitted strategy modal factor builder into `#factorPanelStock` and `#factorPanelCB`. Automatically toggles dynamic factor panels based on strategy category (`stock` vs `convertible_bond`).
   * **Convertible Bond Dedicated Factors**: Exposed price limit (`max_price`), convert premium range (`min_convert_premium`, `max_convert_premium`), pure bond premium limit (`max_pure_bond_premium`), minimum YTM (`min_ytm`), and flexible bond primary sorting rules (`db_low_value`, `cb_price`, `convert_premium_rate`, `ytm`).
   * **Underlying Stock Linkage (`stock_linkage`)**: Added optional stock linkage controls (Stock ROE, Stock PE range, Stock MA trend) for convertible bond strategies, enabling dual bond-stock quantitative filtering.
-  * **Engine & DB Alignment (`cb_double_low.py`, `init_v1_tables.py`)**: Enhanced `CBDoubleLowStrategy` to handle custom bond sorting and optional stock linkage filters; initialized TiDB Cloud `custom_strategies` defaults.
+
+* **Backtest Engine Dual-Channel Routing & Performance Optimization**:
+  * **CB Backtest Integration (`engine.py`)**: Routed convertible bond strategy backtests in `run_backtest_engine` to `run_cb_backtest`, returning unified equity curve & trade log JSON formats (eliminated HTML 500 error).
+  * **Binary Search Financial Lookup (`dynamic_factor.py`)**: Optimized quarterly financial report loading by filtering target universe stocks (`target_codes`) and replacing $O(N)$ pandas boolean filtering with $O(\log N)$ `np.searchsorted` binary search (compressed lookup times from 120s to milliseconds).
+  * **Runner & Web API Synchronization (`runner.py`, `server.py`)**: Updated strategy execution endpoints to pass user custom factor configurations (`factors_config`) to strategy instances.
+  * **Web UI Feedback & Date Range Guard (`index.html`)**: Added button loading spinner state (`⏳ 计算中...`) for strategy execution and set default backtest start date to `2025-01-01` to guarantee high-performance response times without browser network timeouts.
 
 
 
