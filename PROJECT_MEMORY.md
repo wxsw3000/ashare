@@ -219,6 +219,17 @@ The codebase has been refactored into a highly modular, plugin-based architectur
     3. **策略推荐结果** (Strategy Recommendations): Master-Detail下钻交互架构。第一层为“行情时间 + 策略”执行履历卡片列表（显示行情日期、策略名称、买卖信号数量、生成时间）；点击任意卡片后平滑下钻进入第二层“推荐明细表格”（包含完整 9 大维度可转债数据/股票数据，并支持一键返回履历列表）。
   * **可视化因子表单建构器 (Visual Factor Builder Form)**: Embedded comprehensive multi-column factor controls inside the Create/Edit Strategy Modal—including MA short/long, volume surge factor, DMI (PDI/NDI) threshold, ROE min %, PE range [min, max], Profit growth YoY %, Debt limit %, Cash ratio (CFO/NP), primary factor sorting rules (Price, ROE, PE, Growth, DB Low Value), and stock/CB universe selections. Saved directly into TiDB Cloud `custom_strategies.factors_config` JSON.
 
+---
+
+## 11. Session Summary & Memory (2026-08-05) - Factor Decoupling & Stock Linkage
+
+* **Convertible Bond Factor Decoupling & Stock Linkage Implementation**:
+  * **Dynamic Form Switching (`index.html`)**: Splitted strategy modal factor builder into `#factorPanelStock` and `#factorPanelCB`. Automatically toggles dynamic factor panels based on strategy category (`stock` vs `convertible_bond`).
+  * **Convertible Bond Dedicated Factors**: Exposed price limit (`max_price`), convert premium range (`min_convert_premium`, `max_convert_premium`), pure bond premium limit (`max_pure_bond_premium`), minimum YTM (`min_ytm`), and flexible bond primary sorting rules (`db_low_value`, `cb_price`, `convert_premium_rate`, `ytm`).
+  * **Underlying Stock Linkage (`stock_linkage`)**: Added optional stock linkage controls (Stock ROE, Stock PE range, Stock MA trend) for convertible bond strategies, enabling dual bond-stock quantitative filtering.
+  * **Engine & DB Alignment (`cb_double_low.py`, `init_v1_tables.py`)**: Enhanced `CBDoubleLowStrategy` to handle custom bond sorting and optional stock linkage filters; initialized TiDB Cloud `custom_strategies` defaults.
+
+
 
 
 

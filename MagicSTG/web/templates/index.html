@@ -735,7 +735,7 @@
                 <div class="form-grid-2">
                     <div class="form-group">
                         <label>策略分类</label>
-                        <select id="stgFormCategory" class="form-control" style="width: 100%;">
+                        <select id="stgFormCategory" class="form-control" style="width: 100%;" onchange="onCategoryChange()">
                             <option value="stock">股票策略</option>
                             <option value="convertible_bond">可转债策略</option>
                         </select>
@@ -746,10 +746,10 @@
                     </div>
                 </div>
 
-                <!-- 可配置因子与风控表单组装器 -->
-                <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: rgba(15, 17, 32, 0.5);">
+                <!-- 可配置因子与风控表单组装器：股票策略面板 -->
+                <div id="factorPanelStock" style="border: 1px solid rgba(0, 210, 196, 0.2); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: rgba(15, 17, 32, 0.5);">
                     <h4 style="color: #00d2c4; font-size: 0.95rem; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
-                        <i class="fa-solid fa-sliders"></i> 因子与风控限制配置 (组合筛选)
+                        <i class="fa-solid fa-chart-line"></i> 股票专属因子与风控配置
                     </h4>
                     
                     <!-- 1. 技术面指标 -->
@@ -856,15 +856,119 @@
                                 <option value="roe">ROE 优先 (高盈利股优先)</option>
                                 <option value="pe">PE 优先 (低估值股优先)</option>
                                 <option value="growth">成长性优先 (高利润增长优先)</option>
-                                <option value="db_low_value">双低值优先 (仅可转债)</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>股票 / 转债筛选池</label>
+                            <label>股票筛选池</label>
                             <select id="stg_universe" class="form-control" style="width: 100%;">
                                 <option value="csi300">沪深 300 成分股池</option>
-                                <option value="all">全市场 A 股 / 转债标的池</option>
+                                <option value="all">全市场 A 股标的池</option>
                             </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可配置因子与风控表单组装器：可转债策略面板 (转债专属 + 正股联动) -->
+                <div id="factorPanelCB" style="border: 1px solid rgba(247, 183, 49, 0.3); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: rgba(20, 18, 35, 0.6); display: none;">
+                    <h4 style="color: #f7b731; font-size: 0.95rem; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+                        <i class="fa-solid fa-coins"></i> 可转债专属因子与正股联动风控
+                    </h4>
+
+                    <!-- 1. 可转债核心交易面与债性因子 -->
+                    <div style="font-size: 0.82rem; color: #f7b731; margin-bottom: 0.5rem; font-weight: 600;">转债专属量化因子</div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label style="font-size:0.75rem;">转债价格上限 (元)</label>
+                            <input type="number" id="stg_cb_max_price" class="form-control" style="width:100%;" value="130.0" step="1" min="80" max="300">
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <div style="flex:1;">
+                                <label style="font-size:0.75rem;">转股溢价率 Min (%)</label>
+                                <input type="number" id="stg_cb_min_premium" class="form-control" style="width:100%;" value="-20.0" step="1">
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-size:0.75rem;">转股溢价率 Max (%)</label>
+                                <input type="number" id="stg_cb_max_premium" class="form-control" style="width:100%;" value="50.0" step="1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_cb_enable_pure_bond" style="accent-color:#f7b731; width:16px; height:16px;">
+                            <label for="stg_cb_enable_pure_bond" style="margin: 0; color: #f0f3fa; cursor:pointer;">纯债溢价率上限 (%)</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_cb_max_pure_bond_premium" class="form-control" style="width:100%;" value="30.0" step="1">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_cb_enable_ytm" style="accent-color:#f7b731; width:16px; height:16px;">
+                            <label for="stg_cb_enable_ytm" style="margin: 0; color: #f0f3fa; cursor:pointer;">到期收益率 YTM 门槛 (%)</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_cb_min_ytm" class="form-control" style="width:100%;" value="0.0" step="0.5">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group">
+                            <label>转债核心排序规则</label>
+                            <select id="stg_cb_primary_factor" class="form-control" style="width: 100%;">
+                                <option value="db_low_value">双低值优先 (价格 + 溢价率*100 从低到高)</option>
+                                <option value="cb_price">转债价格优先 (低价防守型)</option>
+                                <option value="convert_premium_rate">转股溢价率优先 (高股性弹性)</option>
+                                <option value="ytm">到期收益率 YTM 优先 (高纯债防守)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>转债标的池</label>
+                            <select id="stg_cb_universe" class="form-control" style="width: 100%;">
+                                <option value="all">全市场正常交易可转债标的池</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 2. 正股联动因子配置 (选填/可选) -->
+                    <div style="font-size: 0.82rem; color: #8e95b2; margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 600; display:flex; align-items:center; gap:0.4rem;">
+                        <i class="fa-solid fa-link"></i> 正股联动约束配置 (结合发行正股基本面/技术面)
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_cb_enable_stock_roe" style="accent-color:#f7b731; width:16px; height:16px;">
+                            <label for="stg_cb_enable_stock_roe" style="margin: 0; color: #f0f3fa; cursor:pointer;">正股最低 ROE (%)</label>
+                        </div>
+                        <div>
+                            <input type="number" id="stg_cb_stock_roe_min" class="form-control" style="width:100%;" value="5.0" step="0.5">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_cb_enable_stock_pe" style="accent-color:#f7b731; width:16px; height:16px;">
+                            <label for="stg_cb_enable_stock_pe" style="margin: 0; color: #f0f3fa; cursor:pointer;">正股 PE 估值范围</label>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="number" id="stg_cb_stock_pe_min" class="form-control" style="width:100%;" placeholder="Min PE" value="0">
+                            <input type="number" id="stg_cb_stock_pe_max" class="form-control" style="width:100%;" placeholder="Max PE" value="35">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                            <input type="checkbox" id="stg_cb_enable_stock_ma" style="accent-color:#f7b731; width:16px; height:16px;">
+                            <label for="stg_cb_enable_stock_ma" style="margin: 0; color: #f0f3fa; cursor:pointer;">正股均线多头趋势</label>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <div style="flex:1;">
+                                <input type="number" id="stg_cb_stock_short_ma" class="form-control" style="width:100%;" value="5" placeholder="短期均线">
+                            </div>
+                            <div style="flex:1;">
+                                <input type="number" id="stg_cb_stock_long_ma" class="form-control" style="width:100%;" value="20" placeholder="长期均线">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -992,6 +1096,21 @@
             }
         }
 
+        // 动态因子面板切换 (股票策略 vs 可转债策略)
+        function onCategoryChange() {
+            const cat = document.getElementById('stgFormCategory').value;
+            const stockPanel = document.getElementById('factorPanelStock');
+            const cbPanel = document.getElementById('factorPanelCB');
+
+            if (cat === 'convertible_bond') {
+                stockPanel.style.display = 'none';
+                cbPanel.style.display = 'block';
+            } else {
+                stockPanel.style.display = 'block';
+                cbPanel.style.display = 'none';
+            }
+        }
+
         // 打开/关闭模态框
         function openCreateStrategyModal() {
             document.getElementById('modalStrategyTitle').textContent = '新建自定义因子策略';
@@ -999,10 +1118,12 @@
             document.getElementById('stgFormId').value = '';
             document.getElementById('stgFormId').disabled = false;
             document.getElementById('stgFormName').value = '';
+            document.getElementById('stgFormCategory').value = 'stock';
             document.getElementById('stgFormDesc').value = '';
             document.getElementById('stgFormBuyRule').value = '';
             document.getElementById('stgFormSellRule').value = '';
             
+            // 股票默认因子
             document.getElementById('stg_enable_golden_cross').checked = true;
             document.getElementById('stg_short_ma').value = 5;
             document.getElementById('stg_long_ma').value = 20;
@@ -1025,6 +1146,28 @@
             document.getElementById('stg_universe').value = 'csi300';
             document.getElementById('stgFormTopN').value = 10;
 
+            // 可转债默认因子
+            document.getElementById('stg_cb_max_price').value = 130.0;
+            document.getElementById('stg_cb_min_premium').value = -20.0;
+            document.getElementById('stg_cb_max_premium').value = 50.0;
+            document.getElementById('stg_cb_enable_pure_bond').checked = false;
+            document.getElementById('stg_cb_max_pure_bond_premium').value = 30.0;
+            document.getElementById('stg_cb_enable_ytm').checked = false;
+            document.getElementById('stg_cb_min_ytm').value = 0.0;
+            document.getElementById('stg_cb_primary_factor').value = 'db_low_value';
+            document.getElementById('stg_cb_universe').value = 'all';
+
+            // 转债正股联动
+            document.getElementById('stg_cb_enable_stock_roe').checked = false;
+            document.getElementById('stg_cb_stock_roe_min').value = 5.0;
+            document.getElementById('stg_cb_enable_stock_pe').checked = false;
+            document.getElementById('stg_cb_stock_pe_min').value = 0;
+            document.getElementById('stg_cb_stock_pe_max').value = 35;
+            document.getElementById('stg_cb_enable_stock_ma').checked = false;
+            document.getElementById('stg_cb_stock_short_ma').value = 5;
+            document.getElementById('stg_cb_stock_long_ma').value = 20;
+
+            onCategoryChange();
             document.getElementById('strategyModal').classList.add('active');
         }
 
@@ -1037,7 +1180,7 @@
             document.getElementById('stgFormId').value = stg.strategy_id;
             document.getElementById('stgFormId').disabled = true;
             document.getElementById('stgFormName').value = stg.name;
-            document.getElementById('stgFormCategory').value = stg.category;
+            document.getElementById('stgFormCategory').value = stg.category || 'stock';
             document.getElementById('stgFormDesc').value = stg.description || '';
             document.getElementById('stgFormBuyRule').value = stg.buy_signals_rule || '';
             document.getElementById('stgFormSellRule').value = stg.sell_signals_rule || '';
@@ -1045,33 +1188,70 @@
             const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
             if (cfg) {
                 if (cfg.top_n) document.getElementById('stgFormTopN').value = cfg.top_n;
-                if (cfg.stock_scope) document.getElementById('stg_universe').value = cfg.stock_scope;
-                if (cfg.sort_by || cfg.ranking?.primary_factor) document.getElementById('stg_primary_factor').value = cfg.sort_by || cfg.ranking?.primary_factor;
 
-                if (cfg.tech) {
-                    document.getElementById('stg_enable_golden_cross').checked = !!cfg.tech.enable_golden_cross;
-                    document.getElementById('stg_short_ma').value = cfg.tech.short_ma || 5;
-                    document.getElementById('stg_long_ma').value = cfg.tech.long_ma || 20;
-                    document.getElementById('stg_enable_volume_surge').checked = !!cfg.tech.enable_volume_surge;
-                    document.getElementById('stg_volume_surge_factor').value = cfg.tech.volume_surge_factor || 1.2;
-                    document.getElementById('stg_enable_di_ratio').checked = !!cfg.tech.enable_di_ratio;
-                    document.getElementById('stg_buy_di_threshold').value = cfg.tech.buy_di_threshold || 0.70;
-                }
-                if (cfg.financial) {
-                    document.getElementById('stg_enable_roe').checked = !!cfg.financial.enable_roe;
-                    document.getElementById('stg_roe_min').value = (cfg.financial.roe_min || 0.05) * 100;
-                    document.getElementById('stg_enable_pe').checked = !!cfg.financial.enable_pe;
-                    document.getElementById('stg_pe_min').value = cfg.financial.pe_min || 0;
-                    document.getElementById('stg_pe_max').value = cfg.financial.pe_max || 35;
-                    document.getElementById('stg_enable_growth').checked = !!cfg.financial.enable_growth;
-                    document.getElementById('stg_growth_min').value = (cfg.financial.growth_min || 0.10) * 100;
-                    document.getElementById('stg_enable_debt_limit').checked = !!cfg.financial.enable_debt_limit;
-                    document.getElementById('stg_debt_max').value = cfg.financial.debt_max || 0.70;
-                    document.getElementById('stg_enable_cash_quality').checked = !!cfg.financial.enable_cash_quality;
-                    document.getElementById('stg_cfo_np_min').value = cfg.financial.cfo_np_min || 0.80;
+                if (stg.category === 'convertible_bond') {
+                    if (cfg.max_price !== undefined) document.getElementById('stg_cb_max_price').value = cfg.max_price;
+                    if (cfg.min_convert_premium !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_convert_premium;
+                    else if (cfg.min_premium_rate !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_premium_rate;
+
+                    if (cfg.max_convert_premium !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_convert_premium;
+                    else if (cfg.max_premium_rate !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_premium_rate;
+
+                    document.getElementById('stg_cb_enable_pure_bond').checked = cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null;
+                    if (cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null) {
+                        document.getElementById('stg_cb_max_pure_bond_premium').value = cfg.max_pure_bond_premium;
+                    }
+
+                    document.getElementById('stg_cb_enable_ytm').checked = cfg.min_ytm !== undefined && cfg.min_ytm !== null;
+                    if (cfg.min_ytm !== undefined && cfg.min_ytm !== null) {
+                        document.getElementById('stg_cb_min_ytm').value = cfg.min_ytm;
+                    }
+
+                    if (cfg.sort_by) document.getElementById('stg_cb_primary_factor').value = cfg.sort_by;
+                    if (cfg.stock_scope) document.getElementById('stg_cb_universe').value = cfg.stock_scope;
+
+                    // 正股联动信息解析
+                    if (cfg.stock_linkage) {
+                        const link = cfg.stock_linkage;
+                        document.getElementById('stg_cb_enable_stock_roe').checked = !!link.enable_stock_roe;
+                        if (link.stock_roe_min !== undefined) document.getElementById('stg_cb_stock_roe_min').value = link.stock_roe_min * 100;
+                        document.getElementById('stg_cb_enable_stock_pe').checked = !!link.enable_stock_pe;
+                        if (link.stock_pe_min !== undefined) document.getElementById('stg_cb_stock_pe_min').value = link.stock_pe_min;
+                        if (link.stock_pe_max !== undefined) document.getElementById('stg_cb_stock_pe_max').value = link.stock_pe_max;
+                        document.getElementById('stg_cb_enable_stock_ma').checked = !!link.enable_stock_ma;
+                        if (link.short_ma !== undefined) document.getElementById('stg_cb_stock_short_ma').value = link.short_ma;
+                        if (link.long_ma !== undefined) document.getElementById('stg_cb_stock_long_ma').value = link.long_ma;
+                    }
+                } else {
+                    if (cfg.stock_scope) document.getElementById('stg_universe').value = cfg.stock_scope;
+                    if (cfg.sort_by || cfg.ranking?.primary_factor) document.getElementById('stg_primary_factor').value = cfg.sort_by || cfg.ranking?.primary_factor;
+
+                    if (cfg.tech) {
+                        document.getElementById('stg_enable_golden_cross').checked = !!cfg.tech.enable_golden_cross;
+                        document.getElementById('stg_short_ma').value = cfg.tech.short_ma || 5;
+                        document.getElementById('stg_long_ma').value = cfg.tech.long_ma || 20;
+                        document.getElementById('stg_enable_volume_surge').checked = !!cfg.tech.enable_volume_surge;
+                        document.getElementById('stg_volume_surge_factor').value = cfg.tech.volume_surge_factor || 1.2;
+                        document.getElementById('stg_enable_di_ratio').checked = !!cfg.tech.enable_di_ratio;
+                        document.getElementById('stg_buy_di_threshold').value = cfg.tech.buy_di_threshold || 0.70;
+                    }
+                    if (cfg.financial) {
+                        document.getElementById('stg_enable_roe').checked = !!cfg.financial.enable_roe;
+                        document.getElementById('stg_roe_min').value = (cfg.financial.roe_min || 0.05) * 100;
+                        document.getElementById('stg_enable_pe').checked = !!cfg.financial.enable_pe;
+                        document.getElementById('stg_pe_min').value = cfg.financial.pe_min || 0;
+                        document.getElementById('stg_pe_max').value = cfg.financial.pe_max || 35;
+                        document.getElementById('stg_enable_growth').checked = !!cfg.financial.enable_growth;
+                        document.getElementById('stg_growth_min').value = (cfg.financial.growth_min || 0.10) * 100;
+                        document.getElementById('stg_enable_debt_limit').checked = !!cfg.financial.enable_debt_limit;
+                        document.getElementById('stg_debt_max').value = cfg.financial.debt_max || 0.70;
+                        document.getElementById('stg_enable_cash_quality').checked = !!cfg.financial.enable_cash_quality;
+                        document.getElementById('stg_cfo_np_min').value = cfg.financial.cfo_np_min || 0.80;
+                    }
                 }
             }
 
+            onCategoryChange();
             document.getElementById('strategyModal').classList.add('active');
         }
 
@@ -1082,44 +1262,74 @@
         // 保存策略
         async function saveStrategySubmit() {
             const dbId = document.getElementById('editStrategyDbId').value;
-            const primaryFactor = document.getElementById('stg_primary_factor').value;
+            const category = document.getElementById('stgFormCategory').value;
+            const topN = parseInt(document.getElementById('stgFormTopN').value || 10);
 
-            const factorsConfig = {
-                top_n: parseInt(document.getElementById('stgFormTopN').value || 10),
-                stock_scope: document.getElementById('stg_universe').value,
-                sort_by: primaryFactor,
-                tech: {
-                    enable_golden_cross: document.getElementById('stg_enable_golden_cross').checked,
-                    short_ma: parseInt(document.getElementById('stg_short_ma').value || 5),
-                    long_ma: parseInt(document.getElementById('stg_long_ma').value || 20),
-                    enable_volume_surge: document.getElementById('stg_enable_volume_surge').checked,
-                    volume_surge_factor: parseFloat(document.getElementById('stg_volume_surge_factor').value || 1.2),
-                    enable_di_ratio: document.getElementById('stg_enable_di_ratio').checked,
-                    buy_di_threshold: parseFloat(document.getElementById('stg_buy_di_threshold').value || 0.7)
-                },
-                financial: {
-                    enable_roe: document.getElementById('stg_enable_roe').checked,
-                    roe_min: parseFloat(document.getElementById('stg_roe_min').value || 5.0) / 100.0,
-                    enable_pe: document.getElementById('stg_enable_pe').checked,
-                    pe_min: parseFloat(document.getElementById('stg_pe_min').value || 0),
-                    pe_max: parseFloat(document.getElementById('stg_pe_max').value || 35),
-                    enable_growth: document.getElementById('stg_enable_growth').checked,
-                    growth_min: parseFloat(document.getElementById('stg_growth_min').value || 10.0) / 100.0,
-                    enable_debt_limit: document.getElementById('stg_enable_debt_limit').checked,
-                    debt_max: parseFloat(document.getElementById('stg_debt_max').value || 0.7),
-                    enable_cash_quality: document.getElementById('stg_enable_cash_quality').checked,
-                    cfo_np_min: parseFloat(document.getElementById('stg_cfo_np_min').value || 0.8)
-                },
-                ranking: {
-                    primary_factor: primaryFactor,
-                    reverse: ['roe', 'growth'].includes(primaryFactor)
-                }
-            };
+            let factorsConfig = {};
+
+            if (category === 'convertible_bond') {
+                const enablePureBond = document.getElementById('stg_cb_enable_pure_bond').checked;
+                const enableYTM = document.getElementById('stg_cb_enable_ytm').checked;
+
+                factorsConfig = {
+                    max_price: parseFloat(document.getElementById('stg_cb_max_price').value || 130.0),
+                    min_convert_premium: parseFloat(document.getElementById('stg_cb_min_premium').value || -20.0),
+                    max_convert_premium: parseFloat(document.getElementById('stg_cb_max_premium').value || 50.0),
+                    max_pure_bond_premium: enablePureBond ? parseFloat(document.getElementById('stg_cb_max_pure_bond_premium').value || 30.0) : null,
+                    min_ytm: enableYTM ? parseFloat(document.getElementById('stg_cb_min_ytm').value || 0.0) : null,
+                    sort_by: document.getElementById('stg_cb_primary_factor').value,
+                    stock_scope: document.getElementById('stg_cb_universe').value,
+                    top_n: topN,
+                    stock_linkage: {
+                        enable_stock_roe: document.getElementById('stg_cb_enable_stock_roe').checked,
+                        stock_roe_min: parseFloat(document.getElementById('stg_cb_stock_roe_min').value || 5.0) / 100.0,
+                        enable_stock_pe: document.getElementById('stg_cb_enable_stock_pe').checked,
+                        stock_pe_min: parseFloat(document.getElementById('stg_cb_stock_pe_min').value || 0),
+                        stock_pe_max: parseFloat(document.getElementById('stg_cb_stock_pe_max').value || 35),
+                        enable_stock_ma: document.getElementById('stg_cb_enable_stock_ma').checked,
+                        short_ma: parseInt(document.getElementById('stg_cb_stock_short_ma').value || 5),
+                        long_ma: parseInt(document.getElementById('stg_cb_stock_long_ma').value || 20)
+                    }
+                };
+            } else {
+                const primaryFactor = document.getElementById('stg_primary_factor').value;
+                factorsConfig = {
+                    top_n: topN,
+                    stock_scope: document.getElementById('stg_universe').value,
+                    sort_by: primaryFactor,
+                    tech: {
+                        enable_golden_cross: document.getElementById('stg_enable_golden_cross').checked,
+                        short_ma: parseInt(document.getElementById('stg_short_ma').value || 5),
+                        long_ma: parseInt(document.getElementById('stg_long_ma').value || 20),
+                        enable_volume_surge: document.getElementById('stg_enable_volume_surge').checked,
+                        volume_surge_factor: parseFloat(document.getElementById('stg_volume_surge_factor').value || 1.2),
+                        enable_di_ratio: document.getElementById('stg_enable_di_ratio').checked,
+                        buy_di_threshold: parseFloat(document.getElementById('stg_buy_di_threshold').value || 0.7)
+                    },
+                    financial: {
+                        enable_roe: document.getElementById('stg_enable_roe').checked,
+                        roe_min: parseFloat(document.getElementById('stg_roe_min').value || 5.0) / 100.0,
+                        enable_pe: document.getElementById('stg_enable_pe').checked,
+                        pe_min: parseFloat(document.getElementById('stg_pe_min').value || 0),
+                        pe_max: parseFloat(document.getElementById('stg_pe_max').value || 35),
+                        enable_growth: document.getElementById('stg_enable_growth').checked,
+                        growth_min: parseFloat(document.getElementById('stg_growth_min').value || 10.0) / 100.0,
+                        enable_debt_limit: document.getElementById('stg_enable_debt_limit').checked,
+                        debt_max: parseFloat(document.getElementById('stg_debt_max').value || 0.7),
+                        enable_cash_quality: document.getElementById('stg_enable_cash_quality').checked,
+                        cfo_np_min: parseFloat(document.getElementById('stg_cfo_np_min').value || 0.8)
+                    },
+                    ranking: {
+                        primary_factor: primaryFactor,
+                        reverse: ['roe', 'growth'].includes(primaryFactor)
+                    }
+                };
+            }
 
             const payload = {
                 strategy_id: document.getElementById('stgFormId').value.trim(),
                 name: document.getElementById('stgFormName').value.trim(),
-                category: document.getElementById('stgFormCategory').value,
+                category: category,
                 description: document.getElementById('stgFormDesc').value.trim(),
                 buy_signals_rule: document.getElementById('stgFormBuyRule').value.trim(),
                 sell_signals_rule: document.getElementById('stgFormSellRule').value.trim(),

@@ -16,11 +16,23 @@ DEFAULT_STRATEGIES = [
         "description": "基于双低值 (转债价格 + 转股溢价率*100) 进行低位防守型选债，兼顾债性防守与股性弹性。",
         "factors_config": {
             "max_price": 130.0,
-            "min_premium_rate": -0.20,
-            "max_premium_rate": 0.50,
+            "min_convert_premium": -20.0,
+            "max_convert_premium": 50.0,
+            "max_pure_bond_premium": 30.0,
+            "min_ytm": 0.0,
             "top_n": 10,
             "sort_by": "db_low_value",
-            "stock_scope": "all"
+            "stock_scope": "all",
+            "stock_linkage": {
+                "enable_stock_roe": False,
+                "stock_roe_min": 0.05,
+                "enable_stock_pe": False,
+                "stock_pe_min": 0.0,
+                "stock_pe_max": 35.0,
+                "enable_stock_ma": False,
+                "short_ma": 5,
+                "long_ma": 20
+            }
         },
         "buy_signals_rule": "选出转债价格 <= 130 且转股溢价率在 [-20%, 50%] 区间内双低值最低的 Top 10 转债",
         "sell_signals_rule": "价格突破 130 元或双低排名跌出 Top 20 时触发平仓止盈"

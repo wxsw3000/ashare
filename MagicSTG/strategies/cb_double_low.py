@@ -33,14 +33,20 @@ class CBDoubleLowStrategy(BaseStrategy):
 
         self.top_n = int(self.config.get('top_n', 10))
         self.max_price = float(self.config.get('max_price', 130.0))
-        self.min_convert_premium = float(self.config.get('min_convert_premium', -20.0))
-        self.max_convert_premium = float(self.config.get('max_convert_premium', 50.0))
+        self.min_convert_premium = float(self.config.get('min_convert_premium', self.config.get('min_premium_rate', -20.0)))
+        self.max_convert_premium = float(self.config.get('max_convert_premium', self.config.get('max_premium_rate', 50.0)))
         self.sell_threshold_price = float(self.config.get('sell_threshold_price', 140.0))
         self.rebalance_days = int(self.config.get('rebalance_days', 5))
+        self.sort_by = self.config.get('sort_by', 'db_low_value')
+
+        # 可选债券高级因子与正股联动因子
+        self.max_pure_bond_premium = self.config.get('max_pure_bond_premium', None)
+        self.min_ytm = self.config.get('min_ytm', None)
+        self.stock_linkage = self.config.get('stock_linkage', {})
 
     def select_top_bonds(self, cb_df: pd.DataFrame) -> pd.DataFrame:
         """
-        根据双低值从给定日期的可转债截面数据中筛选 Top N 标的
+        根据配置的转债因子及正股联动指标从截面数据中筛选 Top N 标的
         """
         if cb_df is None or cb_df.empty:
             return pd.DataFrame()
@@ -60,6 +66,24 @@ class CBDoubleLowStrategy(BaseStrategy):
             (df['convert_premium_rate'] <= self.max_convert_premium)
         ]
 
+        # 纯债溢价率筛选 (若存在列且配置)
+        if self.max_pure_bond_premium is not None and 'pure_bond_premium' in df.columns:
+            df = df[df['pure_bond_premium'] <= float(self.max_pure_bond_premium)]
+
+        # 到期收益率 YTM 筛选 (若存在列且配置)
+        if self.min_ytm is not None and 'ytm' in df.columns:
+            df = df[df['ytm'] >= float(self.min_ytm)]
+
+        # 正股联动筛选 (如股票 ROE, PE)
+        if self.stock_linkage and isinstance(self.stock_linkage, dict):
+            if self.stock_linkage.get('enable_stock_roe') and 'stock_roe' in df.columns:
+                min_roe = float(self.stock_linkage.get('stock_roe_min', 0.05))
+                df = df[df['stock_roe'] >= min_roe]
+            if self.stock_linkage.get('enable_stock_pe') and 'stock_pe' in df.columns:
+                pe_min = float(self.stock_linkage.get('stock_pe_min', 0))
+                pe_max = float(self.stock_linkage.get('stock_pe_max', 100))
+                df = df[(df['stock_pe'] >= pe_min) & (df['stock_pe'] <= pe_max)]
+
         if df.empty:
             return pd.DataFrame()
 
@@ -67,8 +91,21 @@ class CBDoubleLowStrategy(BaseStrategy):
         if 'db_low_value' not in df.columns or df['db_low_value'].isna().all():
             df['db_low_value'] = df['cb_price'] + df['convert_premium_rate']
 
-        # 按双低值升序排序
-        sorted_df = df.sort_values('db_low_value', ascending=True)
+        # 根据 sort_by 排序
+        ascending = True
+        sort_col = 'db_low_value'
+
+        if self.sort_by == 'cb_price':
+            sort_col = 'cb_price'
+        elif self.sort_by in ['convert_premium_rate', 'premium']:
+            sort_col = 'convert_premium_rate'
+        elif self.sort_by == 'ytm' and 'ytm' in df.columns:
+            sort_col = 'ytm'
+            ascending = False  # YTM 收益率越高越好
+        elif self.sort_by == 'db_low_value':
+            sort_col = 'db_low_value'
+
+        sorted_df = df.sort_values(sort_col, ascending=ascending)
 
         return sorted_df.head(self.top_n)
 

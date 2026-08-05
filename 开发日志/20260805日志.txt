@@ -1,0 +1,22 @@
+# 2026-08-05 可转债与股票因子解耦及正股联动增强日志
+
+## 一、 活动总结与核心成果
+
+1. **可转债与股票因子完全解耦与兼容设计沟通**：
+   - 彻底澄清了前台可视化策略建构器中可转债策略与股票策略因子同质化的问题。
+   - 确立了解耦方案：当选择“可转债策略”时，自动呈现【可转债专属量化因子】（价格上限、转股溢价率区间、纯债溢价率上限、到期收益率 YTM 门槛、双低值/价格/溢价率/YTM 核心排序）与【正股联动风控配置】（正股 ROE、正股 PE 范围、正股均线多头趋势）。当选择“股票策略”时，呈现在售股票量化因子。
+
+2. **Web UI 动态因子建构器重构 (`MagicSTG/web/templates/index.html`)**：
+   - 将模态框因子区域拆分为 `#factorPanelStock` 与 `#factorPanelCB` 独立控件容器。
+   - 添加 `onCategoryChange()` 事件，支持下拉框在“股票策略”和“可转债策略”之间无缝动态切换与表单填充。
+   - 升级 `saveStrategySubmit()`、`openCreateStrategyModal()` 与 `openEditStrategyModal()` 函数，完全适配两套不同的因子 JSON 字典结构（含 `stock_linkage` 正股联动映射）。
+
+3. **策略引擎与数据库配置全流程对齐**：
+   - **数据库端 (`MagicSTG/core/init_v1_tables.py`)**：重置 `cb_double_low` 的 `factors_config` 结构，补充 `min_convert_premium`, `max_convert_premium`, `max_pure_bond_premium`, `min_ytm`, `sort_by` 以及 `stock_linkage` 默认配置，并成功落地 TiDB Cloud。
+   - **算法引擎端 (`MagicSTG/strategies/cb_double_low.py`)**：增强 `CBDoubleLowStrategy` 的 `select_top_bonds` 函数，全面支持根据前端配置的 `sort_by`（双低值/转债价格/溢价率/YTM）进行多维排序，并支持正股 ROE、PE 等联动因子的动态筛选。
+
+4. **代码同步与 Git 仓库更新**：
+   - 所有前端与后端解耦代码已全量提交并同步至 GitHub 仓库 `main` 分支。
+
+---
+记录时间: 2026-08-05 09:35:00 (Local Time)
