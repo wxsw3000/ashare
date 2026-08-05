@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 import pymysql
@@ -705,6 +706,8 @@ def run_dynamic_backtest():
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': f'回测执行失败: {str(e)}'})
+    finally:
+        gc.collect()
 
 
 

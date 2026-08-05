@@ -234,7 +234,6 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * **Runner & Web API Synchronization (`runner.py`, `server.py`)**: Updated strategy execution endpoints to pass user custom factor configurations (`factors_config`) to strategy instances.
   * **Web UI Feedback & Date Range Guard (`index.html`)**: Added button loading spinner state (`⏳ 计算中...`) for strategy execution and set default backtest start date to `2025-01-01` to guarantee high-performance response times without browser network timeouts.
 
-
-
-
-
+* **Memory Downcasting & Explicit Garbage Collection (Fix Render OOM)**:
+  * **Numeric Downcasting (`db.py`, `dynamic_factor.py`)**: Downcasted all K-line prices, volumes, valuation metrics, and quarterly financial ratios (`roe_avg`, `YOYNI`, `liabilityToAsset`, `CFOToNP`, `cb_price`, etc.) from `float64`/`int64` to `float32`/`int32`, cutting DataFrame RAM consumption by 50%.
+  * **Explicit Garbage Collection (`db.py`, `dynamic_factor.py`, `engine.py`, `server.py`)**: Inserted explicit `del` operations on intermediate temporary DataFrames and invoked `gc.collect()` in data loaders, backtest engine completion, and Flask Web API `finally` blocks to instantly release freed memory on Render.

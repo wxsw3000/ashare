@@ -4,6 +4,7 @@ MagicSTG Unified Core Backtest Engine
 Provides a single source of truth for both CLI backtesting and Flask Web API backtesting.
 """
 
+import gc
 import os
 import sys
 import pandas as pd
@@ -276,5 +277,13 @@ def run_backtest_engine(
             save_backtest_result(strategy_name, result_summary)
         except Exception as e:
             print(f"  [BacktestEngine] ⚠️ Persistent DB saving failed: {e}", flush=True)
+
+    if 'all_data' in locals():
+        del all_data
+    if 'processed_data' in locals():
+        del processed_data
+    if 'eq_df' in locals():
+        del eq_df
+    gc.collect()
 
     return result_summary

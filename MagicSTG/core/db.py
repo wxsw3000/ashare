@@ -4,8 +4,10 @@ MagicSTG Core Database Infrastructure
 Provides database connections, heartbeat ping, data loaders, and strategy checkpoints.
 """
 
+import gc
 import time
 import pymysql
+import numpy as np
 import pandas as pd
 from typing import Optional, Dict, Any
 
@@ -169,9 +171,11 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         df['date'] = pd.to_datetime(df['date'])
         df.rename(columns={'pe_ttm': 'peTTM'}, inplace=True)
 
-        for col in ['open', 'close', 'high', 'low', 'volume', 'peTTM']:
+        for col in ['open', 'close', 'high', 'low', 'peTTM']:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype(np.float32)
+        if 'volume' in df.columns:
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce').astype(np.float32)
 
         all_data = {}
         grouped = df.groupby('code')
@@ -186,7 +190,12 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
             all_data[code] = group
 
-        print(f"  [SUCCESS] Loaded and parsed {len(all_data)} stocks data.", flush=True)
+        del df
+        if 'all_dfs' in locals():
+            del all_dfs
+        gc.collect()
+
+        print(f"  [SUCCESS] Loaded and parsed {len(all_data)} stocks data. Memory garbage collected.", flush=True)
         return all_data
 
     finally:
@@ -220,7 +229,7 @@ def load_roe_data_db() -> Dict[str, pd.DataFrame]:
 
         df['统计日期'] = pd.to_datetime(df['统计日期'])
         df['发布日期'] = pd.to_datetime(df['发布日期'])
-        df['ROE'] = pd.to_numeric(df['ROE'], errors='coerce')
+        df['ROE'] = pd.to_numeric(df['ROE'], errors='coerce').astype(np.float32)
 
         df.dropna(subset=['统计日期', '发布日期', 'ROE'], inplace=True)
 
@@ -229,7 +238,10 @@ def load_roe_data_db() -> Dict[str, pd.DataFrame]:
             group = group.sort_values('统计日期')
             roe_data[code] = group
 
-        print(f"  [SUCCESS] Loaded ROE data for {len(roe_data)} stocks.", flush=True)
+        del df
+        gc.collect()
+
+        print(f"  [SUCCESS] Loaded ROE data for {len(roe_data)} stocks. Memory garbage collected.", flush=True)
         return roe_data
 
     finally:
@@ -261,11 +273,18 @@ def load_cb_data_db(start_date=None, end_date=None) -> Dict[str, pd.DataFrame]:
         print(f"  [DB] Fetching convertible bond daily indicators ({start_date} ~ {end_date})...", flush=True)
         df_indicators = pd.read_sql(query, conn, params=params if params else None)
 
+        for col in ['cb_price', 'stock_price', 'convert_price', 'convert_value', 'convert_premium_rate', 'db_low_value']:
+            if col in df_indicators.columns:
+                df_indicators[col] = pd.to_numeric(df_indicators[col], errors='coerce').astype(np.float32)
+
         query_basic = "SELECT code, name, stock_code, stock_name, convert_price, list_date, rating FROM cb_basic"
         df_basic = pd.read_sql(query_basic, conn)
+        if 'convert_price' in df_basic.columns:
+            df_basic['convert_price'] = pd.to_numeric(df_basic['convert_price'], errors='coerce').astype(np.float32)
 
         num_bonds = df_indicators['code'].nunique() if not df_indicators.empty else 0
-        print(f"  [SUCCESS] Loaded {len(df_indicators)} CB indicator records for {num_bonds} bonds.", flush=True)
+        gc.collect()
+        print(f"  [SUCCESS] Loaded {len(df_indicators)} CB indicator records for {num_bonds} bonds. Memory garbage collected.", flush=True)
         return {
             'cb_daily_indicator': df_indicators,
             'cb_basic': df_basic

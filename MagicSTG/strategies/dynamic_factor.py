@@ -4,6 +4,7 @@ MagicSTG Dynamic Multi-Factor Strategy Implementation
 Combines technical indicators (MA, Volume Surge, DMI/ATR) and fundamental quarterly reports.
 """
 
+import gc
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
@@ -98,6 +99,10 @@ class DynamicFactorStrategy(BaseStrategy):
             merged['pub_date'] = pd.to_datetime(merged['pub_date'])
             merged['code'] = merged['code'].str.replace('_', '.', regex=False)
 
+            for col in ['roe_avg', 'YOYNI', 'liabilityToAsset', 'CFOToNP']:
+                if col in merged.columns:
+                    merged[col] = pd.to_numeric(merged[col], errors='coerce').astype(np.float32)
+
             financial_dict = getattr(self, '_financial_data_cached', {}) or {}
             for code, group in merged.groupby('code'):
                 group = group.sort_values('pub_date')
@@ -105,7 +110,10 @@ class DynamicFactorStrategy(BaseStrategy):
                 records = group.to_dict('records')
                 financial_dict[code] = (pub_dates, records)
 
-            print(f"  [DynamicStrategy] Financial data loaded and indexed for {len(financial_dict)} stocks.", flush=True)
+            del merged
+            gc.collect()
+
+            print(f"  [DynamicStrategy] Financial data loaded and indexed for {len(financial_dict)} stocks. GC executed.", flush=True)
             self._financial_data_cached = financial_dict
             return financial_dict
         except Exception as e:
