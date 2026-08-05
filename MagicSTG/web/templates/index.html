@@ -1011,8 +1011,8 @@
                 <input type="date" id="backtestStartDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;">
                 <span style="color: #8e95b2;">至</span>
                 <input type="date" id="backtestEndDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;">
-                <button class="btn btn-primary" id="btnReRunBacktest" style="padding: 0.25rem 0.75rem; font-size: 0.82rem;" onclick="reRunBacktestFromModal()">
-                    <i class="fa-solid fa-play"></i> 重新计算回测
+                <button class="btn btn-primary" id="btnReRunBacktest" style="padding: 0.25rem 0.75rem; font-size: 0.82rem;" onclick="startBacktestExecution()">
+                    <i class="fa-solid fa-play"></i> 开始计算回测
                 </button>
             </div>
 
@@ -1427,8 +1427,8 @@
 
         let activeBacktestStgDbId = null;
 
-        // 触发回测 Log 实时弹窗 (支持动态指定起止日期)
-        async function triggerBacktestLogModal(stgDbId, customStartDate = null, customEndDate = null) {
+        // 打开回测 Log 弹窗（允许用户先选择/确认日期后再真正触发计算）
+        function triggerBacktestLogModal(stgDbId) {
             const stg = allStrategiesList.find(s => s.id === stgDbId);
             if (!stg) return;
 
@@ -1445,19 +1445,41 @@
             startDateObj.setFullYear(startDateObj.getFullYear() - 1);
             const defaultStartDateStr = startDateObj.toISOString().split('T')[0];
 
-            const startDateStr = customStartDate || (startInput ? startInput.value : '') || defaultStartDateStr;
-            const endDateStr = customEndDate || (endInput ? endInput.value : '') || defaultEndDateStr;
+            if (startInput) startInput.value = defaultStartDateStr;
+            if (endInput) endInput.value = defaultEndDateStr;
 
-            if (startInput) startInput.value = startDateStr;
-            if (endInput) endInput.value = endDateStr;
+            consoleBox.textContent = `[System Ready] 已准备初始化策略 『${stg.name} (${stg.strategy_id})』 引擎...\n` +
+                                     `[Params] 默认匹配近 1 年动态时间区间 (${defaultStartDateStr} 至 ${defaultEndDateStr})\n` +
+                                     `[Notice] 您可以随时在上方调整【回测时间区间】，准备就绪后请点击【开始计算回测】。\n`;
+        }
+
+        async function startBacktestExecution() {
+            if (!activeBacktestStgDbId) return;
+            const stg = allStrategiesList.find(s => s.id === activeBacktestStgDbId);
+            if (!stg) return;
+
+            const consoleBox = document.getElementById('logConsoleOutput');
+            const startInput = document.getElementById('backtestStartDateInput');
+            const endInput = document.getElementById('backtestEndDateInput');
+            const runBtn = document.getElementById('btnReRunBacktest');
+
+            const startDateStr = startInput ? startInput.value : '';
+            const endDateStr = endInput ? endInput.value : '';
+
+            if (!startDateStr || !endDateStr) {
+                alert('请先选择完整的回测开始与结束日期！');
+                return;
+            }
 
             consoleBox.textContent = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 引擎...\n` +
                                      `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
                                      `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
                                      `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
 
-            const reRunBtn = document.getElementById('btnReRunBacktest');
-            if (reRunBtn) reRunBtn.disabled = true;
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 回测计算中...`;
+            }
 
             try {
                 const res = await fetch('/api/backtest', {
@@ -1496,15 +1518,11 @@
             } catch (e) {
                 consoleBox.textContent += `\n[NET ERROR] 网络异常: ${e.message}\n`;
             } finally {
-                if (reRunBtn) reRunBtn.disabled = false;
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始计算回测`;
+                }
             }
-        }
-
-        function reRunBacktestFromModal() {
-            if (!activeBacktestStgDbId) return;
-            const startStr = document.getElementById('backtestStartDateInput').value;
-            const endStr = document.getElementById('backtestEndDateInput').value;
-            triggerBacktestLogModal(activeBacktestStgDbId, startStr, endStr);
         }
 
         function closeBacktestLogModal() {
