@@ -238,11 +238,9 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * **Numeric Downcasting (`db.py`, `dynamic_factor.py`)**: Downcasted all K-line prices, volumes, valuation metrics, and quarterly financial ratios (`roe_avg`, `YOYNI`, `liabilityToAsset`, `CFOToNP`, `cb_price`, etc.) from `float64`/`int64` to `float32`/`int32`, cutting DataFrame RAM consumption by 50%.
   * **Explicit Garbage Collection (`db.py`, `dynamic_factor.py`, `engine.py`, `server.py`)**: Inserted explicit `del` operations on intermediate temporary DataFrames and invoked `gc.collect()` in data loaders, backtest engine completion, and Flask Web API `finally` blocks to instantly release freed memory on Render.
 
-* **Render Network Timeout Fix & Vectorization Acceleration (Fix "Failed to fetch")**:
-  * **Factors Configuration Flattening (`dynamic_factor.py`)**: Enhanced `DynamicFactorStrategy.__init__` to parse both flat UI JSON factor inputs (`short_ma`, `long_ma`, `min_roe`, `pe_range`, `sort_by`, etc.) and legacy nested dicts.
-  * **Financial Indicator Pre-alignment (`dynamic_factor.py`)**: Vectorized quarterly financial report alignment directly onto K-line DataFrames during indicator computation, eliminating 100,000+ redundant `np.searchsorted` calls across daily loops.
-  * **Vectorized Signal Extraction & Zero-Query Holding Cache (`engine.py`)**: Streamlined signal extraction via pandas boolean indexing and cached candidate K-lines using normalized stock code keys (`sh.600000` & `sh_600000`), eliminating all secondary SQL queries during trade simulation loops.
-  * **SQL Pre-buffer & Index Optimization (`db.py`)**: Reduced K-line pre-buffer from 365 days to 60 days and tuned SQL batch size to 50 stocks per query for optimal TiDB composite primary key lookup.
-  * **Execution Speed Result**: Compressed 1-year backtest execution time from **165s down to 48.7s** (a 70%+ speedup), safely below Render's 100-second HTTP proxy timeout and completely eliminating `Failed to fetch` errors.
+* **JSON Serialization Fix & Instant Interactive Backtest UX**:
+  * **NumPy Type Sanitization (`engine.py`, `server.py`)**: Added recursive `sanitize_json` to convert `np.float32`, `np.float64`, `np.int32`, and `pd.Timestamp` to standard Python types, eliminating `TypeError: Object of type float32 is not JSON serializable`.
+  * **Instant-Open Modal & Pre-Calculation Date Picker (`index.html`)**: Redesigned backtest modal so clicking 【回测】 opens the modal instantly with default rolling 1-year date range, allowing the user to select/confirm start and end dates *before* initiating backtest execution.
+
 
 
