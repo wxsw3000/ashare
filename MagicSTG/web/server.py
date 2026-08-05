@@ -2,12 +2,29 @@ import gc
 import os
 import sys
 import pymysql
-import pandas as pd
+import numpy as np
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime
 from dotenv import load_dotenv
 
 app = Flask(__name__)
+
+
+def sanitize_json(obj):
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_json(v) for v in obj]
+    elif isinstance(obj, (np.floating, float)):
+        val = float(obj)
+        return 0.0 if np.isnan(val) or np.isinf(val) else val
+    elif isinstance(obj, (np.integer, int)):
+        return int(obj)
+    elif isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.strftime('%Y-%m-%d')
+    elif isinstance(obj, np.ndarray):
+        return [sanitize_json(v) for v in obj]
+    return obj
 
 # ========== 加载环境变量 ==========
 # 获取项目根目录
@@ -685,7 +702,7 @@ def run_dynamic_backtest():
 
         equity_history_tuples = [[h['date'], h['equity']] for h in res.get('equity_history', [])]
 
-        return jsonify({
+        resp_data = {
             'status': 'success',
             'summary': {
                 'initial_equity': res['initial_equity'],
@@ -700,7 +717,8 @@ def run_dynamic_backtest():
             },
             'equity_history': equity_history_tuples,
             'trade_log': res['trades']
-        })
+        }
+        return jsonify(sanitize_json(resp_data))
 
     except Exception as e:
         import traceback

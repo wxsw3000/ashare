@@ -18,7 +18,21 @@ from MagicSTG.core.limit import check_limit_up
 from MagicSTG.core.db_writer import save_backtest_result
 from MagicSTG.strategies.registry import StrategyRegistry
 from MagicSTG.execution.position_manager import InMemoryPositionManager
-from MagicSTG.execution.decisions import DecisionMaker
+def sanitize_json(obj):
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_json(v) for v in obj]
+    elif isinstance(obj, (np.floating, float)):
+        val = float(obj)
+        return 0.0 if np.isnan(val) or np.isinf(val) else val
+    elif isinstance(obj, (np.integer, int)):
+        return int(obj)
+    elif isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.strftime('%Y-%m-%d')
+    elif isinstance(obj, np.ndarray):
+        return [sanitize_json(v) for v in obj]
+    return obj
 
 
 def run_backtest_engine(
@@ -425,6 +439,8 @@ def run_backtest_engine(
         'equity_history': equity_history,
         'trades': trade_log
     }
+
+    result_summary = sanitize_json(result_summary)
 
     if save_to_db:
         try:
