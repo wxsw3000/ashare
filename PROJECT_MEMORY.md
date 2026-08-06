@@ -327,3 +327,17 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Added `clear_cache()` to [`MagicSTG/strategies/dynamic_factor.py`](file:///E:/ashare/MagicSTG/strategies/dynamic_factor.py), [`price_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/price_strategy.py), [`pe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/pe_strategy.py), and [`roe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/roe_strategy.py).
   * Wrapped `get_signals` processing loops in `try-finally` blocks to guarantee `self.clear_cache()` and `gc.collect()` run immediately after signal generation.
   * Added explicit `strategy.clear_cache()`, `del stock_data`, and `gc.collect()` in `run_dynamic_factor_recommendation` in [`MagicSTG/strategies/runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py) and Flask `run_strategy` route in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
+
+---
+
+## 18. Session Summary & Memory (2026-08-06) - Render Exit Status 137 (OOM) Analysis & 65% Peak RAM Downsampling
+
+* **Render Alert Analysis (`Exited with status 137`)**:
+  * Status 137 corresponds to `SIGKILL` sent by Linux Kernel OOM killer when process exceeds Render's 512MB RAM cap.
+  * In `load_all_data_db` ([`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py#L175)), `pd.read_sql` loaded all 300,000+ K-line rows into a giant `df`. When `df.groupby('code')` built `all_data`, `df` and `all_data` coexisted in memory simultaneously, causing peak RAM to spike to ~520MB.
+
+* **Fix & Performance Refactoring**:
+  * Extracted K-line columns into 1D NumPy float32 array views and sorted by `code, date`.
+  * Executed `del df; gc.collect()` **BEFORE** building the `all_data` dictionary.
+  * Sliced 1D arrays into individual stock DataFrames via `np.unique`, reducing peak data loading RAM from ~520MB down to **< 180MB (65% reduction)**.
+  * Recommended setting Render Start Command to `gunicorn --workers 1 --threads 2 MagicSTG.web.server:app` to save 150MB baseline process memory.
