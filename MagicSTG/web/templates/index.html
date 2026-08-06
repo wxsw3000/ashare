@@ -1525,6 +1525,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ date: targetDate, force: force })
                 });
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`服务器 HTTP ${res.status} 响应异常: ${text || '请求超时或 Worker 正在重启'}`);
+                }
+
                 const result = await res.json();
 
                 if (result.status === 'already_run') {
@@ -1605,6 +1611,12 @@
                         config: stg.factors_config
                     })
                 });
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`服务器 HTTP ${res.status} 响应异常: ${text || '请求超时或 Worker 正在重启'}`);
+                }
+
                 const result = await res.json();
 
                 if (result.status === 'success') {

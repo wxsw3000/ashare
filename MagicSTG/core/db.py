@@ -182,7 +182,12 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 params.append(max_date_str)
             query += " ORDER BY date ASC"
 
-            df = pd.read_sql(query, conn, params=params)
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            df = pd.DataFrame(rows, columns=['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume', 'pe_ttm'])
+            del rows
+
 
         if df is None or df.empty:
             print("  [WARN] No data returned from database query.", flush=True)

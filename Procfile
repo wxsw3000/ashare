@@ -1,0 +1,1 @@
+web: gunicorn --workers 1 --threads 2 --timeout 180 MagicSTG.web.server:app
