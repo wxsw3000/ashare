@@ -200,23 +200,41 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         if 'volume' in df.columns:
             df['volume'] = pd.to_numeric(df['volume'], errors='coerce').astype(np.float32)
 
-        all_data = {}
-        grouped = df.groupby('code')
-        for code, group in grouped:
-            group = group.sort_values('date')
-            group.set_index('date', inplace=True)
-            cols_to_keep = [c for c in ['open', 'close', 'high', 'low', 'volume', 'peTTM'] if c in group.columns]
-            group = group[cols_to_keep]
+        df.sort_values(['code', 'date'], inplace=True)
 
-            if len(group) < 20:
-                continue
-
-            all_data[code] = group
+        codes = df['code'].values
+        dates = df['date'].values
+        opens = df['open'].values
+        closes = df['close'].values
+        highs = df['high'].values
+        lows = df['low'].values
+        vols = df['volume'].values if 'volume' in df.columns else None
+        pes = df['peTTM'].values if 'peTTM' in df.columns else None
 
         del df
         if 'all_dfs' in locals():
             del all_dfs
         gc.collect()
+
+        unique_codes, start_indices, counts = np.unique(codes, return_index=True, return_counts=True)
+        all_data = {}
+        for ucode, start, count in zip(unique_codes, start_indices, counts):
+            if count < 20:
+                continue
+            end = start + count
+            sub_dict = {
+                'open': opens[start:end],
+                'close': closes[start:end],
+                'high': highs[start:end],
+                'low': lows[start:end]
+            }
+            if vols is not None:
+                sub_dict['volume'] = vols[start:end]
+            if pes is not None:
+                sub_dict['peTTM'] = pes[start:end]
+
+            sub_df = pd.DataFrame(sub_dict, index=pd.Index(dates[start:end], name='date'))
+            all_data[ucode] = sub_df
 
         print(f"  [SUCCESS] Loaded and parsed {len(all_data)} stocks data. Memory garbage collected.", flush=True)
         return all_data
