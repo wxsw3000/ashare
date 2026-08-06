@@ -1107,6 +1107,10 @@
                     <button class="btn btn-primary" id="btnGoToResultTab" style="display: none;"><i class="fa-solid fa-arrow-right"></i> 前往查看最新结果</button>
                     <button class="btn btn-secondary" onclick="closeExecutionLogModal()">关闭</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ==================== 模态框 3: 历史回测结果明细中心 (Backtest Detail Modal) ==================== -->
     <div class="modal-overlay" id="backtestDetailModal">
         <div class="modal-container" style="max-width: 900px;">
@@ -2017,7 +2021,7 @@
                                 <button class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="openBacktestDetailModal(${b.id})">
                                     <i class="fa-solid fa-file-lines"></i> 详情
                                 </button>
-                                <button class="btn btn-danger" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="deleteBacktestAction(${b.id}, '${stgName.replace(/'/g, "\\'")}')">
+                                <button class="btn btn-danger" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="deleteBacktestAction(${b.id})">
                                     <i class="fa-solid fa-trash"></i> 删除
                                 </button>
                             </div>
@@ -2031,8 +2035,11 @@
         }
 
         // 删除特定回测记录 (清空库中相关关联数据)
-        async function deleteBacktestAction(backtestId, strategyName) {
-            if (!confirm(`⚠️ 确定要从数据库中彻底删除次回测记录（ID: #${backtestId} - ${strategyName}）及其包含的所有成交明细数据吗？此操作无法撤销。`)) {
+        async function deleteBacktestAction(backtestId) {
+            const b = allBacktestRecords.find(item => item.id == backtestId);
+            const stgName = b ? (b.strategy_name || b.strategy) : `ID #${backtestId}`;
+
+            if (!confirm(`⚠️ 确定要从数据库中彻底删除次回测记录（ID: #${backtestId} - ${stgName}）及其包含的所有成交明细数据吗？此操作无法撤销。`)) {
                 return;
             }
 
@@ -2053,8 +2060,11 @@
 
         // 弹框显示回测成交明细
         async function openBacktestDetailModal(backtestId) {
-            const b = allBacktestRecords.find(item => item.id === backtestId);
-            if (!b) return;
+            const b = allBacktestRecords.find(item => item.id == backtestId);
+            if (!b) {
+                alert('未从缓存记录中查找到对应回测 ID: ' + backtestId);
+                return;
+            }
 
             document.getElementById('btModalStgName').textContent = b.strategy_name || b.strategy;
             document.getElementById('btModalStgCode').textContent = b.strategy;
