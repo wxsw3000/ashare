@@ -244,8 +244,13 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 ---
 
-## 12. Session Summary & Memory (2026-08-06) - Strategy Run Endpoint Fix
+## 12. Session Summary & Memory (2026-08-06) - Strategy Run & Recommendation Pipeline Fixes
 
 * **Fix Missing `json` Import in `server.py`**:
   * **Issue**: Clicking "策略 运行" in Web UI triggered `❌ 策略运行失败: 运行失败: name 'json' is not defined` because `run_strategy` route in `MagicSTG/web/server.py` attempted to call `json.loads(factors_cfg)` without `import json` in module scope.
   * **Fix**: Added top-level `import json` to [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py). Verified module imports and loads cleanly.
+
+* **Fix "未生成有效推荐数据" Data Pipeline Filter Bug (`db.py` & `dynamic_factor.py`)**:
+  * **Root Cause 1 (Min Rows Filter)**: In [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py#L244), `load_all_data_db` had `if len(group) < 200: continue`. When calculating daily recommendations, the strategy runner requests a 90-day window (~60 trading days per stock). Because 60 < 200, `load_all_data_db` filtered out 100% of all stocks, resulting in `0 stocks data` and empty recommendations.
+  * **Root Cause 2 (Tech Filter Defaults)**: `DynamicFactorStrategy` defaulted `enable_golden_cross` / `enable_volume_surge` to `True` even for fundamental-only strategies without technical configs, forcing single-day cross requirements.
+  * **Fix**: Lowered row threshold in `load_all_data_db` from `200` to `20` (requiring only ~1 month for MA20), and made technical filter defaults (`enable_golden_cross`, etc.) default to `False` unless technical configs are present in strategy factors. Committed and pushed to `main` branch ([`b8adc58`](https://github.com/wxsw3000/ashare/commit/b8adc58)).
