@@ -151,6 +151,104 @@
             gap: 0.5rem;
         }
 
+        /* 策略管理卡片网格 (Strategy Cards Grid) */
+        .stg-card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+        }
+        @media (min-width: 640px) {
+            .stg-card-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (min-width: 1024px) {
+            .stg-card-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .stg-card {
+            background: rgba(26, 29, 54, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+            min-height: 220px;
+        }
+        .stg-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+            background: #00d2c4;
+            opacity: 0.8;
+        }
+        .stg-card.cb-stg-card::before {
+            background: #c084fc;
+        }
+        .stg-card:hover {
+            background: rgba(26, 29, 54, 0.95);
+            border-color: rgba(0, 210, 196, 0.4);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0, 210, 196, 0.15);
+        }
+        .stg-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .stg-card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #f0f3fa;
+            margin-bottom: 0.4rem;
+        }
+        .stg-card.cb-stg-card .stg-card-title {
+            color: #e9d5ff;
+        }
+        .stg-card-desc {
+            font-size: 0.82rem;
+            color: #8e95b2;
+            line-height: 1.45;
+            margin-bottom: 0.85rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .stg-card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 1rem;
+        }
+        .factor-summary-badge {
+            font-size: 0.73rem;
+            background: rgba(255,255,255,0.06);
+            color: #d1d5db;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .stg-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 0.75rem;
+            border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        .stg-card-date {
+            font-size: 0.75rem;
+            color: #8e95b2;
+        }
+
         /* 执行记录主视图卡片网格 (Master Run Cards Grid) */
         .run-card-grid {
             display: grid;
@@ -565,24 +663,9 @@
                     </select>
                 </div>
 
-                <!-- Strategy Table / Responsive Cards -->
-                <div class="table-responsive">
-                    <table class="custom-table">
-                        <thead>
-                            <tr>
-                                <th>策略 ID</th>
-                                <th>策略名称</th>
-                                <th>分类</th>
-                                <th>因子配置罗列</th>
-                                <th>买/卖规则</th>
-                                <th>创建时间</th>
-                                <th style="text-align: right;">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="strategyTableBody">
-                            <tr><td colspan="7" style="text-align: center; color: #8e95b2;">加载策略列表中...</td></tr>
-                        </tbody>
-                    </table>
+                <!-- Responsive Strategy Cards Grid -->
+                <div class="stg-card-grid" id="strategyCardGrid">
+                    <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">加载策略卡片列表中...</div>
                 </div>
             </div>
         </div>
@@ -997,32 +1080,73 @@
         </div>
     </div>
 
-    <!-- ==================== 模态框 2: 回测计算 Log 弹窗 ==================== -->
-    <div class="modal-overlay" id="backtestLogModal">
+    <!-- ==================== 模态框 0: 策略详情中心 (Strategy Detail Modal) ==================== -->
+    <div class="modal-overlay" id="strategyDetailModal">
+        <div class="modal-container" style="max-width: 740px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-circle-info"></i> 策略详情中心</h3>
+                <button class="modal-close" onclick="closeStrategyDetailModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div id="stgDetailBody" style="display: flex; flex-direction: column; gap: 1rem;">
+                <!-- Header Info Box -->
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <span id="stgDetailCategoryBadge" class="badge-tag badge-stock">股票策略</span>
+                        <span style="font-size: 0.8rem; color: #8e95b2;">策略 ID: <code id="stgDetailIdCode" style="color: #00d2c4;">stg_xxx</code></span>
+                    </div>
+                    <h2 id="stgDetailName" style="font-size: 1.35rem; font-weight: 700; color: #f0f3fa; margin-bottom: 0.5rem;">--</h2>
+                    <p id="stgDetailDesc" style="font-size: 0.85rem; color: #8e95b2; line-height: 1.5; margin: 0;">--</p>
+                </div>
+
+                <!-- Factors Breakdown Grid -->
+                <div style="background: rgba(15, 17, 32, 0.6); border: 1px solid rgba(0, 210, 196, 0.2); border-radius: 12px; padding: 1.25rem;">
+                    <h4 style="color: #00d2c4; font-size: 0.92rem; margin-bottom: 0.85rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem;">
+                        <i class="fa-solid fa-sliders"></i> 因子配置与风控约束明细
+                    </h4>
+                    <div id="stgDetailFactorsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.65rem;">
+                        <!-- Dynamic Factor Badges -->
+                    </div>
+                </div>
+
+                <!-- Rules Box -->
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1rem; font-size: 0.83rem; color: #8e95b2;">
+                    <div><strong>买入触发逻辑:</strong> <span id="stgDetailBuyRule" style="color: #f0f3fa;">--</span></div>
+                    <div style="margin-top: 0.4rem;"><strong>卖出风控逻辑:</strong> <span id="stgDetailSellRule" style="color: #f0f3fa;">--</span></div>
+                </div>
+
+                <!-- Action Controls Footer -->
+                <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; margin-top: 0.5rem; justify-content: flex-end; align-items: center;">
+                    <button class="btn btn-secondary" onclick="openEditFromDetailModal()"><i class="fa-solid fa-pen"></i> 编辑因子</button>
+                    <button class="btn btn-danger" onclick="deleteFromDetailModal()"><i class="fa-solid fa-trash"></i> 删除策略</button>
+                    <button class="btn btn-warning" onclick="triggerBacktestFromDetail()"><i class="fa-solid fa-flask"></i> 历史回测</button>
+                    <button class="btn btn-primary" onclick="triggerRunFromDetail()"><i class="fa-solid fa-play"></i> 执行策略 (选股/推荐)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框 2: 策略执行与回测统一 Log 终端控制台 ==================== -->
+    <div class="modal-overlay" id="executionLogModal">
         <div class="modal-container" style="max-width: 840px;">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-terminal"></i> 策略历史回测运行与交易明细</h3>
-                <button class="modal-close" onclick="closeBacktestLogModal()"><i class="fa-solid fa-xmark"></i></button>
+                <h3 id="execModalTitle"><i class="fa-solid fa-terminal"></i> 策略执行控制台</h3>
+                <button class="modal-close" onclick="closeExecutionLogModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
-            <!-- 动态灵活起止时间选择器 -->
-            <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; background: rgba(255,255,255,0.05); padding: 0.5rem 0.75rem; border-radius: 8px; flex-wrap: wrap;">
-                <span style="font-size: 0.82rem; color: #8e95b2; font-weight: 600;"><i class="fa-regular fa-calendar-days"></i> 回测时间区间:</span>
-                <input type="date" id="backtestStartDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;">
-                <span style="color: #8e95b2;">至</span>
-                <input type="date" id="backtestEndDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;">
-                <button class="btn btn-primary" id="btnReRunBacktest" style="padding: 0.25rem 0.75rem; font-size: 0.82rem;" onclick="startBacktestExecution()">
-                    <i class="fa-solid fa-play"></i> 开始计算回测
-                </button>
+            <!-- 控制面板: 运行模式 vs 回测模式 -->
+            <div id="execControlPanel" style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; background: rgba(255,255,255,0.05); padding: 0.6rem 0.85rem; border-radius: 8px; flex-wrap: wrap;">
+                <!-- 动态插值插入 controls -->
             </div>
 
-            <div class="log-console" id="logConsoleOutput">准备执行回测计算...</div>
+            <div class="log-console" id="logConsoleOutput" style="min-height: 220px; max-height: 380px;">准备执行计算...</div>
 
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                <span style="font-size: 0.8rem; color: #8e95b2;">* 提示: 默认自动定位截至今天的近 1 年动态区间，支持自由修改起止日期</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;">
+                <span id="execNoticeHint" style="font-size: 0.8rem; color: #8e95b2;">* 提示: 同一时间全局只能运行一个策略任务</span>
                 <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-secondary" onclick="copyBacktestLog()"><i class="fa-regular fa-copy"></i> 一键复制 Log</button>
-                    <button class="btn btn-primary" onclick="closeBacktestLogModal()">确定关闭</button>
+                    <button class="btn btn-secondary" onclick="copyConsoleLog()"><i class="fa-regular fa-copy"></i> 复制 Log</button>
+                    <button class="btn btn-primary" id="btnGoToResultTab" style="display: none;"><i class="fa-solid fa-arrow-right"></i> 前往查看最新结果</button>
+                    <button class="btn btn-secondary" onclick="closeExecutionLogModal()">关闭</button>
                 </div>
             </div>
         </div>
@@ -1054,57 +1178,429 @@
             }
         }
 
-        // 1. 加载策略列表
+        // 全局状态与排他锁
+        let globalTaskRunning = false;
+        let currentTaskName = '';
+        let activeDetailStgDbId = null;
+        let activeExecStgDbId = null;
+        let activeExecMode = 'RUN'; // 'RUN' or 'BACKTEST'
+
+        // 辅助函数: 获取排序因子中文名称
+        function getSortByLabel(key) {
+            const map = {
+                'db_low_value': '双低值优先',
+                'cb_price': '转债价格优先',
+                'convert_premium_rate': '转股溢价率优先',
+                'ytm': 'YTM到期收益率优先',
+                'roe': '高ROE优先',
+                'pe': '低估值PE优先',
+                'growth': '净利润增长率优先',
+                'price': '低股价优先'
+            };
+            return map[key] || key || '综合因子';
+        }
+
+        // 1. 加载策略卡片列表 (以卡片形式展示)
         async function loadStrategies() {
             const search = document.getElementById('searchStrategyInput').value;
             const category = document.getElementById('filterCategorySelect').value;
-            const tbody = document.getElementById('strategyTableBody');
+            const grid = document.getElementById('strategyCardGrid');
 
             try {
                 const res = await fetch(`/api/strategies?search=${encodeURIComponent(search)}&category=${category}`);
                 const result = await res.json();
 
                 if (result.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#df4b5e;">${result.message}</td></tr>`;
+                    grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#df4b5e; padding:2rem;">${result.message}</div>`;
                     return;
                 }
 
                 allStrategiesList = result.data;
                 if (allStrategiesList.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#8e95b2;">暂无匹配策略</td></tr>`;
+                    grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#8e95b2; padding:2.5rem;">暂无匹配自定义策略</div>`;
                     return;
                 }
 
-                tbody.innerHTML = allStrategiesList.map(stg => {
-                    const catBadge = stg.category === 'convertible_bond' 
-                        ? `<span class="badge-tag badge-cb">可转债</span>` 
-                        : `<span class="badge-tag badge-stock">股票</span>`;
+                grid.innerHTML = allStrategiesList.map(stg => {
+                    const isCb = stg.category === 'convertible_bond';
+                    const catBadge = isCb 
+                        ? `<span class="badge-tag badge-cb"><i class="fa-solid fa-link"></i> 可转债</span>` 
+                        : `<span class="badge-tag badge-stock"><i class="fa-solid fa-chart-line"></i> 股票</span>`;
+
+                    const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+                    let factorTags = [];
                     
-                    const cfgStr = typeof stg.factors_config === 'object' 
-                        ? JSON.stringify(stg.factors_config) 
-                        : stg.factors_config;
+                    if (isCb) {
+                        if (cfg.max_price) factorTags.push(`最高债价 ≤ ${cfg.max_price}`);
+                        if (cfg.min_convert_premium !== undefined) factorTags.push(`溢价率 [${cfg.min_convert_premium}%, ${cfg.max_convert_premium}%]`);
+                        if (cfg.sort_by) factorTags.push(getSortByLabel(cfg.sort_by));
+                    } else {
+                        if (cfg.stock_scope) factorTags.push(`标的池: ${cfg.stock_scope === 'csi300' ? '沪深300' : '全市场'}`);
+                        if (cfg.financial?.roe_min || cfg.min_roe) {
+                            const val = cfg.financial?.roe_min || cfg.min_roe;
+                            factorTags.push(`ROE ≥ ${(val * 100).toFixed(0)}%`);
+                        }
+                        if (cfg.financial?.pe_max || cfg.pe_range) {
+                            const pMax = cfg.financial?.pe_max || (cfg.pe_range ? cfg.pe_range[1] : null);
+                            if (pMax) factorTags.push(`PE ≤ ${pMax}`);
+                        }
+                        if (cfg.sort_by) factorTags.push(getSortByLabel(cfg.sort_by));
+                    }
+                    if (cfg.top_n) factorTags.push(`Top ${cfg.top_n} 选中`);
+
+                    const tagsHtml = factorTags.slice(0, 4).map(t => `<span class="factor-summary-badge">${t}</span>`).join(' ');
 
                     return `
-                        <tr>
-                            <td data-label="策略 ID"><code>${stg.strategy_id}</code></td>
-                            <td data-label="策略名称" style="font-weight: 700; color: #00d2c4;">${stg.name}</td>
-                            <td data-label="分类">${catBadge}</td>
-                            <td data-label="因子配置" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: #8e95b2; font-size: 0.8rem;" title="${cfgStr}">${cfgStr}</td>
-                            <td data-label="买/卖规则" style="font-size: 0.8rem; color:#8e95b2;">${stg.buy_signals_rule || '-'}</td>
-                            <td data-label="创建时间">${stg.created_at || '-'}</td>
-                            <td data-label="操作" style="text-align: right;">
-                                <button class="btn btn-secondary" onclick="openEditStrategyModal(${stg.id})"><i class="fa-solid fa-pen"></i> 编辑</button>
-                                <button class="btn btn-primary" onclick="runStrategyAction(${stg.id})"><i class="fa-solid fa-play"></i> 运行</button>
-                                <button class="btn btn-warning" onclick="triggerBacktestLogModal(${stg.id})"><i class="fa-solid fa-flask"></i> 回测</button>
-                                <button class="btn btn-danger" onclick="deleteStrategyAction(${stg.id}, '${stg.name}')"><i class="fa-solid fa-trash"></i></button>
-                            </td>
-                        </tr>
+                        <div class="stg-card ${isCb ? 'cb-stg-card' : ''}" onclick="openStrategyDetailModal(${stg.id})">
+                            <div>
+                                <div class="stg-card-header">
+                                    ${catBadge}
+                                    <code style="font-size: 0.78rem; color: #8e95b2;">${stg.strategy_id}</code>
+                                </div>
+                                <div class="stg-card-title">${stg.name}</div>
+                                <div class="stg-card-desc">${stg.description || '无策略描述说明'}</div>
+                                <div class="stg-card-tags">
+                                    ${tagsHtml}
+                                </div>
+                            </div>
+                            <div class="stg-card-footer">
+                                <span class="stg-card-date"><i class="fa-regular fa-clock"></i> ${stg.created_at || '系统策略'}</span>
+                                <button class="btn btn-primary" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;" onclick="event.stopPropagation(); openStrategyDetailModal(${stg.id})">
+                                    <i class="fa-solid fa-folder-open"></i> 进入策略详情
+                                </button>
+                            </div>
+                        </div>
                     `;
                 }).join('');
 
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#df4b5e;">加载失败: ${e.message}</td></tr>`;
+                grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#df4b5e; padding:2rem;">加载失败: ${e.message}</div>`;
             }
+        }
+
+        // 打开策略详情模态框
+        function openStrategyDetailModal(stgDbId) {
+            const stg = allStrategiesList.find(s => s.id === stgDbId);
+            if (!stg) return;
+
+            activeDetailStgDbId = stgDbId;
+            const isCb = stg.category === 'convertible_bond';
+
+            document.getElementById('stgDetailCategoryBadge').className = isCb ? 'badge-tag badge-cb' : 'badge-tag badge-stock';
+            document.getElementById('stgDetailCategoryBadge').textContent = isCb ? '可转债策略' : '股票策略';
+            document.getElementById('stgDetailIdCode').textContent = stg.strategy_id;
+            document.getElementById('stgDetailName').textContent = stg.name;
+            document.getElementById('stgDetailDesc').textContent = stg.description || '暂无详细描述';
+            document.getElementById('stgDetailBuyRule').textContent = stg.buy_signals_rule || '基于组合因子综合多维筛选';
+            document.getElementById('stgDetailSellRule').textContent = stg.sell_signals_rule || '触发止盈/止损风控规则离场';
+
+            // 格式化展示因子明细
+            const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+            const factorsContainer = document.getElementById('stgDetailFactorsList');
+            
+            let factorItems = [];
+            if (isCb) {
+                if (cfg.max_price !== undefined) factorItems.push({ label: '最高转债价格', val: `≤ ${cfg.max_price} 元` });
+                if (cfg.min_convert_premium !== undefined) factorItems.push({ label: '转股溢价率范围', val: `[${cfg.min_convert_premium}%, ${cfg.max_convert_premium}%]` });
+                if (cfg.max_pure_bond_premium !== null && cfg.max_pure_bond_premium !== undefined) factorItems.push({ label: '纯债溢价率限制', val: `≤ ${cfg.max_pure_bond_premium}%` });
+                if (cfg.min_ytm !== null && cfg.min_ytm !== undefined) factorItems.push({ label: '最低到期收益率(YTM)', val: `≥ ${cfg.min_ytm}%` });
+                if (cfg.sort_by) factorItems.push({ label: '核心排序算法', val: getSortByLabel(cfg.sort_by) });
+                if (cfg.stock_linkage) {
+                    const l = cfg.stock_linkage;
+                    if (l.enable_stock_roe) factorItems.push({ label: '正股最低 ROE', val: `≥ ${(l.stock_roe_min * 100).toFixed(1)}%` });
+                    if (l.enable_stock_pe) factorItems.push({ label: '正股 PE 范围', val: `[${l.stock_pe_min}, ${l.stock_pe_max}]` });
+                }
+            } else {
+                if (cfg.stock_scope) factorItems.push({ label: '标的股票池', val: cfg.stock_scope === 'csi300' ? '沪深300' : '全市场' });
+                if (cfg.sort_by) factorItems.push({ label: '主因子排序算法', val: getSortByLabel(cfg.sort_by) });
+                if (cfg.tech) {
+                    if (cfg.tech.enable_golden_cross) factorItems.push({ label: '均线金叉 (MA)', val: `MA${cfg.tech.short_ma} > MA${cfg.tech.long_ma}` });
+                    if (cfg.tech.enable_volume_surge) factorItems.push({ label: '放量因子', val: `> ${cfg.tech.volume_surge_factor} 倍均量` });
+                    if (cfg.tech.enable_di_ratio) factorItems.push({ label: 'DMI 动量比', val: `≥ ${cfg.tech.buy_di_threshold}` });
+                }
+                if (cfg.financial) {
+                    if (cfg.financial.enable_roe) factorItems.push({ label: '最低 ROE 盈利', val: `≥ ${(cfg.financial.roe_min * 100).toFixed(1)}%` });
+                    if (cfg.financial.enable_pe) factorItems.push({ label: 'PE 估值区间', val: `[${cfg.financial.pe_min}, ${cfg.financial.pe_max}]` });
+                    if (cfg.financial.enable_growth) factorItems.push({ label: '净利润增长 YoY', val: `≥ ${(cfg.financial.growth_min * 100).toFixed(1)}%` });
+                    if (cfg.financial.enable_debt_limit) factorItems.push({ label: '资产负债率上限', val: `≤ ${(cfg.financial.debt_max * 100).toFixed(0)}%` });
+                    if (cfg.financial.enable_cash_quality) factorItems.push({ label: '经营现金流/净利润', val: `≥ ${cfg.financial.cfo_np_min}` });
+                }
+            }
+            if (cfg.top_n) factorItems.push({ label: 'Top N 推荐数量', val: `${cfg.top_n} 标的` });
+
+            factorsContainer.innerHTML = factorItems.map(item => `
+                <div style="background: rgba(255,255,255,0.04); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: #8e95b2;">${item.label}</div>
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #00d2c4; margin-top: 0.15rem;">${item.val}</div>
+                </div>
+            `).join('');
+
+            document.getElementById('strategyDetailModal').classList.add('active');
+        }
+
+        function closeStrategyDetailModal() {
+            document.getElementById('strategyDetailModal').classList.remove('active');
+        }
+
+        // 从详情弹窗出发的操作
+        function triggerRunFromDetail() {
+            if (globalTaskRunning) {
+                alert(`⚠️ 当前已有策略任务在运行中（${currentTaskName}）！\n系统全局只允许同一时间运行一个任务，请等待当前任务计算完成。`);
+                return;
+            }
+            closeStrategyDetailModal();
+            openExecutionLogModal('RUN', activeDetailStgDbId);
+        }
+
+        function triggerBacktestFromDetail() {
+            if (globalTaskRunning) {
+                alert(`⚠️ 当前已有策略任务在运行中（${currentTaskName}）！\n系统全局只允许同一时间运行一个任务，请等待当前任务计算完成。`);
+                return;
+            }
+            closeStrategyDetailModal();
+            openExecutionLogModal('BACKTEST', activeDetailStgDbId);
+        }
+
+        function openEditFromDetailModal() {
+            closeStrategyDetailModal();
+            openEditStrategyModal(activeDetailStgDbId);
+        }
+
+        function deleteFromDetailModal() {
+            const stg = allStrategiesList.find(s => s.id === activeDetailStgDbId);
+            if (!stg) return;
+            deleteStrategyAction(stg.id, stg.name);
+            closeStrategyDetailModal();
+        }
+
+        // 打开统一控制台 (支持运行模式 'RUN' 与回测模式 'BACKTEST')
+        function openExecutionLogModal(mode, stgDbId) {
+            const stg = allStrategiesList.find(s => s.id === stgDbId);
+            if (!stg) return;
+
+            activeExecStgDbId = stgDbId;
+            activeExecMode = mode;
+
+            const modal = document.getElementById('executionLogModal');
+            const titleElem = document.getElementById('execModalTitle');
+            const controlPanel = document.getElementById('execControlPanel');
+            const consoleBox = document.getElementById('logConsoleOutput');
+            const goToBtn = document.getElementById('btnGoToResultTab');
+
+            goToBtn.style.display = 'none';
+            modal.classList.add('active');
+
+            if (mode === 'RUN') {
+                titleElem.innerHTML = `<i class="fa-solid fa-play"></i> 策略盘后选股运行控制台 - ${stg.name}`;
+                
+                const todayStr = new Date().toISOString().split('T')[0];
+                controlPanel.innerHTML = `
+                    <span style="font-size: 0.82rem; color: #8e95b2; font-weight: 600;"><i class="fa-regular fa-calendar"></i> 行情目标日:</span>
+                    <input type="date" id="runTargetDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;" value="${todayStr}">
+                    <div style="display:flex; align-items:center; gap:0.3rem;">
+                        <input type="checkbox" id="runForceCheckbox" style="accent-color:#00d2c4;">
+                        <label for="runForceCheckbox" style="font-size: 0.82rem; color: #f0f3fa; cursor:pointer;">强制重新计算覆盖</label>
+                    </div>
+                    <button class="btn btn-primary" id="btnStartExecAction" style="padding: 0.25rem 0.85rem; font-size: 0.82rem;" onclick="startRunStrategyExecution()">
+                        <i class="fa-solid fa-play"></i> 开始策略运行 (选股/推荐)
+                    </button>
+                `;
+
+                consoleBox.textContent = `[System Ready] 已就绪！准备对策略 『${stg.name} (${stg.strategy_id})』 执行盘后选股推荐算法...\n` +
+                                         `[Notice] 点击上方【开始策略运行】按钮启动计算，引擎将连通 TiDB Cloud 智能抓取数据落库。\n`;
+
+            } else {
+                titleElem.innerHTML = `<i class="fa-solid fa-flask"></i> 策略历史回测运行控制台 - ${stg.name}`;
+
+                const todayObj = new Date();
+                const defaultEndDateStr = todayObj.toISOString().split('T')[0];
+                const startDateObj = new Date();
+                startDateObj.setFullYear(startDateObj.getFullYear() - 1);
+                const defaultStartDateStr = startDateObj.toISOString().split('T')[0];
+
+                controlPanel.innerHTML = `
+                    <span style="font-size: 0.82rem; color: #8e95b2; font-weight: 600;"><i class="fa-regular fa-calendar-days"></i> 回测时间区间:</span>
+                    <input type="date" id="backtestStartDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;" value="${defaultStartDateStr}">
+                    <span style="color: #8e95b2;">至</span>
+                    <input type="date" id="backtestEndDateInput" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.82rem;" value="${defaultEndDateStr}">
+                    <button class="btn btn-primary" id="btnStartExecAction" style="padding: 0.25rem 0.85rem; font-size: 0.82rem;" onclick="startBacktestExecution()">
+                        <i class="fa-solid fa-play"></i> 开始计算历史回测
+                    </button>
+                `;
+
+                consoleBox.textContent = `[System Ready] 已就绪！策略 『${stg.name} (${stg.strategy_id})』 回测引擎环境初始化完毕...\n` +
+                                         `[Params] 默认近 1 年动态时间段 (${defaultStartDateStr} 至 ${defaultEndDateStr})\n` +
+                                         `[Notice] 支持自由调整起止日期，准备完毕后点击【开始计算历史回测】。\n`;
+            }
+        }
+
+        function closeExecutionLogModal() {
+            if (globalTaskRunning) {
+                if (!confirm('⚠️ 当前后台策略任务仍在计算中，确定要隐藏控制台视图吗？（计算仍将在后台继续）')) return;
+            }
+            document.getElementById('executionLogModal').classList.remove('active');
+        }
+
+        // 统一控制台下的 【策略运行】 触发
+        async function startRunStrategyExecution() {
+            if (globalTaskRunning) {
+                alert(`⚠️ 当前已有策略任务在运行中（${currentTaskName}）！`);
+                return;
+            }
+            const stg = allStrategiesList.find(s => s.id === activeExecStgDbId);
+            if (!stg) return;
+
+            const targetDate = document.getElementById('runTargetDateInput').value;
+            const force = document.getElementById('runForceCheckbox').checked;
+
+            globalTaskRunning = true;
+            currentTaskName = `策略运行: ${stg.name}`;
+
+            const runBtn = document.getElementById('btnStartExecAction');
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 策略运行计算中...`;
+            }
+
+            const consoleBox = document.getElementById('logConsoleOutput');
+            consoleBox.textContent = `[System Init] 启动策略 『${stg.name} (${stg.strategy_id})』 盘后推荐选股引擎...\n` +
+                                     `[Target Date] 行情目标日: ${targetDate} (强制重新计算: ${force})\n` +
+                                     `[DB Engine] 正在从 TiDB Cloud 加载全市场行情与衍生因子数据...\n` +
+                                     `[Executing...] 正在执行多维因子筛选、指标风控与评分排序，请稍候...\n`;
+
+            try {
+                const res = await fetch(`/api/strategies/${stg.id}/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: targetDate, force: force })
+                });
+                const result = await res.json();
+
+                if (result.status === 'already_run') {
+                    consoleBox.textContent += `\n[NOTICE] ${result.message}\n` +
+                                             `[Action Required] 若需覆盖已有数据重新计算，请勾选【强制重新计算】后再次点击运行。\n`;
+                } else if (result.status === 'success') {
+                    consoleBox.textContent += `\n================== 策略运行结果 ==================\n` +
+                                             `🎉 计算成功完成！生成 ${result.count} 条最新选股/可转债推荐记录。\n` +
+                                             `行情数据日期: ${result.date}\n` +
+                                             `=================================================\n`;
+
+                    const goToBtn = document.getElementById('btnGoToResultTab');
+                    if (goToBtn) {
+                        goToBtn.style.display = 'inline-flex';
+                        goToBtn.onclick = () => {
+                            closeExecutionLogModal();
+                            switchMainTab('recommendations');
+                        };
+                    }
+                    if (typeof loadStrategies === 'function') loadStrategies();
+                } else {
+                    consoleBox.textContent += `\n❌ [ERROR] 策略运行失败: ${result.message}\n`;
+                }
+            } catch (e) {
+                consoleBox.textContent += `\n❌ [NET ERROR] 网络异常: ${e.message}\n`;
+            } finally {
+                globalTaskRunning = false;
+                currentTaskName = '';
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始策略运行 (选股/推荐)`;
+                }
+            }
+        }
+
+        // 统一控制台下的 【历史回测】 触发
+        async function startBacktestExecution() {
+            if (globalTaskRunning) {
+                alert(`⚠️ 当前已有策略任务在运行中（${currentTaskName}）！`);
+                return;
+            }
+            const stg = allStrategiesList.find(s => s.id === activeExecStgDbId);
+            if (!stg) return;
+
+            const startDateStr = document.getElementById('backtestStartDateInput').value;
+            const endDateStr = document.getElementById('backtestEndDateInput').value;
+
+            if (!startDateStr || !endDateStr) {
+                alert('请先选择完整的回测开始与结束日期！');
+                return;
+            }
+
+            globalTaskRunning = true;
+            currentTaskName = `策略历史回测: ${stg.name}`;
+
+            const runBtn = document.getElementById('btnStartExecAction');
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 回测计算中...`;
+            }
+
+            const consoleBox = document.getElementById('logConsoleOutput');
+            consoleBox.textContent = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 回测引擎...\n` +
+                                     `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
+                                     `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
+                                     `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
+
+            try {
+                const res = await fetch('/api/backtest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        strategy_name: stg.strategy_id,
+                        universe: stg.category === 'convertible_bond' ? 'all' : (stg.factors_config?.stock_scope || 'csi300'),
+                        start_date: startDateStr,
+                        end_date: endDateStr,
+                        save_db: true,
+                        config: stg.factors_config
+                    })
+                });
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    const s = result.summary;
+                    let logsText = consoleBox.textContent;
+                    logsText += `\n================== 回测统计汇总 ==================\n` +
+                                `初始资金: ¥${s.initial_equity}  | 最终资产: ¥${s.final_equity}\n` +
+                                `总回报率: ${s.total_return.toFixed(2)}% | 年化收益率: ${s.annual_return.toFixed(2)}%\n` +
+                                `最大回撤: ${s.max_drawdown.toFixed(2)}% | 胜率: ${s.win_rate.toFixed(2)}%\n` +
+                                `成交笔数: ${s.total_buys + s.total_sells} (买入: ${s.total_buys}, 卖出: ${s.total_sells})\n` +
+                                `================== 交易明细 Log ==================\n`;
+
+                    (result.trade_log || []).forEach((t, i) => {
+                        logsText += `[${t.trade_date || t.date}] ${t.action} ${t.stock_code || t.code} | 价格: ¥${t.price} | 数量: ${t.shares} | 盈亏: ${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'} | 原因: ${t.reason || '-'}\n`;
+                    });
+
+                    consoleBox.textContent = logsText;
+
+                    const goToBtn = document.getElementById('btnGoToResultTab');
+                    if (goToBtn) {
+                        goToBtn.style.display = 'inline-flex';
+                        goToBtn.onclick = () => {
+                            closeExecutionLogModal();
+                            switchMainTab('backtests');
+                        };
+                    }
+                    if (typeof loadBacktests === 'function') loadBacktests();
+                } else {
+                    consoleBox.textContent += `\n❌ [ERROR] 回测出错: ${result.message}\n`;
+                }
+            } catch (e) {
+                consoleBox.textContent += `\n❌ [NET ERROR] 网络异常: ${e.message}\n`;
+            } finally {
+                globalTaskRunning = false;
+                currentTaskName = '';
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始计算历史回测`;
+                }
+            }
+        }
+
+        function copyConsoleLog() {
+            const text = document.getElementById('logConsoleOutput').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('📋 日志明细已成功复制到剪贴板！');
+            }).catch(e => alert('复制失败: ' + e));
         }
 
         // 动态因子面板切换 (股票策略 vs 可转债策略)
@@ -1122,12 +1618,19 @@
             }
         }
 
-        // 打开/关闭模态框
+        // 打开/关闭新建模态框
         function openCreateStrategyModal() {
             document.getElementById('modalStrategyTitle').textContent = '新建自定义因子策略';
             document.getElementById('editStrategyDbId').value = '';
-            document.getElementById('stgFormId').value = '';
-            document.getElementById('stgFormId').disabled = false;
+            
+            // 自动生成策略 ID (系统唯一定义)
+            const autoId = 'stg_' + Math.floor(Date.now() / 1000);
+            const stgFormIdElem = document.getElementById('stgFormId');
+            stgFormIdElem.value = autoId;
+            stgFormIdElem.readOnly = true;
+            stgFormIdElem.style.background = 'rgba(255,255,255,0.05)';
+            stgFormIdElem.title = '策略 ID 由系统自动生成';
+
             document.getElementById('stgFormName').value = '';
             document.getElementById('stgFormCategory').value = 'stock';
             document.getElementById('stgFormDesc').value = '';
@@ -1188,8 +1691,87 @@
 
             document.getElementById('modalStrategyTitle').textContent = `编辑策略: ${stg.name}`;
             document.getElementById('editStrategyDbId').value = stg.id;
-            document.getElementById('stgFormId').value = stg.strategy_id;
-            document.getElementById('stgFormId').disabled = true;
+            
+            const stgFormIdElem = document.getElementById('stgFormId');
+            stgFormIdElem.value = stg.strategy_id;
+            stgFormIdElem.readOnly = true;
+            stgFormIdElem.style.background = 'rgba(255,255,255,0.05)';
+
+            document.getElementById('stgFormName').value = stg.name;
+            document.getElementById('stgFormCategory').value = stg.category || 'stock';
+            document.getElementById('stgFormDesc').value = stg.description || '';
+            document.getElementById('stgFormBuyRule').value = stg.buy_signals_rule || '';
+            document.getElementById('stgFormSellRule').value = stg.sell_signals_rule || '';
+
+            const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+            if (cfg) {
+                if (cfg.top_n) document.getElementById('stgFormTopN').value = cfg.top_n;
+
+                if (stg.category === 'convertible_bond') {
+                    if (cfg.max_price !== undefined) document.getElementById('stg_cb_max_price').value = cfg.max_price;
+                    if (cfg.min_convert_premium !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_convert_premium;
+                    else if (cfg.min_premium_rate !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_premium_rate;
+
+                    if (cfg.max_convert_premium !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_convert_premium;
+                    else if (cfg.max_premium_rate !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_premium_rate;
+
+                    document.getElementById('stg_cb_enable_pure_bond').checked = cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null;
+                    if (cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null) {
+                        document.getElementById('stg_cb_max_pure_bond_premium').value = cfg.max_pure_bond_premium;
+                    }
+
+                    document.getElementById('stg_cb_enable_ytm').checked = cfg.min_ytm !== undefined && cfg.min_ytm !== null;
+                    if (cfg.min_ytm !== undefined && cfg.min_ytm !== null) {
+                        document.getElementById('stg_cb_min_ytm').value = cfg.min_ytm;
+                    }
+
+                    if (cfg.sort_by) document.getElementById('stg_cb_primary_factor').value = cfg.sort_by;
+                    if (cfg.stock_scope) document.getElementById('stg_cb_universe').value = cfg.stock_scope;
+
+                    // 正股联动信息解析
+                    if (cfg.stock_linkage) {
+                        const link = cfg.stock_linkage;
+                        document.getElementById('stg_cb_enable_stock_roe').checked = !!link.enable_stock_roe;
+                        if (link.stock_roe_min !== undefined) document.getElementById('stg_cb_stock_roe_min').value = link.stock_roe_min * 100;
+                        document.getElementById('stg_cb_enable_stock_pe').checked = !!link.enable_stock_pe;
+                        if (link.stock_pe_min !== undefined) document.getElementById('stg_cb_stock_pe_min').value = link.stock_pe_min;
+                        if (link.stock_pe_max !== undefined) document.getElementById('stg_cb_stock_pe_max').value = link.stock_pe_max;
+                        document.getElementById('stg_cb_enable_stock_ma').checked = !!link.enable_stock_ma;
+                        if (link.short_ma !== undefined) document.getElementById('stg_cb_stock_short_ma').value = link.short_ma;
+                        if (link.long_ma !== undefined) document.getElementById('stg_cb_stock_long_ma').value = link.long_ma;
+                    }
+                } else {
+                    if (cfg.stock_scope) document.getElementById('stg_universe').value = cfg.stock_scope;
+                    if (cfg.sort_by || cfg.ranking?.primary_factor) document.getElementById('stg_primary_factor').value = cfg.sort_by || cfg.ranking?.primary_factor;
+
+                    if (cfg.tech) {
+                        document.getElementById('stg_enable_golden_cross').checked = !!cfg.tech.enable_golden_cross;
+                        document.getElementById('stg_short_ma').value = cfg.tech.short_ma || 5;
+                        document.getElementById('stg_long_ma').value = cfg.tech.long_ma || 20;
+                        document.getElementById('stg_enable_volume_surge').checked = !!cfg.tech.enable_volume_surge;
+                        document.getElementById('stg_volume_surge_factor').value = cfg.tech.volume_surge_factor || 1.2;
+                        document.getElementById('stg_enable_di_ratio').checked = !!cfg.tech.enable_di_ratio;
+                        document.getElementById('stg_buy_di_threshold').value = cfg.tech.buy_di_threshold || 0.70;
+                    }
+                    if (cfg.financial) {
+                        document.getElementById('stg_enable_roe').checked = !!cfg.financial.enable_roe;
+                        document.getElementById('stg_roe_min').value = (cfg.financial.roe_min || 0.05) * 100;
+                        document.getElementById('stg_enable_pe').checked = !!cfg.financial.enable_pe;
+                        document.getElementById('stg_pe_min').value = cfg.financial.pe_min || 0;
+                        document.getElementById('stg_pe_max').value = cfg.financial.pe_max || 35;
+                        document.getElementById('stg_enable_growth').checked = !!cfg.financial.enable_growth;
+                        document.getElementById('stg_growth_min').value = (cfg.financial.growth_min || 0.10) * 100;
+                        document.getElementById('stg_enable_debt_limit').checked = !!cfg.financial.enable_debt_limit;
+                        document.getElementById('stg_debt_max').value = cfg.financial.debt_max || 0.70;
+                        document.getElementById('stg_enable_cash_quality').checked = !!cfg.financial.enable_cash_quality;
+                        document.getElementById('stg_cfo_np_min').value = cfg.financial.cfo_np_min || 0.80;
+                    }
+                }
+            }
+
+            onCategoryChange();
+            document.getElementById('strategyModal').classList.add('active');
+        }
             document.getElementById('stgFormName').value = stg.name;
             document.getElementById('stgFormCategory').value = stg.category || 'stock';
             document.getElementById('stgFormDesc').value = stg.description || '';
@@ -1386,154 +1968,6 @@
             } catch (e) {
                 alert('网络异常: ' + e.message);
             }
-        }
-
-        // 运行策略 (防重机制 & 动态加载反馈)
-        async function runStrategyAction(dbId, force = false, btnElement = null) {
-            let origHtml = '';
-            if (btnElement) {
-                origHtml = btnElement.innerHTML;
-                btnElement.disabled = true;
-                btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 计算中...`;
-            }
-
-            try {
-                const res = await fetch(`/api/strategies/${dbId}/run`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ force: force })
-                });
-                const result = await res.json();
-
-                if (result.status === 'already_run') {
-                    if (confirm(`⚠️ 提示: ${result.message}\n\n是否需要强制重新运行并覆盖该日的计算结果？`)) {
-                        runStrategyAction(dbId, true, btnElement);
-                        return;
-                    }
-                } else if (result.status === 'success') {
-                    alert('🎉 ' + result.message);
-                } else {
-                    alert('❌ 策略运行失败: ' + result.message);
-                }
-            } catch (e) {
-                alert('网络异常: ' + e.message);
-            } finally {
-                if (btnElement) {
-                    btnElement.disabled = false;
-                    btnElement.innerHTML = origHtml;
-                }
-            }
-        }
-
-        let activeBacktestStgDbId = null;
-
-        // 打开回测 Log 弹窗（允许用户先选择/确认日期后再真正触发计算）
-        function triggerBacktestLogModal(stgDbId) {
-            const stg = allStrategiesList.find(s => s.id === stgDbId);
-            if (!stg) return;
-
-            activeBacktestStgDbId = stgDbId;
-            const modal = document.getElementById('backtestLogModal');
-            const consoleBox = document.getElementById('logConsoleOutput');
-            const startInput = document.getElementById('backtestStartDateInput');
-            const endInput = document.getElementById('backtestEndDateInput');
-            modal.classList.add('active');
-
-            const todayObj = new Date();
-            const defaultEndDateStr = todayObj.toISOString().split('T')[0];
-            const startDateObj = new Date();
-            startDateObj.setFullYear(startDateObj.getFullYear() - 1);
-            const defaultStartDateStr = startDateObj.toISOString().split('T')[0];
-
-            if (startInput) startInput.value = defaultStartDateStr;
-            if (endInput) endInput.value = defaultEndDateStr;
-
-            consoleBox.textContent = `[System Ready] 已准备初始化策略 『${stg.name} (${stg.strategy_id})』 引擎...\n` +
-                                     `[Params] 默认匹配近 1 年动态时间区间 (${defaultStartDateStr} 至 ${defaultEndDateStr})\n` +
-                                     `[Notice] 您可以随时在上方调整【回测时间区间】，准备就绪后请点击【开始计算回测】。\n`;
-        }
-
-        async function startBacktestExecution() {
-            if (!activeBacktestStgDbId) return;
-            const stg = allStrategiesList.find(s => s.id === activeBacktestStgDbId);
-            if (!stg) return;
-
-            const consoleBox = document.getElementById('logConsoleOutput');
-            const startInput = document.getElementById('backtestStartDateInput');
-            const endInput = document.getElementById('backtestEndDateInput');
-            const runBtn = document.getElementById('btnReRunBacktest');
-
-            const startDateStr = startInput ? startInput.value : '';
-            const endDateStr = endInput ? endInput.value : '';
-
-            if (!startDateStr || !endDateStr) {
-                alert('请先选择完整的回测开始与结束日期！');
-                return;
-            }
-
-            consoleBox.textContent = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 引擎...\n` +
-                                     `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
-                                     `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
-                                     `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
-
-            if (runBtn) {
-                runBtn.disabled = true;
-                runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 回测计算中...`;
-            }
-
-            try {
-                const res = await fetch('/api/backtest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        strategy_name: stg.strategy_id,
-                        universe: stg.category === 'convertible_bond' ? 'all' : (stg.factors_config?.stock_scope || 'csi300'),
-                        start_date: startDateStr,
-                        end_date: endDateStr,
-                        save_db: true,
-                        config: stg.factors_config
-                    })
-                });
-                const result = await res.json();
-
-                if (result.status === 'success') {
-                    const s = result.summary;
-                    let logsText = consoleBox.textContent;
-                    logsText += `\n================== 回测统计汇总 ==================\n` +
-                                `初始资金: ¥${s.initial_equity}  | 最终资产: ¥${s.final_equity}\n` +
-                                `总回报率: ${s.total_return.toFixed(2)}% | 年化收益率: ${s.annual_return.toFixed(2)}%\n` +
-                                `最大回撤: ${s.max_drawdown.toFixed(2)}% | 胜率: ${s.win_rate.toFixed(2)}%\n` +
-                                `成交笔数: ${s.total_buys + s.total_sells} (买入: ${s.total_buys}, 卖出: ${s.total_sells})\n` +
-                                `================== 交易明细 Log ==================\n`;
-
-                    (result.trade_log || []).forEach((t, i) => {
-                        logsText += `[${t.trade_date || t.date}] ${t.action} ${t.stock_code || t.code} | 价格: ¥${t.price} | 数量: ${t.shares} | 盈亏: ${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'} | 原因: ${t.reason || '-'}\n`;
-                    });
-
-                    consoleBox.textContent = logsText;
-                    if (typeof loadBacktests === 'function') loadBacktests();
-                } else {
-                    consoleBox.textContent += `\n[ERROR] 回测出错: ${result.message}\n`;
-                }
-            } catch (e) {
-                consoleBox.textContent += `\n[NET ERROR] 网络异常: ${e.message}\n`;
-            } finally {
-                if (runBtn) {
-                    runBtn.disabled = false;
-                    runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始计算回测`;
-                }
-            }
-        }
-
-        function closeBacktestLogModal() {
-            document.getElementById('backtestLogModal').classList.remove('active');
-        }
-
-        function copyBacktestLog() {
-            const text = document.getElementById('logConsoleOutput').textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                alert('📋 交易明细 Log 已成功复制到剪贴板！');
-            }).catch(e => alert('复制失败: ' + e));
         }
 
         // 2. 加载历史回测记录

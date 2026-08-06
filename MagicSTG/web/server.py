@@ -192,8 +192,12 @@ def create_strategy():
     buy_signals_rule = data.get('buy_signals_rule', '').strip()
     sell_signals_rule = data.get('sell_signals_rule', '').strip()
 
-    if not strategy_id or not name:
-        return jsonify({'status': 'error', 'message': '策略ID与策略名称不能为空'})
+    if not strategy_id:
+        import time
+        strategy_id = f"stg_{int(time.time())}"
+
+    if not name:
+        return jsonify({'status': 'error', 'message': '策略名称不能为空'})
 
     import json
     conn = get_db_connection()
