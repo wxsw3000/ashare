@@ -296,28 +296,39 @@ class DynamicFactorStrategy(BaseStrategy):
 
         market_ok = self.check_market_trend(date)
 
-        for code, df in all_data.items():
-            if date not in df.index:
-                continue
+        try:
+            for code, df in all_data.items():
+                if date not in df.index:
+                    continue
 
-            df_with_indicators = self.compute_indicators(df, code=code)
-            row = df_with_indicators.loc[date]
-            price = row['close']
-            if pd.isna(price) or price <= 0:
-                continue
+                df_with_indicators = self.compute_indicators(df, code=code)
+                row = df_with_indicators.loc[date]
+                price = row['close']
+                if pd.isna(price) or price <= 0:
+                    continue
 
-            if row.get('sell_signal', False):
-                sell_signals.append((code, price))
+                if row.get('sell_signal', False):
+                    sell_signals.append((code, price))
 
-            if not market_ok or code in exclude_codes:
-                continue
+                if not market_ok or code in exclude_codes:
+                    continue
 
-            if row.get('buy_signal', False):
-                buy_candidates.append((code, price, row.get('rank_val', price)))
+                if row.get('buy_signal', False):
+                    buy_candidates.append((code, price, row.get('rank_val', price)))
 
-        buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=self.reverse)
+            buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=self.reverse)
+            return buy_candidates, sell_signals
+        finally:
+            self.clear_cache()
 
-        return buy_candidates, sell_signals
+    def clear_cache(self):
+        """Clears all in-memory indicator and financial caches to free RAM immediately."""
+        if hasattr(self, '_indicator_cache') and self._indicator_cache:
+            self._indicator_cache.clear()
+        self.financial_data = None
+        if hasattr(self, '_financial_data_cached'):
+            self._financial_data_cached = None
+        gc.collect()
 
     def check_sell_signal(self, df: pd.DataFrame, date: pd.Timestamp) -> bool:
         if date not in df.index:
@@ -325,6 +336,7 @@ class DynamicFactorStrategy(BaseStrategy):
         df_with_indicators = self.compute_indicators(df)
         row = df_with_indicators.loc[date]
         return row.get('sell_signal', False)
+
 
 
 # Alias class for backward compatibility

@@ -374,7 +374,11 @@ def run_strategy(stg_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'运行失败: {str(e)}'})
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+        import gc
+        gc.collect()
+
 
 
 @app.route('/api/recommendation-runs', methods=['GET'])

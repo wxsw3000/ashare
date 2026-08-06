@@ -77,6 +77,8 @@ def run_cb_double_low_recommendation(target_date: str, strategy_id: str = 'cb_do
 def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dynamic_factor', config: Optional[Dict[str, Any]] = None) -> bool:
     """运行动态多因子股票策略推荐并落库"""
     print(f"\n  [Strategy] 运行动态多因子股票策略推荐 ({strategy_id}, 日期: {target_date})...", flush=True)
+    stock_data = None
+    strategy = None
     try:
         start_date = (pd.to_datetime(target_date) - pd.Timedelta(days=90)).strftime('%Y-%m-%d')
         limit_csi300 = (config and config.get('stock_scope') == 'csi300')
@@ -102,6 +104,14 @@ def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dyna
         import traceback
         traceback.print_exc()
         return False
+    finally:
+        if strategy and hasattr(strategy, 'clear_cache'):
+            strategy.clear_cache()
+        if stock_data:
+            del stock_data
+        import gc
+        gc.collect()
+
 
 
 def run_all_strategy_recommendations(target_date: Optional[str] = None):

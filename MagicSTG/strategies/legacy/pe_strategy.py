@@ -79,30 +79,37 @@ class SignalGeneratorPE(BaseStrategy):
         buy_candidates = []
         sell_signals = []
 
-        for code, df in all_data.items():
-            if date not in df.index or code in exclude_codes:
-                continue
+        try:
+            for code, df in all_data.items():
+                if date not in df.index or code in exclude_codes:
+                    continue
 
-            df_with_indicators = self.compute_indicators(df)
-            row = df_with_indicators.loc[date]
-            price = row['close']
+                df_with_indicators = self.compute_indicators(df)
+                row = df_with_indicators.loc[date]
+                price = row['close']
 
-            if pd.isna(price) or price <= 0:
-                continue
+                if pd.isna(price) or price <= 0:
+                    continue
 
-            pe = row.get('peTTM', np.nan)
-            if pd.isna(pe) or pe <= self.pe_min or pe >= self.pe_max:
-                continue
+                pe = row.get('peTTM', np.nan)
+                if pd.isna(pe) or pe <= self.pe_min or pe >= self.pe_max:
+                    continue
 
-            if row.get('buy_signal', False):
-                buy_candidates.append((code, price, pe))
+                if row.get('buy_signal', False):
+                    buy_candidates.append((code, price, pe))
 
-            if row.get('sell_signal', False):
-                sell_signals.append((code, price))
+                if row.get('sell_signal', False):
+                    sell_signals.append((code, price))
 
-        # 按 PE 升序排列（最便宜在前），并限制 Top N 精选
-        buy_candidates.sort(key=lambda x: x[2], reverse=False)
-        return buy_candidates[:self.top_n], sell_signals[:self.top_n]
+            # 按 PE 升序排列（最便宜在前），并限制 Top N 精选
+            buy_candidates.sort(key=lambda x: x[2], reverse=False)
+            return buy_candidates[:self.top_n], sell_signals[:self.top_n]
+        finally:
+            self.clear_cache()
+
+    def clear_cache(self):
+        if hasattr(self, '_indicator_cache') and self._indicator_cache:
+            self._indicator_cache.clear()
 
     def check_sell_signal(self, df: pd.DataFrame, date: pd.Timestamp) -> bool:
         if date not in df.index:
