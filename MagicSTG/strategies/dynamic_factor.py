@@ -23,15 +23,18 @@ class DynamicFactorStrategy(BaseStrategy):
         super().__init__(name, config)
 
         self.tech_config = self.config.get('tech', {})
+        has_tech_keys = 'tech' in self.config or any(k in self.config for k in ['enable_golden_cross', 'enable_volume_surge', 'enable_di_ratio', 'buy_di_threshold'])
+        default_tech_enable = True if has_tech_keys else False
+
         self.buy_di_threshold = float(self.config.get('buy_di_threshold', self.tech_config.get('buy_di_threshold', 0.70)))
         self.sell_di_threshold = float(self.config.get('sell_di_threshold', self.tech_config.get('sell_di_threshold', 0.70)))
         self.short_ma = int(self.config.get('short_ma', self.tech_config.get('short_ma', 5)))
         self.long_ma = int(self.config.get('long_ma', self.tech_config.get('long_ma', 20)))
         self.volume_surge_factor = float(self.config.get('volume_surge_factor', self.tech_config.get('volume_surge_factor', 1.2)))
 
-        self.enable_golden_cross = self.config.get('enable_golden_cross', self.tech_config.get('enable_golden_cross', True))
-        self.enable_volume_surge = self.config.get('enable_volume_surge', self.tech_config.get('enable_volume_surge', True))
-        self.enable_di_ratio = self.config.get('enable_di_ratio', self.tech_config.get('enable_di_ratio', True))
+        self.enable_golden_cross = self.config.get('enable_golden_cross', self.tech_config.get('enable_golden_cross', default_tech_enable))
+        self.enable_volume_surge = self.config.get('enable_volume_surge', self.tech_config.get('enable_volume_surge', default_tech_enable))
+        self.enable_di_ratio = self.config.get('enable_di_ratio', self.tech_config.get('enable_di_ratio', default_tech_enable))
 
         self.fin_config = self.config.get('financial', {})
         self.enable_roe = ('min_roe' in self.config) or self.fin_config.get('enable_roe', False)

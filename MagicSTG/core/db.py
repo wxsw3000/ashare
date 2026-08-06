@@ -241,7 +241,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             cols_to_keep = [c for c in ['open', 'close', 'high', 'low', 'volume', 'peTTM'] if c in group.columns]
             group = group[cols_to_keep]
 
-            if len(group) < 200:
+            if len(group) < 20:
                 continue
 
             all_data[code] = group
