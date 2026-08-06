@@ -281,7 +281,22 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 * **Root Cause**: `List` type annotation was used in [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py) and [`MagicSTG/strategies/registry.py`](file:///E:/ashare/MagicSTG/strategies/registry.py) without importing `List` from `typing`.
 * **Fix**: Added `List` to `from typing import ...` in both [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py) and [`MagicSTG/strategies/registry.py`](file:///E:/ashare/MagicSTG/strategies/registry.py). Ran AST scanner across the entire codebase to confirm zero remaining missing typing imports. Tested `python -m MagicSTG.data.runner --help` successfully.
 
+---
 
+## 15. Session Summary & Memory (2026-08-06) - Backtest Records UI Redesign, Sharpe Ratio & Deletion API
 
+* **Database Capabilities & Cascading Backtest Deletion**:
+  * Verified database schema: `backtest_results` has primary key `id`, and `backtest_trades` links to it via `backtest_id`.
+  * Added `DELETE /api/backtests/<int:backtest_id>` REST endpoint in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py). Automatically deletes all corresponding records from both `backtest_trades` and `backtest_results` in TiDB Cloud.
+  * Added `sharpe_ratio` column auto-migration to `backtest_results` in [`MagicSTG/core/db_writer.py`](file:///E:/ashare/MagicSTG/core/db_writer.py) and [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
 
+* **Sharpe Ratio Calculation**:
+  * Updated [`MagicSTG/backtests/engine.py`](file:///E:/ashare/MagicSTG/backtests/engine.py) (`run_backtest_engine`) to calculate the annualized Sharpe Ratio for both stock and convertible bond strategies (assuming 2.0% risk-free rate).
+  * Exposed `sharpe_ratio` field in `/api/backtests` GET response.
 
+* **Backtest Records Card Layout & Modal Sub-Window Redesign**:
+  * Redesigned `#sectionBacktests` in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) from table layout to a responsive card grid (`#backtestCardGrid`).
+  * Displayed **Strategy Name** (`strategy_name`) as the primary card title and Strategy ID as a secondary badge tag.
+  * Embedded **Sharpe Ratio** (夏普比率) as a core metric alongside total return, annual return, max drawdown, and win rate.
+  * Implemented 1-click **删除 (Delete)** button on each card with interactive confirmation modal.
+  * Replaced bottom inline detail view with a dedicated **回测详细报告子界面弹窗 (`#backtestDetailModal`)**, displaying metrics summary and historical trade execution logs in a clean modal overlay.

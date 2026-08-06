@@ -112,6 +112,7 @@ def run_backtest_engine(
                 'total_return': round(tot_ret, 2),
                 'annual_return': round(ann_ret, 2),
                 'max_drawdown': round(max_dd, 2),
+                'sharpe_ratio': round(float(cb_res.get('sharpe_ratio', 0.0)), 2),
                 'win_rate': round(float(cb_res.get('win_rate', 0.0)), 2),
                 'total_buys': len([t for t in trade_log if t['action'] == 'BUY']),
                 'total_sells': len([t for t in trade_log if t['action'] == 'SELL']),
@@ -422,6 +423,11 @@ def run_backtest_engine(
     win_rate = (len(wins) / len(sells) * 100) if sells else 0.0
     total_fees = sum(t['fee'] for t in trade_log)
 
+    eq_df['daily_return'] = eq_df['equity'].pct_change().fillna(0.0)
+    daily_rf = 0.02 / 252
+    excess_returns = eq_df['daily_return'] - daily_rf
+    sharpe_ratio = float((excess_returns.mean() / excess_returns.std() * np.sqrt(252)) if excess_returns.std() > 0 else 0.0)
+
     result_summary = {
         'status': 'success',
         'strategy_name': strategy_name,
@@ -432,6 +438,7 @@ def run_backtest_engine(
         'total_return': round(total_return, 2),
         'annual_return': round(annual_return, 2),
         'max_drawdown': round(max_drawdown, 2),
+        'sharpe_ratio': round(sharpe_ratio, 2),
         'win_rate': round(win_rate, 2),
         'total_buys': len(buys),
         'total_sells': len(sells),

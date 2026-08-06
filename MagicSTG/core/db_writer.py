@@ -148,12 +148,17 @@ def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
         conn = get_connection()
         cursor = conn.cursor()
 
+        try:
+            cursor.execute("ALTER TABLE backtest_results ADD COLUMN sharpe_ratio decimal(12, 6) DEFAULT 0.00;")
+        except Exception:
+            pass
+
         cursor.execute("""
             INSERT INTO backtest_results 
             (strategy, run_date, date_range_start, date_range_end, 
              initial_equity, final_equity, total_return, annual_return,
-             max_drawdown, win_rate, total_buys, total_sells, total_fees)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             max_drawdown, win_rate, total_buys, total_sells, total_fees, sharpe_ratio)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             strategy_name,
             result_data.get('run_date', datetime.now().strftime('%Y-%m-%d')),
@@ -167,7 +172,8 @@ def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
             result_data.get('win_rate'),
             result_data.get('total_buys', 0),
             result_data.get('total_sells', 0),
-            result_data.get('total_fees', 0)
+            result_data.get('total_fees', 0),
+            result_data.get('sharpe_ratio', 0.0)
         ))
 
         backtest_id = cursor.lastrowid

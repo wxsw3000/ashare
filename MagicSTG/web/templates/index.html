@@ -676,56 +676,15 @@
                 <div class="section-title">
                     <span><i class="fa-solid fa-chart-line"></i> 回测记录与绩效档案</span>
                 </div>
-                <div class="table-responsive">
-                    <table class="custom-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>策略 ID</th>
-                                <th>运行日期</th>
-                                <th>回测时间区间</th>
-                                <th>总回报率</th>
-                                <th>年化收益率</th>
-                                <th>最大回撤</th>
-                                <th>胜率</th>
-                                <th style="text-align: right;">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="backtestTableBody">
-                            <tr><td colspan="9" style="text-align: center; color: #8e95b2;">加载历史回测记录...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
 
-            <!-- 选定回测详情图表区 -->
-            <div class="section-card" id="backtestDetailCard" style="display: none;">
-                <div class="section-title">
-                    <span id="backtestDetailTitle"><i class="fa-solid fa-chart-area"></i> 净值走势曲线</span>
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <input type="text" id="searchBacktestInput" class="form-control" placeholder="搜索策略名称 / 策略 ID / 回测区间..." oninput="loadBacktests()">
                 </div>
-                <div class="chart-box">
-                    <canvas id="backtestChartCanvas"></canvas>
-                </div>
-                <div style="margin-top: 1.5rem;">
-                    <h4 style="margin-bottom: 0.75rem; color: #8e95b2; font-size: 0.9rem;">成交记录明细 (前 100 笔)</h4>
-                    <div class="table-responsive">
-                        <table class="custom-table">
-                            <thead>
-                                <tr>
-                                    <th>交易日期</th>
-                                    <th>标的代码</th>
-                                    <th>动作</th>
-                                    <th>价格</th>
-                                    <th>数量</th>
-                                    <th>手续费</th>
-                                    <th>盈亏 (CNY)</th>
-                                    <th>盈亏比例</th>
-                                    <th>原因</th>
-                                </tr>
-                            </thead>
-                            <tbody id="backtestTradesBody"></tbody>
-                        </table>
-                    </div>
+
+                <!-- Responsive Backtest Cards Grid -->
+                <div class="stg-card-grid" id="backtestCardGrid">
+                    <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">加载历史回测记录中...</div>
                 </div>
             </div>
         </div>
@@ -1147,6 +1106,80 @@
                     <button class="btn btn-secondary" onclick="copyConsoleLog()"><i class="fa-regular fa-copy"></i> 复制 Log</button>
                     <button class="btn btn-primary" id="btnGoToResultTab" style="display: none;"><i class="fa-solid fa-arrow-right"></i> 前往查看最新结果</button>
                     <button class="btn btn-secondary" onclick="closeExecutionLogModal()">关闭</button>
+                </div>
+    <!-- ==================== 模态框 3: 历史回测结果明细中心 (Backtest Detail Modal) ==================== -->
+    <div class="modal-overlay" id="backtestDetailModal">
+        <div class="modal-container" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-chart-line"></i> 历史回测详细报告与成交明细</h3>
+                <button class="modal-close" onclick="closeBacktestDetailModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <!-- Header Info & Performance Metrics Banner -->
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <h2 id="btModalStgName" style="font-size: 1.25rem; font-weight: 700; color: #f0f3fa; margin: 0;">--</h2>
+                        <span style="font-size: 0.8rem; color: #8e95b2;">策略 ID: <code id="btModalStgCode" style="color: #00d2c4;">stg_xxx</code></span>
+                    </div>
+                    <div style="font-size: 0.82rem; color: #8e95b2; margin-bottom: 1rem;">
+                        <i class="fa-regular fa-calendar-days"></i> 回测区间: <span id="btModalDateRange" style="color: #f0f3fa; font-weight: 600;">--</span>
+                    </div>
+
+                    <!-- Metrics Cards Grid -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;">
+                        <div style="background: rgba(15,17,32,0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.75rem; color: #8e95b2;">累计收益率</div>
+                            <div id="btModalTotalReturn" style="font-size: 1.1rem; font-weight: 700;" class="up-val">--%</div>
+                        </div>
+                        <div style="background: rgba(15,17,32,0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.75rem; color: #8e95b2;">年化收益率</div>
+                            <div id="btModalAnnualReturn" style="font-size: 1.1rem; font-weight: 700;" class="up-val">--%</div>
+                        </div>
+                        <div style="background: rgba(15,17,32,0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.75rem; color: #8e95b2;">夏普比率 (Sharpe)</div>
+                            <div id="btModalSharpe" style="font-size: 1.1rem; font-weight: 700; color: #00d2c4;">--</div>
+                        </div>
+                        <div style="background: rgba(15,17,32,0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.75rem; color: #8e95b2;">最大回撤</div>
+                            <div id="btModalMaxDrawdown" style="font-size: 1.1rem; font-weight: 700;" class="down-val">--%</div>
+                        </div>
+                        <div style="background: rgba(15,17,32,0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.75rem; color: #8e95b2;">平仓胜率</div>
+                            <div id="btModalWinRate" style="font-size: 1.1rem; font-weight: 700; color: #ffb86c;">--%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trades Table -->
+                <div style="background: rgba(15, 17, 32, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1rem;">
+                    <h4 style="color: #00d2c4; font-size: 0.92rem; margin-bottom: 0.85rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem;">
+                        <i class="fa-solid fa-list-check"></i> 历史交易撮合明细记录 (前 100 笔)
+                    </h4>
+                    <div class="table-responsive" style="max-height: 340px; overflow-y: auto;">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>交易日期</th>
+                                    <th>标的代码</th>
+                                    <th>动作</th>
+                                    <th>成交价格</th>
+                                    <th>数量</th>
+                                    <th>手续费</th>
+                                    <th>盈亏 (CNY)</th>
+                                    <th>盈亏比例</th>
+                                    <th>买卖原因</th>
+                                </tr>
+                            </thead>
+                            <tbody id="backtestModalTradesBody">
+                                <tr><td colspan="9" style="text-align: center; color: #8e95b2;">加载明细数据中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="btn btn-secondary" onclick="closeBacktestDetailModal()">关闭窗口</button>
                 </div>
             </div>
         </div>
@@ -1903,49 +1936,147 @@
             }
         }
 
-        // 2. 加载历史回测记录
+        // 2. 加载历史回测记录 (卡片模式)
+        let allBacktestRecords = [];
+
         async function loadBacktests() {
-            const tbody = document.getElementById('backtestTableBody');
+            const grid = document.getElementById('backtestCardGrid');
+            if (!grid) return;
+
+            const searchInput = document.getElementById('searchBacktestInput');
+            const search = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
             try {
                 const res = await fetch('/api/backtests');
                 const result = await res.json();
 
                 if (result.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#df4b5e;">${result.message}</td></tr>`;
+                    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #df4b5e;">${result.message}</div>`;
                     return;
                 }
 
-                const list = result.data || [];
-                if (list.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#8e95b2;">暂无历史回测记录</td></tr>`;
+                allBacktestRecords = result.data || [];
+                let filtered = allBacktestRecords;
+
+                if (search) {
+                    filtered = filtered.filter(b => 
+                        (b.strategy_name && b.strategy_name.toLowerCase().includes(search)) ||
+                        (b.strategy && b.strategy.toLowerCase().includes(search)) ||
+                        (b.date_range && b.date_range.includes(search)) ||
+                        (b.run_date && b.run_date.includes(search))
+                    );
+                }
+
+                if (filtered.length === 0) {
+                    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">暂无历史回测档案数据</div>`;
                     return;
                 }
 
-                tbody.innerHTML = list.map(b => `
-                    <tr>
-                        <td data-label="ID">${b.id}</td>
-                        <td data-label="策略 ID"><code>${b.strategy}</code></td>
-                        <td data-label="运行日期">${b.run_date}</td>
-                        <td data-label="回测区间">${b.date_range}</td>
-                        <td data-label="总回报率" class="${b.total_return >= 0 ? 'up-val' : 'down-val'}">${b.total_return >= 0 ? '+' : ''}${b.total_return.toFixed(2)}%</td>
-                        <td data-label="年化收益率" class="${b.annual_return >= 0 ? 'up-val' : 'down-val'}">${b.annual_return >= 0 ? '+' : ''}${b.annual_return.toFixed(2)}%</td>
-                        <td data-label="最大回撤" class="down-val">${b.max_drawdown.toFixed(2)}%</td>
-                        <td data-label="胜率" style="color:#ffb86c;">${b.win_rate.toFixed(2)}%</td>
-                        <td data-label="操作" style="text-align: right;">
-                            <button class="btn btn-secondary" onclick="viewBacktestTrades(${b.id}, '${b.strategy}')"><i class="fa-solid fa-eye"></i> 详情</button>
-                        </td>
-                    </tr>
-                `).join('');
+                grid.innerHTML = filtered.map(b => {
+                    const retClass = b.total_return >= 0 ? 'up-val' : 'down-val';
+                    const retSign = b.total_return >= 0 ? '+' : '';
+                    const annSign = b.annual_return >= 0 ? '+' : '';
+                    const sharpeVal = (b.sharpe_ratio !== undefined && b.sharpe_ratio !== null) ? b.sharpe_ratio.toFixed(2) : '0.00';
+                    const stgName = b.strategy_name || b.strategy;
+
+                    return `
+                        <div class="stg-card">
+                            <div>
+                                <div class="stg-card-header">
+                                    <div class="stg-card-title">${stgName}</div>
+                                    <span class="stg-card-id" title="策略 ID">ID: ${b.strategy}</span>
+                                </div>
+
+                                <div style="font-size: 0.78rem; color: #8e95b2; margin-bottom: 0.75rem; display: flex; flex-direction: column; gap: 0.2rem;">
+                                    <div><i class="fa-regular fa-calendar"></i> 回测区间: <strong style="color: #f0f3fa;">${b.date_range}</strong></div>
+                                    <div><i class="fa-regular fa-clock"></i> 运行时间: ${b.run_date || '-'} (ID: #${b.id})</div>
+                                </div>
+
+                                <!-- Performance Indicators Grid -->
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; background: rgba(15, 17, 32, 0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.85rem;">
+                                    <div>
+                                        <div style="font-size: 0.72rem; color: #8e95b2;">累计回报率</div>
+                                        <div style="font-size: 1rem; font-weight: 700;" class="${retClass}">${retSign}${b.total_return.toFixed(2)}%</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.72rem; color: #8e95b2;">年化收益率</div>
+                                        <div style="font-size: 1rem; font-weight: 700;" class="${b.annual_return >= 0 ? 'up-val' : 'down-val'}">${annSign}${b.annual_return.toFixed(2)}%</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.72rem; color: #8e95b2;">夏普比率 (Sharpe)</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #00d2c4;">${sharpeVal}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.72rem; color: #8e95b2;">最大回撤 / 胜率</div>
+                                        <div style="font-size: 0.85rem; font-weight: 600;"><span class="down-val">${b.max_drawdown.toFixed(2)}%</span> / <span style="color:#ffb86c;">${b.win_rate.toFixed(1)}%</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="stg-card-footer" style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                <button class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="openBacktestDetailModal(${b.id})">
+                                    <i class="fa-solid fa-file-lines"></i> 详情
+                                </button>
+                                <button class="btn btn-danger" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="deleteBacktestAction(${b.id}, '${stgName.replace(/'/g, "\\'")}')">
+                                    <i class="fa-solid fa-trash"></i> 删除
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#df4b5e;">加载失败: ${e.message}</td></tr>`;
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #df4b5e;">加载失败: ${e.message}</div>`;
             }
         }
 
-        // 查看回测成交明细
-        async function viewBacktestTrades(backtestId, strategyCode) {
-            document.getElementById('backtestDetailCard').style.display = 'block';
-            document.getElementById('backtestDetailTitle').innerHTML = `<i class="fa-solid fa-chart-area"></i> 回测 ID #${backtestId} (${strategyCode}) 成交明细`;
-            const tbody = document.getElementById('backtestTradesBody');
+        // 删除特定回测记录 (清空库中相关关联数据)
+        async function deleteBacktestAction(backtestId, strategyName) {
+            if (!confirm(`⚠️ 确定要从数据库中彻底删除次回测记录（ID: #${backtestId} - ${strategyName}）及其包含的所有成交明细数据吗？此操作无法撤销。`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/backtests/${backtestId}`, { method: 'DELETE' });
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    alert(`✅ ${result.message}`);
+                    loadBacktests();
+                } else {
+                    alert(`❌ 删除失败: ${result.message}`);
+                }
+            } catch (e) {
+                alert(`❌ 网络异常: ${e.message}`);
+            }
+        }
+
+        // 弹框显示回测成交明细
+        async function openBacktestDetailModal(backtestId) {
+            const b = allBacktestRecords.find(item => item.id === backtestId);
+            if (!b) return;
+
+            document.getElementById('btModalStgName').textContent = b.strategy_name || b.strategy;
+            document.getElementById('btModalStgCode').textContent = b.strategy;
+            document.getElementById('btModalDateRange').textContent = b.date_range;
+
+            const totSign = b.total_return >= 0 ? '+' : '';
+            const annSign = b.annual_return >= 0 ? '+' : '';
+            document.getElementById('btModalTotalReturn').textContent = `${totSign}${b.total_return.toFixed(2)}%`;
+            document.getElementById('btModalTotalReturn').className = b.total_return >= 0 ? 'up-val' : 'down-val';
+
+            document.getElementById('btModalAnnualReturn').textContent = `${annSign}${b.annual_return.toFixed(2)}%`;
+            document.getElementById('btModalAnnualReturn').className = b.annual_return >= 0 ? 'up-val' : 'down-val';
+
+            const sharpeVal = (b.sharpe_ratio !== undefined && b.sharpe_ratio !== null) ? b.sharpe_ratio.toFixed(2) : '0.00';
+            document.getElementById('btModalSharpe').textContent = sharpeVal;
+            document.getElementById('btModalMaxDrawdown').textContent = `${b.max_drawdown.toFixed(2)}%`;
+            document.getElementById('btModalWinRate').textContent = `${b.win_rate.toFixed(2)}%`;
+
+            const tbody = document.getElementById('backtestModalTradesBody');
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #8e95b2;"><i class="fa-solid fa-spinner fa-spin"></i> 加载交易明细中...</td></tr>`;
+
+            document.getElementById('backtestDetailModal').classList.add('active');
 
             try {
                 const res = await fetch(`/api/backtest/trades/${backtestId}`);
@@ -1970,11 +2101,13 @@
                         <td data-label="原因" style="color:#8e95b2;">${t.reason || '-'}</td>
                     </tr>
                 `).join('');
-
-                document.getElementById('backtestDetailCard').scrollIntoView({ behavior: 'smooth' });
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#df4b5e;">加载失败</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#df4b5e;">加载成交明细失败: ${e.message}</td></tr>`;
             }
+        }
+
+        function closeBacktestDetailModal() {
+            document.getElementById('backtestDetailModal').classList.remove('active');
         }
 
         // 3. 策略推荐结果 (主从下钻: 行情时间+策略 履历卡片列表 -> 推荐详情)

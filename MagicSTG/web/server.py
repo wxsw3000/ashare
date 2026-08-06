@@ -614,38 +614,80 @@ def get_positions():
 
 @app.route('/api/backtests')
 def get_backtests():
-    """获取回测报告列表"""
+    """获取回测报告列表（支持策略名称关联及夏普比率展示）"""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
+
+        try:
+            cursor.execute("ALTER TABLE backtest_results ADD COLUMN sharpe_ratio decimal(12, 6) DEFAULT 0.00;")
+        except Exception:
+            pass
+
         cursor.execute("""
-            SELECT id, strategy, run_date, date_range_start, date_range_end,
-                   total_return, annual_return, max_drawdown, win_rate
-            FROM backtest_results
-            ORDER BY run_date DESC
-            LIMIT 20
+            SELECT 
+                r.id, 
+                r.strategy, 
+                COALESCE(s.name, r.strategy) AS strategy_name,
+                r.run_date, 
+                r.date_range_start, 
+                r.date_range_end,
+                r.total_return, 
+                r.annual_return, 
+                r.max_drawdown, 
+                r.win_rate,
+                COALESCE(r.sharpe_ratio, 0.0) AS sharpe_ratio,
+                r.initial_equity,
+                r.final_equity
+            FROM backtest_results r
+            LEFT JOIN custom_strategies s ON r.strategy = s.strategy_id
+            ORDER BY r.run_date DESC, r.id DESC
+            LIMIT 50
         """)
         rows = cursor.fetchall()
-        
+
         backtests = []
         for row in rows:
             backtests.append({
                 'id': row[0],
                 'strategy': row[1],
-                'run_date': row[2].strftime('%Y-%m-%d') if row[2] else None,
-                'date_range': f"{row[3].strftime('%Y-%m-%d') if row[3] else 'N/A'} ~ {row[4].strftime('%Y-%m-%d') if row[4] else 'N/A'}",
-                'total_return': float(row[5]) if row[5] else 0,
-                'annual_return': float(row[6]) if row[6] else 0,
-                'max_drawdown': float(row[7]) if row[7] else 0,
-                'win_rate': float(row[8]) if row[8] else 0
+                'strategy_name': row[2],
+                'run_date': row[3].strftime('%Y-%m-%d') if row[3] else None,
+                'date_range': f"{row[4].strftime('%Y-%m-%d') if row[4] else 'N/A'} ~ {row[5].strftime('%Y-%m-%d') if row[5] else 'N/A'}",
+                'total_return': float(row[6]) if row[6] is not None else 0.0,
+                'annual_return': float(row[7]) if row[7] is not None else 0.0,
+                'max_drawdown': float(row[8]) if row[8] is not None else 0.0,
+                'win_rate': float(row[9]) if row[9] is not None else 0.0,
+                'sharpe_ratio': float(row[10]) if row[10] is not None else 0.0,
+                'initial_equity': float(row[11]) if row[11] is not None else 0.0,
+                'final_equity': float(row[12]) if row[12] is not None else 0.0
             })
-        
+
         return jsonify({'status': 'success', 'data': backtests})
-        
+
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
     finally:
         conn.close()
+
+
+@app.route('/api/backtests/<int:backtest_id>', methods=['DELETE'])
+def delete_backtest(backtest_id):
+    """彻底删除特定回测记录及其全部关联成交明细数据"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM backtest_trades WHERE backtest_id = %s", (backtest_id,))
+        cursor.execute("DELETE FROM backtest_results WHERE id = %s", (backtest_id,))
+        conn.commit()
+        return jsonify({'status': 'success', 'message': f'回测记录 (ID: {backtest_id}) 及其关联明细已被删除'})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
 
 
 @app.route('/api/backtest/trades/<int:backtest_id>')
