@@ -269,5 +269,6 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 * **Single Task Concurrency Lock & Unified Terminal Console Modal**:
   * Implemented global execution lock `globalTaskRunning`. Attempts to start multiple concurrent strategy runs/backtests are guarded with a warning alert.
   * Unified Strategy Run and Backtest execution into `#executionLogModal`. Shows terminal-style real-time logs, date controls, and quick navigation buttons to view generated recommendation results or backtest equity charts.
-  * Committed and pushed to `main` branch ([`2d8ccb4`](https://github.com/wxsw3000/ashare/commit/2d8ccb4)).
+  * **Hotfix**: Cleared out a leftover duplicate code block in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) causing `SyntaxError: Unexpected token '}'`. Validated JS AST with Node.js parser (`100% VALID`). Committed and pushed to `main` ([`90b4439`](https://github.com/wxsw3000/ashare/commit/90b4439)).
+
 
