@@ -542,6 +542,38 @@ def get_recommendations():
         conn.close()
 
 
+@app.route('/api/recommendations', methods=['DELETE'])
+def delete_recommendations():
+    """彻底删除特定策略在特定日期的所有推荐结果记录"""
+    strategy = request.args.get('strategy', '').strip()
+    date = request.args.get('date', '').strip()
+
+    if not strategy or not date:
+        return jsonify({'status': 'error', 'message': '缺少必要参数: strategy 和 date'})
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM recommendations WHERE strategy = %s AND signal_date = %s",
+            (strategy, date)
+        )
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return jsonify({
+            'status': 'success',
+            'message': f'已成功从数据库中清除策略 {strategy} 在 {date} 的 {deleted_count} 条推荐记录',
+            'count': deleted_count
+        })
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+
 @app.route('/api/positions')
 def get_positions():
     """获取当前持仓数据"""

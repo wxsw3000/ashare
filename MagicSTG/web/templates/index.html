@@ -721,7 +721,12 @@
                         <button class="btn btn-secondary" onclick="backToRecRunsMaster()"><i class="fa-solid fa-arrow-left"></i> 返回履历列表</button>
                         <span id="recDetailTitleHeader" style="font-weight: 700; color: #00d2c4;">--</span>
                     </div>
-                    <span id="recDetailDateBadge" class="badge-tag badge-stock">--</span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                        <span id="recDetailDateBadge" class="badge-tag badge-stock">--</span>
+                        <button class="btn btn-danger" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="deleteCurrentRecRunFromDetail()">
+                            <i class="fa-solid fa-trash"></i> 删除该日推荐记录
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 详情方向过滤器 -->
@@ -2163,7 +2168,12 @@
                             </div>
                             <div class="run-card-footer">
                                 <span><i class="fa-regular fa-clock"></i> ${run.run_time || '-'}</span>
-                                <span class="run-card-action">查看推荐明细 <i class="fa-solid fa-chevron-right"></i></span>
+                                <div style="display: flex; gap: 0.4rem; align-items: center;">
+                                    <button class="btn btn-danger" style="padding: 0.2rem 0.55rem; font-size: 0.78rem;" onclick="event.stopPropagation(); deleteRecommendationRunAction('${run.signal_date}', '${run.strategy_id}', '${run.strategy_name}')">
+                                        <i class="fa-solid fa-trash"></i> 删除
+                                    </button>
+                                    <span class="run-card-action">查看明细 <i class="fa-solid fa-chevron-right"></i></span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -2174,9 +2184,17 @@
             }
         }
 
+        let currentDetailSignalDate = null;
+        let currentDetailStrategyId = null;
+        let currentDetailStrategyName = null;
+
         // 点击卡片下钻进入详情视图
         async function openRecRunDetail(signalDate, strategyId, strategyName, category) {
+            currentDetailSignalDate = signalDate;
+            currentDetailStrategyId = strategyId;
+            currentDetailStrategyName = strategyName;
             currentDetailCategory = category;
+
             document.getElementById('recRunsMasterContainer').style.display = 'none';
             document.getElementById('recRunDetailContainer').style.display = 'block';
 
@@ -2201,6 +2219,40 @@
 
             } catch (e) {
                 tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#df4b5e;">加载失败: ${e.message}</td></tr>`;
+            }
+        }
+
+        // 删除特定策略和特定日期的推荐结果记录
+        async function deleteRecommendationRunAction(signalDate, strategyId, strategyName) {
+            const displayName = strategyName || strategyId;
+            if (!confirm(`⚠️ 确定要从数据库中彻底删除策略『${displayName}』在 ${signalDate} 生成的所有推荐结果记录吗？此操作无法撤销。`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/recommendations?strategy=${encodeURIComponent(strategyId)}&date=${encodeURIComponent(signalDate)}`, {
+                    method: 'DELETE'
+                });
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    alert(`✅ ${result.message}`);
+                    if (document.getElementById('recRunDetailContainer').style.display !== 'none') {
+                        backToRecRunsMaster();
+                    } else {
+                        loadRecommendationRuns();
+                    }
+                } else {
+                    alert(`❌ 删除失败: ${result.message}`);
+                }
+            } catch (e) {
+                alert(`❌ 网络异常: ${e.message}`);
+            }
+        }
+
+        function deleteCurrentRecRunFromDetail() {
+            if (currentDetailSignalDate && currentDetailStrategyId) {
+                deleteRecommendationRunAction(currentDetailSignalDate, currentDetailStrategyId, currentDetailStrategyName);
             }
         }
 
