@@ -300,3 +300,17 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Embedded **Sharpe Ratio** (夏普比率) as a core metric alongside total return, annual return, max drawdown, and win rate.
   * Implemented 1-click **删除 (Delete)** button on each card with interactive confirmation modal.
   * Replaced bottom inline detail view with a dedicated **回测详细报告子界面弹窗 (`#backtestDetailModal`)**, displaying metrics summary and historical trade execution logs in a clean modal overlay.
+
+---
+
+## 16. Session Summary & Memory (2026-08-06) - Strategy Recommendation Results Deletion Feature
+
+* **Deletion REST API**:
+  * Added `DELETE /api/recommendations` endpoint in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
+  * Accepts `strategy` and `date` parameters, executing `DELETE FROM recommendations WHERE strategy = %s AND signal_date = %s` in TiDB Cloud.
+
+* **UI Integration (`index.html`)**:
+  * Added **删除 (Delete)** button on each 策略执行历史履历卡片 in `#recRunsMasterContainer` (`deleteRecommendationRunAction` with `event.stopPropagation()`).
+  * Added **删除该日推荐记录** button in `#recRunDetailContainer` header bar (`deleteCurrentRecRunFromDetail`).
+  * Triggers 1-click confirmation alert and updates Web UI dynamically upon successful deletion.
+
