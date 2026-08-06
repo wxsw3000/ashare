@@ -1407,7 +1407,16 @@
                 `;
 
                 consoleBox.textContent = `[System Ready] 已就绪！准备对策略 『${stg.name} (${stg.strategy_id})』 执行盘后选股推荐算法...\n` +
-                                         `[Notice] 点击上方【开始策略运行】按钮启动计算，引擎将连通 TiDB Cloud 智能抓取数据落库。\n`;
+                                         `[Notice] 正在检测系统行情最新有效交易日...\n`;
+
+                // 异步获取数据库中最新存在行情数据的日期填入
+                fetch('/api/latest-date').then(r => r.json()).then(res => {
+                    if (res.status === 'success' && res.date) {
+                        document.getElementById('runTargetDateInput').value = res.date;
+                        consoleBox.textContent = `[System Ready] 已就绪！自动匹配数据库最新有效行情日 (${res.date})\n` +
+                                                 `[Notice] 点击上方【开始策略运行】按钮启动计算，引擎将基于该日行情生成股票/可转债推荐数据。\n`;
+                    }
+                }).catch(() => {});
 
             } else {
                 titleElem.innerHTML = `<i class="fa-solid fa-flask"></i> 策略历史回测运行控制台 - ${stg.name}`;

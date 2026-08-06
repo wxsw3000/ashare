@@ -295,6 +295,22 @@ def delete_strategy(stg_id):
         conn.close()
 
 
+@app.route('/api/latest-date', methods=['GET'])
+def get_latest_date():
+    """获取数据库中最新的行情数据日期"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(date) FROM stock_kline_day")
+        row = cursor.fetchone()
+        latest_date = row[0].strftime('%Y-%m-%d') if row and row[0] else datetime.now().strftime('%Y-%m-%d')
+        return jsonify({'status': 'success', 'date': latest_date})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
 @app.route('/api/strategies/<int:stg_id>/run', methods=['POST'])
 def run_strategy(stg_id):
     """运行策略：计算指定日期的信号并落库推荐表。若当天已运行过且未指定 force 则弹窗提示。"""
