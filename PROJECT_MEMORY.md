@@ -270,5 +270,7 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Implemented global execution lock `globalTaskRunning`. Attempts to start multiple concurrent strategy runs/backtests are guarded with a warning alert.
   * Unified Strategy Run and Backtest execution into `#executionLogModal`. Shows terminal-style real-time logs, date controls, and quick navigation buttons to view generated recommendation results or backtest equity charts.
   * **Hotfix**: Cleared out a leftover duplicate code block in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) causing `SyntaxError: Unexpected token '}'`. Validated JS AST with Node.js parser (`100% VALID`). Committed and pushed to `main` ([`90b4439`](https://github.com/wxsw3000/ashare/commit/90b4439)).
+  * **Performance Fix (All-Stock Universe Timeout)**: In [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py), `load_all_data_db` was executing 53 sequential batch SQL queries when `stock_scope = 'all'` (~35-40s), exceeding Render's 30s reverse proxy timeout and returning 504 HTML error pages (`Unexpected token '<'`). Optimized `load_all_data_db` to execute a single vector query (`WHERE date >= %s AND date <= %s`), bringing query time down to ~12s. Committed and pushed to `main` ([`15b13ba`](https://github.com/wxsw3000/ashare/commit/15b13ba)).
+
 
 
