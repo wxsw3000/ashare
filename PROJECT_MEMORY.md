@@ -254,3 +254,20 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * **Root Cause 1 (Min Rows Filter)**: In [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py#L244), `load_all_data_db` had `if len(group) < 200: continue`. When calculating daily recommendations, the strategy runner requests a 90-day window (~60 trading days per stock). Because 60 < 200, `load_all_data_db` filtered out 100% of all stocks, resulting in `0 stocks data` and empty recommendations.
   * **Root Cause 2 (Tech Filter Defaults)**: `DynamicFactorStrategy` defaulted `enable_golden_cross` / `enable_volume_surge` to `True` even for fundamental-only strategies without technical configs, forcing single-day cross requirements.
   * **Fix**: Lowered row threshold in `load_all_data_db` from `200` to `20` (requiring only ~1 month for MA20), and made technical filter defaults (`enable_golden_cross`, etc.) default to `False` unless technical configs are present in strategy factors. Committed and pushed to `main` branch ([`b8adc58`](https://github.com/wxsw3000/ashare/commit/b8adc58)).
+
+---
+
+## 13. Session Summary & Memory (2026-08-06) - Strategy Management UI/UX Redesign
+
+* **Auto-generated Unique Strategy ID (`strategy_id`)**:
+  * Auto-generates format `stg_<timestamp>` (e.g. `stg_1722934823`) during strategy creation in both frontend [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) and backend [`server.py`](file:///E:/ashare/MagicSTG/web/server.py). Set `strategy_id` input field to read-only mode so users never need to manually invent or type IDs.
+
+* **Responsive Strategy Card Grid & Detail Modal Architecture**:
+  * Replaced strategy table in Strategy Management tab with responsive 3-column `.stg-card-grid` (adapts cleanly to 1 column on mobile devices).
+  * Removed direct "运行" (Run) and "回测" (Backtest) action buttons from outer strategy list. Action execution now strictly requires entering the **Strategy Detail Modal** (`#strategyDetailModal`).
+
+* **Single Task Concurrency Lock & Unified Terminal Console Modal**:
+  * Implemented global execution lock `globalTaskRunning`. Attempts to start multiple concurrent strategy runs/backtests are guarded with a warning alert.
+  * Unified Strategy Run and Backtest execution into `#executionLogModal`. Shows terminal-style real-time logs, date controls, and quick navigation buttons to view generated recommendation results or backtest equity charts.
+  * Committed and pushed to `main` branch ([`2d8ccb4`](https://github.com/wxsw3000/ashare/commit/2d8ccb4)).
+
