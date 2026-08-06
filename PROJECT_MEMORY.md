@@ -272,6 +272,16 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * **Auto-fill Latest Available Trade Date**: Added `/api/latest-date` endpoint in [`server.py`](file:///E:/ashare/MagicSTG/web/server.py) and frontend auto-fill in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) so the execution modal automatically defaults to the latest trade date with market data in TiDB Cloud (preventing 0-record runs caused by running today's date before 18:31 CST post-market data sync). Committed and pushed to `main` ([`4a516de`](https://github.com/wxsw3000/ashare/commit/4a516de)).
   * **Performance Fix (All-Stock Universe Timeout)**: In [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py), `load_all_data_db` was executing 53 sequential batch SQL queries when `stock_scope = 'all'` (~35-40s), exceeding Render's 30s reverse proxy timeout and returning 504 HTML error pages (`Unexpected token '<'`). Optimized `load_all_data_db` to execute a single vector query (`WHERE date >= %s AND date <= %s`), bringing query time down to ~12s. Committed and pushed to `main` ([`15b13ba`](https://github.com/wxsw3000/ashare/commit/15b13ba)).
 
+---
+
+## 14. Session Summary & Memory (2026-08-06) - Fix GitHub Actions Workflow `NameError: name 'List' is not defined`
+
+* **Issue**: GitHub Actions `update_ashare_data.yml` failed during `python -m MagicSTG.data.runner` with:
+  `NameError: name 'List' is not defined. Did you mean: 'list'?` in [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py#L60).
+* **Root Cause**: `List` type annotation was used in [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py) and [`MagicSTG/strategies/registry.py`](file:///E:/ashare/MagicSTG/strategies/registry.py) without importing `List` from `typing`.
+* **Fix**: Added `List` to `from typing import ...` in both [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py) and [`MagicSTG/strategies/registry.py`](file:///E:/ashare/MagicSTG/strategies/registry.py). Ran AST scanner across the entire codebase to confirm zero remaining missing typing imports. Tested `python -m MagicSTG.data.runner --help` successfully.
+
+
 
 
 

@@ -4,7 +4,7 @@ MagicSTG Strategy Registry & Factory
 Allows dynamic registration and instantiation of strategies.
 """
 
-from typing import Dict, Type, Optional, Any
+from typing import Dict, Type, Optional, Any, List
 from MagicSTG.strategies.base import BaseStrategy
 from MagicSTG.strategies.dynamic_factor import DynamicFactorStrategy
 from MagicSTG.strategies.cb_double_low import CBDoubleLowStrategy
