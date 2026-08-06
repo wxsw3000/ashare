@@ -37,3 +37,9 @@ class BaseStrategy(ABC):
     def update_config(self, new_config: Dict[str, Any]):
         """Dynamically update strategy parameters."""
         self.config.update(new_config)
+
+    def clear_cache(self):
+        """Clears temporary indicator and memory caches."""
+        if hasattr(self, '_indicator_cache') and self._indicator_cache:
+            self._indicator_cache.clear()
+
