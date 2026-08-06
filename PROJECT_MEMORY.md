@@ -314,3 +314,16 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Added **删除该日推荐记录** button in `#recRunDetailContainer` header bar (`deleteCurrentRecRunFromDetail`).
   * Triggers 1-click confirmation alert and updates Web UI dynamically upon successful deletion.
 
+---
+
+## 17. Session Summary & Memory (2026-08-06) - Fix RAM Leak in Legacy & Dynamic Strategies Indicator Caching
+
+* **Root Cause Analysis (Render OOM on `price_strategy`)**:
+  * Legacy strategies (`price_strategy`, `pe_strategy`, `roe_strategy`) and `DynamicFactorStrategy` stored computed `df.copy()` objects indefinitely inside `self._indicator_cache` indexed by `id(df)`.
+  * When executing strategies with `stock_scope: 'all'` (scanning 5,300 A-share stocks), 5,300 full DataFrames were permanently pinned in Python instance memory.
+  * In `runner.py`, `stock_data` and strategy instances were not freed after recommendation signal generation, causing Render's 512MB RAM worker limit to be breached.
+
+* **Fixes Implemented**:
+  * Added `clear_cache()` to [`MagicSTG/strategies/dynamic_factor.py`](file:///E:/ashare/MagicSTG/strategies/dynamic_factor.py), [`price_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/price_strategy.py), [`pe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/pe_strategy.py), and [`roe_strategy.py`](file:///E:/ashare/MagicSTG/strategies/legacy/roe_strategy.py).
+  * Wrapped `get_signals` processing loops in `try-finally` blocks to guarantee `self.clear_cache()` and `gc.collect()` run immediately after signal generation.
+  * Added explicit `strategy.clear_cache()`, `del stock_data`, and `gc.collect()` in `run_dynamic_factor_recommendation` in [`MagicSTG/strategies/runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py) and Flask `run_strategy` route in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
