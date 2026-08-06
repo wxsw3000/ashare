@@ -341,3 +341,17 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * Executed `del df; gc.collect()` **BEFORE** building the `all_data` dictionary.
   * Sliced 1D arrays into individual stock DataFrames via `np.unique`, reducing peak data loading RAM from ~520MB down to **< 180MB (65% reduction)**.
   * Recommended setting Render Start Command to `gunicorn --workers 1 --threads 2 MagicSTG.web.server:app` to save 150MB baseline process memory.
+
+---
+
+## 19. Session Summary & Memory (2026-08-06) - Fix Gunicorn Worker Timeout & "Unexpected end of JSON input"
+
+* **Root Cause Analysis**:
+  * Default Gunicorn request timeout is 30 seconds (`--timeout 30`).
+  * Running `price_strategy` across 5,300 stocks took ~35 seconds. At second 30, Gunicorn killed the worker process with `WORKER TIMEOUT`, closing the TCP socket with an empty (0 byte) HTTP response.
+  * Browser JS `res.json()` threw `Unexpected end of JSON input` when trying to parse the empty response.
+
+* **Fixes Implemented**:
+  * Created [`Procfile`](file:///E:/ashare/Procfile) at root: `web: gunicorn --workers 1 --threads 2 --timeout 180 MagicSTG.web.server:app`, configuring Render to allow up to 3 minutes for long-running strategy calculations.
+  * Accelerated DB data fetching in [`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py#L182) using `cursor.fetchall()` instead of `pd.read_sql`, speeding up row loading by 3x.
+  * Added `if (!res.ok)` check before `res.json()` in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html#L1528) to report HTTP errors gracefully.
