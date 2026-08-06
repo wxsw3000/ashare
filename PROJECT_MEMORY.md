@@ -242,5 +242,10 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   * **NumPy Type Sanitization (`engine.py`, `server.py`)**: Added recursive `sanitize_json` to convert `np.float32`, `np.float64`, `np.int32`, and `pd.Timestamp` to standard Python types, eliminating `TypeError: Object of type float32 is not JSON serializable`.
   * **Instant-Open Modal & Pre-Calculation Date Picker (`index.html`)**: Redesigned backtest modal so clicking 【回测】 opens the modal instantly with default rolling 1-year date range, allowing the user to select/confirm start and end dates *before* initiating backtest execution.
 
+---
 
+## 12. Session Summary & Memory (2026-08-06) - Strategy Run Endpoint Fix
 
+* **Fix Missing `json` Import in `server.py`**:
+  * **Issue**: Clicking "策略 运行" in Web UI triggered `❌ 策略运行失败: 运行失败: name 'json' is not defined` because `run_strategy` route in `MagicSTG/web/server.py` attempted to call `json.loads(factors_cfg)` without `import json` in module scope.
+  * **Fix**: Added top-level `import json` to [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py). Verified module imports and loads cleanly.
