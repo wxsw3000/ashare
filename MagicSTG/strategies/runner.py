@@ -18,6 +18,7 @@ if PROJECT_ROOT not in sys.path:
 
 from MagicSTG.core.db import (
     get_connection,
+    ensure_connection_alive,
     load_cb_data_db,
     load_all_data_db
 )
@@ -183,6 +184,8 @@ def run_single_strategy_recommendation(strategy_id: str, target_date: str, force
         else:
             success = run_dynamic_factor_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
 
+        conn = ensure_connection_alive(conn)
+        cursor = conn.cursor()
         cursor.execute("""
             UPDATE update_progress
             SET status = %s, completed_at = NOW()
@@ -195,6 +198,7 @@ def run_single_strategy_recommendation(strategy_id: str, target_date: str, force
         print(f"[Runner ERROR] ❌ 策略 {strategy_id} 执行失败: {e}", flush=True)
         if conn:
             try:
+                conn = ensure_connection_alive(conn)
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE update_progress
