@@ -101,7 +101,7 @@ class DynamicFactorStrategy(BaseStrategy):
             where_clause = ""
             params = None
 
-            if target_codes and len(target_codes) > 0:
+            if target_codes and 0 < len(target_codes) <= 1000:
                 db_codes = [c.replace('.', '_') for c in target_codes] + [c.replace('_', '.') for c in target_codes]
                 unique_codes = list(set(db_codes))
                 format_strings = ','.join(['%s'] * len(unique_codes))

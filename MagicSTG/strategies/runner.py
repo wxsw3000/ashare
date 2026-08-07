@@ -143,6 +143,73 @@ def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dyna
 
 
 
+def run_single_strategy_recommendation(strategy_id: str, target_date: str, force: bool = False) -> bool:
+    """运行单个具体策略推荐，并在 update_progress 表记录状态"""
+    import json
+    print(f"\n[Runner] 启动策略推荐计算: {strategy_id}, 日期: {target_date}, force: {force}", flush=True)
+    conn = None
+    task_name = f"strategy_{strategy_id}"
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # 更新 update_progress 任务为 running
+        cursor.execute("""
+            INSERT INTO update_progress (task_date, script_name, status, started_at, error_msg)
+            VALUES (%s, %s, 'running', NOW(), NULL)
+            ON DUPLICATE KEY UPDATE status = 'running', started_at = NOW(), error_msg = NULL
+        """, (target_date, task_name))
+        conn.commit()
+
+        # 读取策略配置
+        stg_code = strategy_id
+        parsed_cfg = {}
+        category = 'stock'
+        
+        cursor.execute("SELECT strategy_id, name, category, factors_config FROM custom_strategies WHERE strategy_id = %s OR id = %s", (strategy_id, int(strategy_id) if strategy_id.isdigit() else -1))
+        row = cursor.fetchone()
+
+        if row:
+            stg_code, stg_name, category, factors_cfg = row[0], row[1], row[2], row[3]
+            parsed_cfg = json.loads(factors_cfg) if isinstance(factors_cfg, str) else (factors_cfg or {})
+        elif strategy_id == 'cb_double_low':
+            category = 'convertible_bond'
+        else:
+            category = 'stock'
+
+        success = False
+        if category == 'convertible_bond' or stg_code == 'cb_double_low':
+            success = run_cb_double_low_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
+        else:
+            success = run_dynamic_factor_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
+
+        cursor.execute("""
+            UPDATE update_progress
+            SET status = %s, completed_at = NOW()
+            WHERE task_date = %s AND script_name = %s
+        """, ('success' if success else 'failed', target_date, task_name))
+        conn.commit()
+        return success
+
+    except Exception as e:
+        print(f"[Runner ERROR] ❌ 策略 {strategy_id} 执行失败: {e}", flush=True)
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE update_progress
+                    SET status = 'failed', completed_at = NOW(), error_msg = %s
+                    WHERE task_date = %s AND script_name = %s
+                """, (str(e), target_date, task_name))
+                conn.commit()
+            except Exception:
+                pass
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
 def run_all_strategy_recommendations(target_date: Optional[str] = None):
     """
     运行所有激活策略并存储盘后推荐结果
@@ -167,5 +234,22 @@ def run_all_strategy_recommendations(target_date: Optional[str] = None):
 
 
 if __name__ == '__main__':
-    target_dt = sys.argv[1] if len(sys.argv) > 1 else None
-    run_all_strategy_recommendations(target_dt)
+    import argparse
+    parser = argparse.ArgumentParser(description="MagicSTG Strategy Recommendation Runner")
+    parser.add_argument('--strategy', type=str, default='all', help="Strategy ID (e.g. pe_strategy, cb_double_low, all)")
+    parser.add_argument('--date', type=str, default=None, help="Target date YYYY-MM-DD")
+    parser.add_argument('--force', action='store_true', help="Force re-run")
+
+    args, unknown = parser.parse_known_args()
+
+    # Position argument backward compatibility
+    if not args.date and len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
+        args.date = sys.argv[1]
+
+    target_dt = args.date or get_target_date()
+
+    if args.strategy == 'all':
+        run_all_strategy_recommendations(target_dt)
+    else:
+        run_single_strategy_recommendation(args.strategy, target_dt, force=args.force)
+

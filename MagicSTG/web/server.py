@@ -313,7 +313,9 @@ def get_latest_date():
 
 @app.route('/api/strategies/<int:stg_id>/run', methods=['POST'])
 def run_strategy(stg_id):
-    """运行策略：计算指定日期的信号并落库推荐表。若当天已运行过且未指定 force 则弹窗提示。"""
+    """异步触发策略计算：支持调用 GitHub Actions 算力引擎或启动后台线程计算，在0.1秒内极速响应避线超时。"""
+    import threading
+    import urllib.request
     data = request.json or {}
     target_date = data.get('date', None)
     force = data.get('force', False)
@@ -346,38 +348,128 @@ def run_strategy(stg_id):
                 'count': cnt
             })
 
-        # 触发策略引擎进行实时推荐计算
-        from MagicSTG.strategies.runner import (
-            run_cb_double_low_recommendation,
-            run_dynamic_factor_recommendation
-        )
+        gh_token = os.getenv("GH_PAT") or os.getenv("GITHUB_TOKEN")
+        gh_repo = os.getenv("GITHUB_REPOSITORY", "wxsw3000/ashare")
 
-        success = False
-        parsed_cfg = json.loads(factors_cfg) if isinstance(factors_cfg, str) else (factors_cfg or {})
-        if category == 'convertible_bond' or stg_code == 'cb_double_low':
-            success = run_cb_double_low_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
-        else:
-            success = run_dynamic_factor_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
+        task_name = f"strategy_{stg_code}"
+        cursor.execute("""
+            INSERT INTO update_progress (task_date, script_name, status, started_at, error_msg)
+            VALUES (%s, %s, 'queued', NOW(), NULL)
+            ON DUPLICATE KEY UPDATE status = 'queued', started_at = NOW(), error_msg = NULL
+        """, (target_date, task_name))
+        conn.commit()
 
-        if success:
-            cursor.execute("SELECT COUNT(*) FROM recommendations WHERE strategy = %s AND signal_date = %s", (stg_code, target_date))
-            new_cnt = cursor.fetchone()[0]
-            return jsonify({
-                'status': 'success',
-                'message': f"策略『{stg_name}』计算完成！生成 {new_cnt} 条推荐记录。",
-                'date': target_date,
-                'count': new_cnt
-            })
-        else:
-            return jsonify({'status': 'error', 'message': '策略运行计算未生成有效推荐数据'})
+        engine_type = "local_async"
+        if gh_token:
+            try:
+                url = f"https://api.github.com/repos/{gh_repo}/dispatches"
+                payload = json.dumps({
+                    "event_type": "run-strategy",
+                    "client_payload": {
+                        "strategy_id": stg_code,
+                        "target_date": target_date,
+                        "force": force
+                    }
+                }).encode('utf-8')
+                req = urllib.request.Request(url, data=payload, headers={
+                    "Authorization": f"token {gh_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "MagicSTG-Server"
+                })
+                with urllib.request.urlopen(req) as resp:
+                    if resp.status in (200, 204):
+                        engine_type = "github_actions"
+            except Exception as gh_err:
+                print(f"[RunStrategy] ⚠️ 触发 GitHub Actions 异常，回退至本地后台线程: {gh_err}", flush=True)
+
+        if engine_type == "local_async":
+            from MagicSTG.strategies.runner import run_single_strategy_recommendation
+            t = threading.Thread(
+                target=run_single_strategy_recommendation,
+                args=(stg_code, target_date, force),
+                daemon=True
+            )
+            t.start()
+
+        msg = "调度请求已成功提交至 GitHub Actions 算力引擎！" if engine_type == "github_actions" else "已启动后台计算线程，策略正在全市场分批扫描..."
+        return jsonify({
+            'status': 'processing',
+            'engine': engine_type,
+            'message': msg,
+            'date': target_date,
+            'stg_code': stg_code,
+            'stg_name': stg_name
+        })
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'运行失败: {str(e)}'})
+        return jsonify({'status': 'error', 'message': f'调度失败: {str(e)}'})
     finally:
         if conn:
             conn.close()
-        import gc
-        gc.collect()
+
+
+@app.route('/api/strategies/<int:stg_id>/task-status', methods=['GET'])
+def get_strategy_task_status(stg_id):
+    """轮询检测策略运行进度与数据落库状态"""
+    target_date = request.args.get('date', None)
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT strategy_id, name FROM custom_strategies WHERE id = %s", (stg_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'status': 'error', 'message': '策略不存在'})
+
+        stg_code, stg_name = row[0], row[1]
+        task_name = f"strategy_{stg_code}"
+
+        if not target_date:
+            cursor.execute("SELECT MAX(date) FROM stock_kline_day")
+            max_row = cursor.fetchone()
+            target_date = max_row[0].strftime('%Y-%m-%d') if max_row and max_row[0] else datetime.now().strftime('%Y-%m-%d')
+
+        cursor.execute("SELECT status, error_msg FROM update_progress WHERE task_date = %s AND script_name = %s", (target_date, task_name))
+        p_row = cursor.fetchone()
+
+        cursor.execute("SELECT COUNT(*) FROM recommendations WHERE strategy = %s AND signal_date = %s", (stg_code, target_date))
+        rec_cnt = cursor.fetchone()[0]
+
+        if rec_cnt > 0:
+            return jsonify({
+                'status': 'success',
+                'completed': True,
+                'count': rec_cnt,
+                'date': target_date,
+                'message': f"策略『{stg_name}』计算完成！生成 {rec_cnt} 条推荐记录。"
+            })
+
+        if p_row:
+            p_status, p_err = p_row[0], p_row[1]
+            if p_status == 'failed':
+                return jsonify({
+                    'status': 'error',
+                    'completed': True,
+                    'message': f"计算中断或失败: {p_err or '未生成有效推荐数据'}"
+                })
+            else:
+                return jsonify({
+                    'status': p_status,
+                    'completed': False,
+                    'message': f"离线算力引擎正在处理中 (状态: {p_status})..."
+                })
+
+        return jsonify({
+            'status': 'running',
+            'completed': False,
+            'message': '任务排队等待中...'
+        })
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'completed': False, 'message': str(e)})
+    finally:
+        if conn:
+            conn.close()
 
 
 

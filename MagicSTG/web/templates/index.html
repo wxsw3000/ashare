@@ -1492,7 +1492,7 @@
             document.getElementById('executionLogModal').classList.remove('active');
         }
 
-        // 统一控制台下的 【策略运行】 触发
+        // 统一控制台下的 【策略运行】 触发 (异步调度 + 轮询进度)
         async function startRunStrategyExecution() {
             if (globalTaskRunning) {
                 alert(`⚠️ 当前已有策略任务在运行中（${currentTaskName}）！`);
@@ -1510,14 +1510,13 @@
             const runBtn = document.getElementById('btnStartExecAction');
             if (runBtn) {
                 runBtn.disabled = true;
-                runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 策略运行计算中...`;
+                runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 策略运行调度中...`;
             }
 
             const consoleBox = document.getElementById('logConsoleOutput');
-            consoleBox.textContent = `[System Init] 启动策略 『${stg.name} (${stg.strategy_id})』 盘后推荐选股引擎...\n` +
+            consoleBox.textContent = `[System Init] 启动策略 『${stg.name} (${stg.strategy_id})』 盘后选股引擎...\n` +
                                      `[Target Date] 行情目标日: ${targetDate} (强制重新计算: ${force})\n` +
-                                     `[DB Engine] 正在从 TiDB Cloud 加载全市场行情与衍生因子数据...\n` +
-                                     `[Executing...] 正在执行多维因子筛选、指标风控与评分排序，请稍候...\n`;
+                                     `[Dispatching...] 正在向离线算力引擎提交策略运行任务...\n`;
 
             try {
                 const res = await fetch(`/api/strategies/${stg.id}/run`, {
@@ -1536,27 +1535,75 @@
                 if (result.status === 'already_run') {
                     consoleBox.textContent += `\n[NOTICE] ${result.message}\n` +
                                              `[Action Required] 若需覆盖已有数据重新计算，请勾选【强制重新计算】后再次点击运行。\n`;
-                } else if (result.status === 'success') {
-                    consoleBox.textContent += `\n================== 策略运行结果 ==================\n` +
-                                             `🎉 计算成功完成！生成 ${result.count} 条最新选股/可转债推荐记录。\n` +
-                                             `行情数据日期: ${result.date}\n` +
-                                             `=================================================\n`;
-
-                    const goToBtn = document.getElementById('btnGoToResultTab');
-                    if (goToBtn) {
-                        goToBtn.style.display = 'inline-flex';
-                        goToBtn.onclick = () => {
-                            closeExecutionLogModal();
-                            switchMainTab('recommendations');
-                        };
+                    globalTaskRunning = false;
+                    currentTaskName = '';
+                    if (runBtn) {
+                        runBtn.disabled = false;
+                        runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始策略运行 (选股/推荐)`;
                     }
-                    if (typeof loadStrategies === 'function') loadStrategies();
+                    return;
+                } else if (result.status === 'processing') {
+                    const engineLabel = result.engine === 'github_actions' ? 'GitHub Actions (7GB 算力引擎)' : '后台计算线程';
+                    consoleBox.textContent += `\n[Status 200 OK] ⚡ 0.1s 秒级响应成功！\n` +
+                                             `[Engine Hub] 算力引擎: ${engineLabel}\n` +
+                                             `[Notice] ${result.message}\n` +
+                                             `-------------------------------------------------\n` +
+                                             `[Monitor] 正在持续监测数据落库状态 (每 3 秒自动轮询)...\n`;
+
+                    let pollCount = 0;
+                    const pollInterval = setInterval(async () => {
+                        pollCount++;
+                        try {
+                            const statusRes = await fetch(`/api/strategies/${stg.id}/task-status?date=${targetDate}`);
+                            const statusData = await statusRes.json();
+
+                            if (statusData.completed) {
+                                clearInterval(pollInterval);
+                                globalTaskRunning = false;
+                                currentTaskName = '';
+                                if (runBtn) {
+                                    runBtn.disabled = false;
+                                    runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始策略运行 (选股/推荐)`;
+                                }
+
+                                if (statusData.status === 'success') {
+                                    consoleBox.textContent += `\n================== 策略运行结果 ==================\n` +
+                                                             `🎉 计算成功完成！生成 ${statusData.count} 条最新选股/可转债推荐记录。\n` +
+                                                             `行情数据日期: ${statusData.date}\n` +
+                                                             `=================================================\n`;
+
+                                    const goToBtn = document.getElementById('btnGoToResultTab');
+                                    if (goToBtn) {
+                                        goToBtn.style.display = 'inline-flex';
+                                        goToBtn.onclick = () => {
+                                            closeExecutionLogModal();
+                                            switchMainTab('recommendations');
+                                        };
+                                    }
+                                    if (typeof loadStrategies === 'function') loadStrategies();
+                                } else {
+                                    consoleBox.textContent += `\n❌ [ERROR] 策略运行中途异常: ${statusData.message}\n`;
+                                }
+                            } else {
+                                consoleBox.textContent += `[Progress ${pollCount * 3}s] ⚙️ 算力引擎计算中... (状态: ${statusData.status})\n`;
+                                consoleBox.scrollTop = consoleBox.scrollHeight;
+                            }
+                        } catch (pollErr) {
+                            consoleBox.textContent += `[Progress ${pollCount * 3}s] ⚠️ 轮询状态探针检测中: ${pollErr.message}\n`;
+                        }
+                    }, 3000);
+
                 } else {
-                    consoleBox.textContent += `\n❌ [ERROR] 策略运行失败: ${result.message}\n`;
+                    consoleBox.textContent += `\n❌ [ERROR] 策略调度失败: ${result.message}\n`;
+                    globalTaskRunning = false;
+                    currentTaskName = '';
+                    if (runBtn) {
+                        runBtn.disabled = false;
+                        runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始策略运行 (选股/推荐)`;
+                    }
                 }
             } catch (e) {
                 consoleBox.textContent += `\n❌ [NET ERROR] 网络异常: ${e.message}\n`;
-            } finally {
                 globalTaskRunning = false;
                 currentTaskName = '';
                 if (runBtn) {
