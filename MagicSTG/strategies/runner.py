@@ -75,27 +75,59 @@ def run_cb_double_low_recommendation(target_date: str, strategy_id: str = 'cb_do
 
 
 def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dynamic_factor', config: Optional[Dict[str, Any]] = None) -> bool:
-    """运行动态多因子股票策略推荐并落库"""
+    """运行动态多因子股票策略推荐并落库（分批加载与计算，低内存开销）"""
+    import gc
     print(f"\n  [Strategy] 运行动态多因子股票策略推荐 ({strategy_id}, 日期: {target_date})...", flush=True)
-    stock_data = None
     strategy = None
     try:
         start_date = (pd.to_datetime(target_date) - pd.Timedelta(days=90)).strftime('%Y-%m-%d')
         limit_csi300 = (config and config.get('stock_scope') == 'csi300')
-        stock_data = load_all_data_db(start_date=start_date, end_date=target_date, limit_to_csi300=limit_csi300)
 
-        if not stock_data:
-            print(f"  [Strategy] ⚠️ {target_date} 缺少股票数据，跳过多因子策略信号计算。")
+        from MagicSTG.core.db import load_all_stock_codes_db
+        all_stock_codes = load_all_stock_codes_db(limit_to_csi300=limit_csi300)
+        if not all_stock_codes:
+            print(f"  [Strategy] ⚠️ {target_date} 查无股票代码表，跳过策略推荐。")
             return False
 
         strategy = StrategyRegistry.get('dynamic_factor', config=config)
-        buy_signals, sell_signals = strategy.generate_signals(
-            date=pd.to_datetime(target_date),
-            data=stock_data,
-            exclude_codes=[]
-        )
 
-        save_recommendations(strategy_id, buy_signals, sell_signals, target_date)
+        # 提前一次性预加载财报数据索引（轻量级）
+        if hasattr(strategy, 'load_financial_data'):
+            strategy.load_financial_data(target_codes=all_stock_codes)
+
+        batch_size = 300
+        batches = [all_stock_codes[i:i+batch_size] for i in range(0, len(all_stock_codes), batch_size)]
+        print(f"  [Strategy] 启动分批加载与计算: {len(all_stock_codes)} 支股票划分为 {len(batches)} 个批次...", flush=True)
+
+        all_buy_candidates = []
+        all_sell_signals = []
+
+        for idx, b_codes in enumerate(batches):
+            b_data = load_all_data_db(start_date=start_date, end_date=target_date, target_codes=b_codes)
+            if not b_data:
+                continue
+
+            batch_buys, batch_sells = strategy.generate_signals(
+                date=pd.to_datetime(target_date),
+                data=b_data,
+                exclude_codes=[]
+            )
+            if batch_buys:
+                all_buy_candidates.extend(batch_buys)
+            if batch_sells:
+                all_sell_signals.extend(batch_sells)
+
+            del b_data
+            gc.collect()
+
+        # 针对全局批次筛选出的符合条件候选标的，按主因子进行排序并截取 Top N 推荐
+        all_buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=strategy.reverse)
+        top_n = config.get('top_n', 10) if config else 10
+        if top_n and len(all_buy_candidates) > top_n:
+            all_buy_candidates = all_buy_candidates[:top_n]
+
+        print(f"  [Strategy] 所有批次计算完成！生成 {len(all_buy_candidates)} 条买入信号, {len(all_sell_signals)} 条卖出信号。", flush=True)
+        save_recommendations(strategy_id, all_buy_candidates, all_sell_signals, target_date)
         update_strategy_checkpoint(strategy_id, target_date)
         return True
 
@@ -107,9 +139,6 @@ def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dyna
     finally:
         if strategy and hasattr(strategy, 'clear_cache'):
             strategy.clear_cache()
-        if stock_data:
-            del stock_data
-        import gc
         gc.collect()
 
 

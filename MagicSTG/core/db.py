@@ -170,23 +170,35 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
         else:
-            print(f"  [DB] Fetching all stock daily K-lines for date range: {min_date_str} to {max_date_str}...", flush=True)
-            query = """
-            SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
-            FROM stock_kline_day
-            WHERE date >= %s
-            """
-            params = [min_date_str]
-            if max_date_str is not None:
-                query += " AND date <= %s"
-                params.append(max_date_str)
-            query += " ORDER BY date ASC"
+            print(f"  [DB] Fetching all stock daily K-lines for date range: {min_date_str} to {max_date_str} in batches...", flush=True)
+            db_codes = load_all_stock_codes_db(limit_to_csi300=False)
+            batch_size = 200
+            all_dfs = []
+            for i in range(0, len(db_codes), batch_size):
+                batch = db_codes[i:i+batch_size]
+                format_strings = ','.join(['%s'] * len(batch))
+                query = f"""
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                FROM stock_kline_day
+                WHERE code IN ({format_strings}) AND date >= %s
+                """
+                params = batch + [min_date_str]
+                if max_date_str is not None:
+                    query += " AND date <= %s"
+                    params.append(max_date_str)
+                query += " ORDER BY date ASC"
 
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            df = pd.DataFrame(rows, columns=['stock_code', 'date', 'open', 'close', 'high', 'low', 'volume', 'pe_ttm'])
-            del rows
+                try:
+                    conn = ensure_connection_alive(conn)
+                    batch_df = pd.read_sql(query, conn, params=params)
+                except (pymysql.err.OperationalError, pymysql.err.InterfaceError):
+                    conn = get_connection()
+                    batch_df = pd.read_sql(query, conn, params=params)
+
+                if not batch_df.empty:
+                    all_dfs.append(batch_df)
+
+            df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
 
         if df is None or df.empty:

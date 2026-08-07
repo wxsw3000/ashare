@@ -319,15 +319,16 @@ class DynamicFactorStrategy(BaseStrategy):
             buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=self.reverse)
             return buy_candidates, sell_signals
         finally:
-            self.clear_cache()
+            self.clear_cache(clear_financial=False)
 
-    def clear_cache(self):
-        """Clears all in-memory indicator and financial caches to free RAM immediately."""
+    def clear_cache(self, clear_financial: bool = True):
+        """Clears in-memory indicator and financial caches to free RAM."""
         if hasattr(self, '_indicator_cache') and self._indicator_cache:
             self._indicator_cache.clear()
-        self.financial_data = None
-        if hasattr(self, '_financial_data_cached'):
-            self._financial_data_cached = None
+        if clear_financial:
+            self.financial_data = None
+            if hasattr(self, '_financial_data_cached'):
+                self._financial_data_cached = None
         gc.collect()
 
     def check_sell_signal(self, df: pd.DataFrame, date: pd.Timestamp) -> bool:
