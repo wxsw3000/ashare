@@ -1,0 +1,38 @@
+MagicSTG 量化选股与回测系统 - 开发日志 (2026-08-08)
+================================================================================
+
+1. 数据更新流水线分批切片与断连保护 (update_stock_basic & update_stock_industry)
+--------------------------------------------------------------------------------
+- 根因排查：GitHub Actions 盘后数据拉取中，update_stock_basic.py 因一次性处理 8,885 条全量证券记录并执行单条 executemany() 超大 SQL 报文，超出了 TiDB Cloud 边缘网关 packet 传输限制，引发 pymysql.err.OperationalError (2013, 'Lost connection to MySQL server during query')，后续 conn.rollback() 引发二次异常。
+- 修复落地：
+  * 将 update_stock_basic.py 与 update_stock_industry.py 重构为 batch_size = 500 的分批切片提交机制。
+  * 在每个批次写入前强制执行 conn = ensure_connection_alive(conn) 进行连接保活与自动重连。
+  * 增加安全的 rollback() 和 close() 容错保护。
+
+2. 僵死任务清理与双重防卡死熔断机制 (server.py & index.html)
+--------------------------------------------------------------------------------
+- 根因排查：此前在 Render 本地触发的线程因 512MB RAM 被 Linux 内核杀掉，导致 update_progress 表中 status 残留为 'running' 成为僵死记录。前端 index.html 探针不断查询获得 running，造成无限轮询刷屏。
+- 修复落地：
+  * 清理了 TiDB Cloud 数据库中残留的 running 僵尸记录。
+  * server.py (/api/strategies/<id>/task-status)：增加 5 分钟超时自动判定熔断逻辑。超过 300 秒且仍为 running 的任务自动置为 failed 并返回友好的超时提示。
+  * index.html：探针设置 3 分钟 (60 次轮询) 硬性上限，超时自动停止探针并恢复控制台按钮状态。
+  * server.py (/api/strategies/<id>/run)：取消静默降级为 Render 本地线程的代码，改为显式校验 GH_PAT 环境变量。缺少 GH_PAT 时直接 0.01 秒弹窗阻止在线重算，引导配置 GH_PAT 或使用工作流自动运行，彻底杜绝 Render 本地爆内存。
+
+3. 【工作流策略配置】独立管理页面上线 (index.html & server.py)
+--------------------------------------------------------------------------------
+- 数据库扩展：custom_strategies 表增加 is_active TINYINT(1) DEFAULT 1 字段。
+- 网页 UI 升级：
+  * 顶部主导航增加 🤖 工作流策略配置 专属 Tab 页 (#sectionWorkflow)。
+  * 策略卡片增加高颜值的 Toggle Switch 切换开关，支持一键开/关策略是否加入每日 18:31 盘后工作流推演。
+  * 新增 POST /api/strategies/<id>/toggle-active 路由，实现开关秒级响应落库。
+
+4. 每日自动化选股引擎与 HTML 邮件推送系统 (runner.py & email_notifier.py)
+--------------------------------------------------------------------------------
+- 工作流引擎重构：MagicSTG/strategies/runner.py 中 run_all_strategy_recommendations() 改为自动检索所有 is_active = 1 的策略，在每日盘后数据更新完毕后自动进行全市场选股并落库。
+- HTML 邮件推送模块：新建 MagicSTG/core/email_notifier.py，选股完成后自动格式化生成包含标的代码、买卖动作、价格、因子指标及买入原因的精美 HTML 日报，通过 SMTP 发送到用户的指定邮箱。
+- Actions 配置接入：update_ashare_data.yml 接入 SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, NOTIFY_EMAIL 环境变量映射。
+
+5. 联调与效果验证
+--------------------------------------------------------------------------------
+- 用户在 Render 控制台成功配置 GH_PAT 环境变量。
+- 确认并验证了离线算力引擎机制：网页端触发调度后，即便关闭浏览器/页面，GitHub Actions 离线算力仍会在云端 100% 独立稳定执行并完成落库。
