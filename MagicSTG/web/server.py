@@ -136,7 +136,7 @@ def get_strategies():
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        query = "SELECT id, strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, created_at, updated_at FROM custom_strategies WHERE 1=1"
+        query = "SELECT id, strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, created_at, updated_at, is_active FROM custom_strategies WHERE 1=1"
         params = []
 
         if search:
@@ -160,6 +160,8 @@ def get_strategies():
                 except Exception:
                     pass
 
+            is_act = bool(r[10]) if len(r) > 10 and r[10] is not None else True
+
             strategies.append({
                 'id': r[0],
                 'strategy_id': r[1],
@@ -170,7 +172,8 @@ def get_strategies():
                 'buy_signals_rule': r[6],
                 'sell_signals_rule': r[7],
                 'created_at': r[8].strftime('%Y-%m-%d %H:%M:%S') if r[8] else None,
-                'updated_at': r[9].strftime('%Y-%m-%d %H:%M:%S') if r[9] else None
+                'updated_at': r[9].strftime('%Y-%m-%d %H:%M:%S') if r[9] else None,
+                'is_active': is_act
             })
 
         return jsonify({'status': 'success', 'data': strategies})
@@ -191,6 +194,7 @@ def create_strategy():
     factors_config = data.get('factors_config', {})
     buy_signals_rule = data.get('buy_signals_rule', '').strip()
     sell_signals_rule = data.get('sell_signals_rule', '').strip()
+    is_active = 1 if data.get('is_active', True) else 0
 
     if not strategy_id:
         import time
@@ -209,12 +213,12 @@ def create_strategy():
 
         cursor.execute("""
             INSERT INTO custom_strategies 
-            (strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             strategy_id, name, category, description,
             json.dumps(factors_config, ensure_ascii=False),
-            buy_signals_rule, sell_signals_rule
+            buy_signals_rule, sell_signals_rule, is_active
         ))
         new_id = cursor.lastrowid
         conn.commit()
@@ -237,6 +241,7 @@ def update_strategy(stg_id):
     factors_config = data.get('factors_config', {})
     buy_signals_rule = data.get('buy_signals_rule', '').strip()
     sell_signals_rule = data.get('sell_signals_rule', '').strip()
+    is_active = 1 if data.get('is_active', True) else 0
 
     if not name:
         return jsonify({'status': 'error', 'message': '策略名称不能为空'})
@@ -248,16 +253,48 @@ def update_strategy(stg_id):
         cursor.execute("""
             UPDATE custom_strategies
             SET name = %s, category = %s, description = %s, factors_config = %s, 
-                buy_signals_rule = %s, sell_signals_rule = %s
+                buy_signals_rule = %s, sell_signals_rule = %s, is_active = %s
             WHERE id = %s
         """, (
             name, category, description,
             json.dumps(factors_config, ensure_ascii=False),
-            buy_signals_rule, sell_signals_rule,
+            buy_signals_rule, sell_signals_rule, is_active,
             stg_id
         ))
         conn.commit()
         return jsonify({'status': 'success', 'message': '策略更新成功'})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/strategies/<int:stg_id>/toggle-active', methods=['POST'])
+def toggle_strategy_active(stg_id):
+    """一键切换策略在每日盘后工作流中的激活/开启状态 (is_active)"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT is_active, name FROM custom_strategies WHERE id = %s", (stg_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'status': 'error', 'message': '策略不存在'})
+
+        curr_active = bool(row[0]) if row[0] is not None else True
+        new_active = 0 if curr_active else 1
+        stg_name = row[1]
+
+        cursor.execute("UPDATE custom_strategies SET is_active = %s WHERE id = %s", (new_active, stg_id))
+        conn.commit()
+
+        status_str = "已加入每日盘后工作流" if new_active == 1 else "已设为停用草稿"
+        return jsonify({
+            'status': 'success',
+            'is_active': bool(new_active),
+            'message': f"策略『{stg_name}』{status_str}！"
+        })
     except Exception as e:
         if conn:
             conn.rollback()

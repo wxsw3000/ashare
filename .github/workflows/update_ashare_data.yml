@@ -42,6 +42,11 @@ jobs:
           DB_NAME: ${{ secrets.TIDB_DB_NAME }}
           DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
           MAX_RUNTIME: 19000
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
         run: |
           CMD_ARGS=""
           if [ "${{ inputs.force }}" = "true" ]; then CMD_ARGS="$CMD_ARGS --force"; fi

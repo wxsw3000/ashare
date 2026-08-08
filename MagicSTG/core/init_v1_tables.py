@@ -121,10 +121,19 @@ def init_v1_tables():
                     factors_config JSON,
                     buy_signals_rule TEXT,
                     sell_signals_rule TEXT,
+                    is_active TINYINT(1) DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            # 动态检查并添加 is_active 字段
+            try:
+                cursor.execute("SHOW COLUMNS FROM custom_strategies LIKE 'is_active'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE custom_strategies ADD COLUMN is_active TINYINT(1) DEFAULT 1")
+            except Exception:
+                pass
 
             # 2. 插入或更新默认策略
             print("  [DB Init] Populating default strategy records...")

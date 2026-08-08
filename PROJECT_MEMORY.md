@@ -396,3 +396,39 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * Bypassed 10,400-parameter SQL `WHERE IN` clause when `target_codes > 1000`, speeding up quarterly financial report loading by 50x (< 1.5 seconds).
   5. **Web UI Real-Time Progress Probe ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
      * Updated `startRunStrategyExecution()` to receive the 0.1s async dispatch response, then poll `/api/strategies/<id>/task-status` every 3 seconds, updating the console output dynamically until completion and showing the result navigation button.
+
+---
+
+## 22. Session Summary & Memory (2026-08-08) - Data Sync Batching & Connection Keep-Alive Fixes
+
+* **Root Cause Analysis (`update_stock_basic.py` Execution Failure)**:
+   * During daily data updates in GitHub Actions, `update_stock_basic.py` fetched 8,885 records from Baostock over the network.
+   * `sync_stock_basic()` attempted an unbatched `cur.executemany()` with 8,885 rows in a single query payload.
+   * The single giant SQL payload exceeded network packet limits/timeouts, causing TiDB Cloud to drop the MySQL socket (`pymysql.err.OperationalError: (2013, 'Lost connection to MySQL server during query')`). Subsequent `conn.rollback()` on the closed connection raised `InterfaceError: (0, '')`.
+
+* **Fixes Implemented**:
+  1. **Batching & Connection Alive Guard ([`update_stock_basic.py`](file:///E:/ashare/MagicSTG/data/stock/update_stock_basic.py) & [`update_stock_industry.py`](file:///E:/ashare/MagicSTG/data/stock/update_stock_industry.py))**:
+     * Refactored `sync_stock_basic()` and `sync_stock_industry()` to execute inserts in chunks (`batch_size=500`), committing after each batch.
+     * Enforced `conn = ensure_connection_alive(conn)` before each batch query to automatically reconnect if dropped.
+     * Wrapped `conn.rollback()` and `conn.close()` in safe `try...except` blocks to prevent secondary exceptions.
+  2. **Exports ([`MagicSTG/db/__init__.py`](file:///E:/ashare/MagicSTG/db/__init__.py))**:
+     * Exported `ensure_connection_alive` in `MagicSTG.db` package.
+
+---
+
+## 23. Session Summary & Memory (2026-08-08) - Automated Workflow Strategy Management & Daily Email Reports
+
+* **Feature & Architecture Overview**:
+  1. **Database Flag (`is_active`)**:
+     * Added `is_active TINYINT(1) DEFAULT 1` column to `custom_strategies` table in TiDB Cloud to mark strategies designated for daily automated workflow execution.
+  2. **Dedicated Workflow Strategy Management Dashboard ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
+     * Added a dedicated navigation tab **"工作流策略配置"** (`#sectionWorkflow`).
+     * Displays all strategy cards with real-time **Toggle Switches** (`is_active`), allowing one-click enabling/disabling of daily automated background execution.
+     * Added API `POST /api/strategies/<id>/toggle-active` to switch active state.
+  3. **Daily Automated Runner ([`MagicSTG/strategies/runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py))**:
+     * Updated `run_all_strategy_recommendations()` to query all strategies where `is_active = 1` and execute factor screening for each active strategy upon daily data update completion.
+  4. **Email Notification Engine ([`MagicSTG/core/email_notifier.py`](file:///E:/ashare/MagicSTG/core/email_notifier.py))**:
+     * Created HTML email notification module. After daily runner finishes, formats a responsive HTML report containing daily selection tables (stock code, name, action BUY/SELL, price, factor details, recommendation reason).
+     * Sends email via SMTP when `SMTP_SERVER`, `SMTP_USER`, `SMTP_PASSWORD` are configured via GitHub Secrets / Environment.
+  5. **GitHub Actions Integration ([`.github/workflows/update_ashare_data.yml`](file:///E:/ashare/.github/workflows/update_ashare_data.yml))**:
+     * Configured secrets mapping for `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `NOTIFY_EMAIL`.

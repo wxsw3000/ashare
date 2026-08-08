@@ -613,6 +613,60 @@
 
         .up-val { color: #2ebd85; font-weight: 600; }
         .down-val { color: #df4b5e; font-weight: 600; }
+
+        /* Toggle switch slider */
+        .switch-box {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.15);
+            transition: .3s;
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #00d2c4;
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+        .badge-active {
+            background: rgba(40, 167, 69, 0.2);
+            color: #2ebd85;
+            border: 1px solid rgba(40, 167, 69, 0.4);
+        }
+        .badge-inactive {
+            background: rgba(142, 149, 178, 0.2);
+            color: #8e95b2;
+            border: 1px solid rgba(142, 149, 178, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -630,10 +684,13 @@
             </div>
         </div>
 
-        <!-- 顶部三大主 Tab 导航 -->
+        <!-- 顶部四大主 Tab 导航 -->
         <div class="main-nav">
             <button class="nav-btn active" id="tabNavStrategies" onclick="switchMainTab('strategies')">
                 <i class="fa-solid fa-gears"></i> 策略管理
+            </button>
+            <button class="nav-btn" id="tabNavWorkflow" onclick="switchMainTab('workflow')">
+                <i class="fa-solid fa-robot"></i> 工作流策略配置
             </button>
             <button class="nav-btn" id="tabNavBacktests" onclick="switchMainTab('backtests')">
                 <i class="fa-solid fa-clock-rotate-left"></i> 回测记录
@@ -666,6 +723,42 @@
                 <!-- Responsive Strategy Cards Grid -->
                 <div class="stg-card-grid" id="strategyCardGrid">
                     <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">加载策略卡片列表中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 模块 1.5: 工作流策略配置 (Workflow Strategy Management) ==================== -->
+        <div id="sectionWorkflow" class="tab-section" style="display: none;">
+            <div class="section-card" style="border: 1px solid rgba(0, 210, 196, 0.3); background: rgba(15, 23, 42, 0.7);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem;">
+                    <div>
+                        <h2 style="font-size: 1.3rem; font-weight: 800; color: #38bdf8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="fa-solid fa-robot"></i> 每日盘后 Workflow 自动推演策略接管池
+                        </h2>
+                        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;">
+                            在此可一键控制哪些策略加入 GitHub Actions 每日 18:31 盘后自动推演。已开启策略将在离线 7GB 节点高速扫描全市场并发送选股日报至您的邮箱。
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem; align-items: center;">
+                        <span id="workflowActiveStatsBadge" class="badge-tag badge-active" style="font-size: 0.85rem; padding: 0.4rem 0.85rem;">
+                            <i class="fa-solid fa-circle-check"></i> 盘后工作流激活策略: --
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <input type="text" id="searchWorkflowStrategyInput" class="form-control" placeholder="搜索工作流策略..." oninput="loadWorkflowStrategies()">
+                    <select id="filterWorkflowCategorySelect" class="form-control" onchange="loadWorkflowStrategies()">
+                        <option value="all">全部分类</option>
+                        <option value="stock">股票策略</option>
+                        <option value="convertible_bond">可转债策略</option>
+                    </select>
+                </div>
+
+                <!-- Workflow Strategy Cards Grid -->
+                <div class="stg-card-grid" id="workflowStrategyCardGrid">
+                    <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">加载工作流策略配置中...</div>
                 </div>
             </div>
         </div>
@@ -1209,6 +1302,10 @@
                 document.getElementById('tabNavStrategies').classList.add('active');
                 document.getElementById('sectionStrategies').style.display = 'block';
                 loadStrategies();
+            } else if (tabName === 'workflow') {
+                document.getElementById('tabNavWorkflow').classList.add('active');
+                document.getElementById('sectionWorkflow').style.display = 'block';
+                loadWorkflowStrategies();
             } else if (tabName === 'backtests') {
                 document.getElementById('tabNavBacktests').classList.add('active');
                 document.getElementById('sectionBacktests').style.display = 'block';
@@ -1317,6 +1414,129 @@
 
             } catch (e) {
                 grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#df4b5e; padding:2rem;">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        // 1.5 加载每日盘后工作流策略配置池 (支持切换 is_active 开关)
+        let allWorkflowStrategiesList = [];
+
+        async function loadWorkflowStrategies() {
+            const searchInput = document.getElementById('searchWorkflowStrategyInput');
+            const search = searchInput ? searchInput.value.trim() : '';
+            const catSelect = document.getElementById('filterWorkflowCategorySelect');
+            const category = catSelect ? catSelect.value : 'all';
+            const grid = document.getElementById('workflowStrategyCardGrid');
+            const badge = document.getElementById('workflowActiveStatsBadge');
+
+            try {
+                const res = await fetch(`/api/strategies?search=${encodeURIComponent(search)}&category=${category}`);
+                const result = await res.json();
+
+                if (result.status !== 'success') {
+                    grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#df4b5e; padding:2rem;">${result.message}</div>`;
+                    return;
+                }
+
+                allWorkflowStrategiesList = result.data;
+                const activeCount = allWorkflowStrategiesList.filter(s => s.is_active).length;
+                if (badge) {
+                    badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> 盘后工作流激活策略: <strong>${activeCount}</strong> / ${allWorkflowStrategiesList.length}`;
+                }
+
+                if (allWorkflowStrategiesList.length === 0) {
+                    grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#8e95b2; padding:2.5rem;">暂无自定义策略记录</div>`;
+                    return;
+                }
+
+                grid.innerHTML = allWorkflowStrategiesList.map(stg => {
+                    const isCb = stg.category === 'convertible_bond';
+                    const catBadge = isCb 
+                        ? `<span class="badge-tag badge-cb"><i class="fa-solid fa-link"></i> 可转债</span>` 
+                        : `<span class="badge-tag badge-stock"><i class="fa-solid fa-chart-line"></i> 股票</span>`;
+
+                    const activeBadge = stg.is_active
+                        ? `<span class="badge-tag badge-active"><i class="fa-solid fa-circle-play"></i> 盘后推演中</span>`
+                        : `<span class="badge-tag badge-inactive"><i class="fa-solid fa-circle-pause"></i> 仅作为草稿</span>`;
+
+                    const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+                    let factorTags = [];
+                    
+                    if (isCb) {
+                        if (cfg.max_price) factorTags.push(`最高债价 ≤ ${cfg.max_price}`);
+                        if (cfg.min_convert_premium !== undefined) factorTags.push(`溢价率 [${cfg.min_convert_premium}%, ${cfg.max_convert_premium}%]`);
+                        if (cfg.sort_by) factorTags.push(getSortByLabel(cfg.sort_by));
+                    } else {
+                        if (cfg.stock_scope) factorTags.push(`标的池: ${cfg.stock_scope === 'csi300' ? '沪深300' : '全市场'}`);
+                        if (cfg.financial?.roe_min || cfg.min_roe) {
+                            const val = cfg.financial?.roe_min || cfg.min_roe;
+                            factorTags.push(`ROE ≥ ${(val * 100).toFixed(0)}%`);
+                        }
+                        if (cfg.financial?.pe_max || cfg.pe_range) {
+                            const pMax = cfg.financial?.pe_max || (cfg.pe_range ? cfg.pe_range[1] : null);
+                            if (pMax) factorTags.push(`PE ≤ ${pMax}`);
+                        }
+                        if (cfg.sort_by) factorTags.push(getSortByLabel(cfg.sort_by));
+                    }
+                    if (cfg.top_n) factorTags.push(`Top ${cfg.top_n} 选中`);
+
+                    const tagsHtml = factorTags.slice(0, 4).map(t => `<span class="factor-summary-badge">${t}</span>`).join(' ');
+
+                    return `
+                        <div class="stg-card ${isCb ? 'cb-stg-card' : ''}" style="border: 1px solid ${stg.is_active ? 'rgba(0, 210, 196, 0.4)' : 'rgba(255, 255, 255, 0.08)'};" onclick="openStrategyDetailModal(${stg.id})">
+                            <div>
+                                <div class="stg-card-header">
+                                    <div>
+                                        ${catBadge}
+                                        ${activeBadge}
+                                    </div>
+                                    <code style="font-size: 0.78rem; color: #8e95b2;">${stg.strategy_id}</code>
+                                </div>
+                                <div class="stg-card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span>${stg.name}</span>
+                                </div>
+                                <div class="stg-card-desc">${stg.description || '无策略描述说明'}</div>
+                                <div class="stg-card-tags">
+                                    ${tagsHtml}
+                                </div>
+                            </div>
+
+                            <div class="stg-card-footer" style="display: flex; justify-content: space-between; align-items: center;" onclick="event.stopPropagation();">
+                                <div class="switch-box" title="开启后此策略将在每日 18:31 盘后工作流中自动运行并发送邮件到您的邮箱">
+                                    <label class="switch">
+                                        <input type="checkbox" ${stg.is_active ? 'checked' : ''} onchange="toggleStrategyActiveAction(${stg.id})">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <span style="font-size: 0.78rem; color: ${stg.is_active ? '#00d2c4' : '#8e95b2'}; font-weight: 600;">
+                                        ${stg.is_active ? '盘后自动推演: 开启' : '盘后自动推演: 关闭'}
+                                    </span>
+                                </div>
+                                <button class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.78rem;" onclick="openStrategyDetailModal(${stg.id})">
+                                    <i class="fa-solid fa-sliders"></i> 因子配置
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#df4b5e; padding:2rem;">加载工作流策略失败: ${e.message}</div>`;
+            }
+        }
+
+        // 一键切换策略的 is_active 工作流状态
+        async function toggleStrategyActiveAction(stgId) {
+            try {
+                const res = await fetch(`/api/strategies/${stgId}/toggle-active`, { method: 'POST' });
+                const result = await res.json();
+                if (result.status === 'success') {
+                    // 重新加载两个界面的列表
+                    loadWorkflowStrategies();
+                    loadStrategies();
+                } else {
+                    alert('❌ 操作失败: ' + result.message);
+                }
+            } catch (e) {
+                alert('网络异常: ' + e.message);
             }
         }
 

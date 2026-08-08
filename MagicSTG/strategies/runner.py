@@ -214,27 +214,73 @@ def run_single_strategy_recommendation(strategy_id: str, target_date: str, force
             conn.close()
 
 
+from MagicSTG.core.email_notifier import send_daily_summary_email
+
+
 def run_all_strategy_recommendations(target_date: Optional[str] = None):
     """
-    运行所有激活策略并存储盘后推荐结果
+    运行所有 is_active = 1 的工作流策略并存储盘后推荐结果，最后发送邮件日报
     """
     if target_date is None:
         target_date = get_target_date()
 
     print("=" * 78)
-    print(f"  🚀 开始生成盘后策略推荐信号 (行情目标日: {target_date})")
+    print(f"  🚀 开始生成盘后工作流激活策略推荐信号 (行情目标日: {target_date})")
     print(f"  当前时间: {get_beijing_time().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 78)
+    print("=" * 78, flush=True)
 
-    # 1. 运行可转债双低策略
-    run_cb_double_low_recommendation(target_date)
+    # 1. 从 TiDB 查询所有处于 is_active = 1 的工作流激活策略
+    active_strategies = []
+    conn = None
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT strategy_id, name, category, factors_config
+                FROM custom_strategies
+                WHERE is_active = 1 OR is_active IS NULL
+                ORDER BY id ASC
+            """)
+            rows = cursor.fetchall()
+            import json
+            for r in rows:
+                cfg = json.loads(r[3]) if isinstance(r[3], str) else (r[3] or {})
+                active_strategies.append({
+                    'strategy_id': r[0],
+                    'name': r[1],
+                    'category': r[2],
+                    'config': cfg
+                })
+    except Exception as e:
+        print(f"  [Runner ⚠️] 读取工作流激活策略失败: {e}", flush=True)
+    finally:
+        if conn:
+            conn.close()
 
-    # 2. 运行动态多因子策略
-    run_dynamic_factor_recommendation(target_date)
+    if not active_strategies:
+        print("  [Runner ℹ️] 尚无在工作流中激活的策略，降级运行默认双低与多因子策略...")
+        run_cb_double_low_recommendation(target_date)
+        run_dynamic_factor_recommendation(target_date)
+    else:
+        print(f"  [Runner 📌] 共检测到 {len(active_strategies)} 个激活策略，依次执行选股扫描...", flush=True)
+        for stg in active_strategies:
+            stg_id = stg['strategy_id']
+            category = stg['category']
+            cfg = stg['config']
+            print(f"\n  ▶ 正在执行激活策略: {stg['name']} ({stg_id})...", flush=True)
+
+            if category == 'convertible_bond' or stg_id == 'cb_double_low':
+                run_cb_double_low_recommendation(target_date, strategy_id=stg_id, config=cfg)
+            else:
+                run_dynamic_factor_recommendation(target_date, strategy_id=stg_id, config=cfg)
 
     print("\n" + "=" * 78)
-    print(f"  ✅ 盘后策略推荐信号生成完毕！(目标日: {target_date})")
-    print("=" * 78)
+    print(f"  ✅ 盘后激活策略推荐信号生成完毕！(目标日: {target_date})")
+    print("=" * 78, flush=True)
+
+    # 发送盘后选股推荐日报邮件
+    send_daily_summary_email(target_date)
+
 
 
 if __name__ == '__main__':
