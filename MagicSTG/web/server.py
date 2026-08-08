@@ -388,6 +388,12 @@ def run_strategy(stg_id):
         gh_token = os.getenv("GH_PAT") or os.getenv("GITHUB_TOKEN")
         gh_repo = os.getenv("GITHUB_REPOSITORY", "wxsw3000/ashare")
 
+        if not gh_token:
+            return jsonify({
+                'status': 'error',
+                'message': '尚未在 Render 平台控制台添加 GH_PAT (GitHub Token) 环境变量。为保护 Render 内存不被爆掉，在线重算已阻止。请在 Render 后台添加 GH_PAT 变量，或使用【工作流策略配置】开启每日盘后自动推演！'
+            })
+
         task_name = f"strategy_{stg_code}"
         cursor.execute("""
             INSERT INTO update_progress (task_date, script_name, status, started_at, error_msg)
@@ -396,47 +402,42 @@ def run_strategy(stg_id):
         """, (target_date, task_name))
         conn.commit()
 
-        engine_type = "local_async"
-        if gh_token:
-            try:
-                url = f"https://api.github.com/repos/{gh_repo}/dispatches"
-                payload = json.dumps({
-                    "event_type": "run-strategy",
-                    "client_payload": {
-                        "strategy_id": stg_code,
-                        "target_date": target_date,
-                        "force": force
-                    }
-                }).encode('utf-8')
-                req = urllib.request.Request(url, data=payload, headers={
-                    "Authorization": f"token {gh_token}",
-                    "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "MagicSTG-Server"
-                })
-                with urllib.request.urlopen(req) as resp:
-                    if resp.status in (200, 204):
-                        engine_type = "github_actions"
-            except Exception as gh_err:
-                print(f"[RunStrategy] ⚠️ 触发 GitHub Actions 异常，回退至本地后台线程: {gh_err}", flush=True)
-
-        if engine_type == "local_async":
-            from MagicSTG.strategies.runner import run_single_strategy_recommendation
-            t = threading.Thread(
-                target=run_single_strategy_recommendation,
-                args=(stg_code, target_date, force),
-                daemon=True
-            )
-            t.start()
-
-        msg = "调度请求已成功提交至 GitHub Actions 算力引擎！" if engine_type == "github_actions" else "已启动后台计算线程，策略正在全市场分批扫描..."
-        return jsonify({
-            'status': 'processing',
-            'engine': engine_type,
-            'message': msg,
-            'date': target_date,
-            'stg_code': stg_code,
-            'stg_name': stg_name
-        })
+        try:
+            url = f"https://api.github.com/repos/{gh_repo}/dispatches"
+            payload = json.dumps({
+                "event_type": "run-strategy",
+                "client_payload": {
+                    "strategy_id": stg_code,
+                    "target_date": target_date,
+                    "force": force
+                }
+            }).encode('utf-8')
+            req = urllib.request.Request(url, data=payload, headers={
+                "Authorization": f"token {gh_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "MagicSTG-Server"
+            })
+            with urllib.request.urlopen(req) as resp:
+                if resp.status in (200, 204):
+                    return jsonify({
+                        'status': 'processing',
+                        'engine': 'github_actions',
+                        'message': '调度请求已成功提交至 GitHub Actions 7GB 离线算力引擎！',
+                        'date': target_date,
+                        'stg_code': stg_code,
+                        'stg_name': stg_name
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'触发 GitHub Actions 算力接口返回 HTTP {resp.status}。'
+                    })
+        except Exception as gh_err:
+            print(f"[RunStrategy] ⚠️ 触发 GitHub Actions 异常: {gh_err}", flush=True)
+            return jsonify({
+                'status': 'error',
+                'message': f'触发 GitHub Actions 算力引擎异常 ({gh_err})，请检查 Render 中的 GH_PAT 密钥与权限。'
+            })
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'调度失败: {str(e)}'})

@@ -432,3 +432,13 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * Sends email via SMTP when `SMTP_SERVER`, `SMTP_USER`, `SMTP_PASSWORD` are configured via GitHub Secrets / Environment.
   5. **GitHub Actions Integration ([`.github/workflows/update_ashare_data.yml`](file:///E:/ashare/.github/workflows/update_ashare_data.yml))**:
      * Configured secrets mapping for `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `NOTIFY_EMAIL`.
+
+---
+
+## 24. Session Summary & Memory (2026-08-08) - Elimination of Silent Local Fallback for Online Strategy Runs
+
+* **Refactoring Overview**:
+  1. **Strict GitHub API Dispatch Enforcer ([`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     * Removed the silent fallback to Render's local `threading.Thread` when `GH_PAT` is not set.
+     * Online manual strategy execution (`POST /api/strategies/<id>/run`) now strictly checks `GH_PAT`. If missing, immediately returns a clear UI error message: *"尚未在 Render 平台控制台添加 GH_PAT (GitHub Token) 环境变量。为保护 Render 512MB 内存，已阻止在线重算。"*, directing the user to configure `GH_PAT` or use the automated daily workflow.
+     * Prevents any possibility of Render local background threads starving system RAM or crashing Gunicorn workers.
