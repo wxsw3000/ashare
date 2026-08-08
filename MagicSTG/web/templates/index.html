@@ -1805,8 +1805,19 @@
                                     consoleBox.textContent += `\n❌ [ERROR] 策略运行中途异常: ${statusData.message}\n`;
                                 }
                             } else {
-                                consoleBox.textContent += `[Progress ${pollCount * 3}s] ⚙️ 算力引擎计算中... (状态: ${statusData.status})\n`;
-                                consoleBox.scrollTop = consoleBox.scrollHeight;
+                                if (pollCount >= 60) {
+                                    clearInterval(pollInterval);
+                                    globalTaskRunning = false;
+                                    currentTaskName = '';
+                                    if (runBtn) {
+                                        runBtn.disabled = false;
+                                        runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 开始策略运行 (选股/推荐)`;
+                                    }
+                                    consoleBox.textContent += `\n⚠️ [TIMEOUT] 轮询超过 3 分钟上限，后台重算已被放弃。建议将此策略在【工作流策略配置】中开启，由 GitHub Actions 每日盘后自动离线扫描！\n`;
+                                } else {
+                                    consoleBox.textContent += `[Progress ${pollCount * 3}s] ⚙️ 算力引擎计算中... (状态: ${statusData.status})\n`;
+                                    consoleBox.scrollTop = consoleBox.scrollHeight;
+                                }
                             }
                         } catch (pollErr) {
                             consoleBox.textContent += `[Progress ${pollCount * 3}s] ⚠️ 轮询状态探针检测中: ${pollErr.message}\n`;

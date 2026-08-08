@@ -466,7 +466,7 @@ def get_strategy_task_status(stg_id):
             max_row = cursor.fetchone()
             target_date = max_row[0].strftime('%Y-%m-%d') if max_row and max_row[0] else datetime.now().strftime('%Y-%m-%d')
 
-        cursor.execute("SELECT status, error_msg FROM update_progress WHERE task_date = %s AND script_name = %s", (target_date, task_name))
+        cursor.execute("SELECT status, error_msg, started_at FROM update_progress WHERE task_date = %s AND script_name = %s", (target_date, task_name))
         p_row = cursor.fetchone()
 
         cursor.execute("SELECT COUNT(*) FROM recommendations WHERE strategy = %s AND signal_date = %s", (stg_code, target_date))
@@ -482,12 +482,24 @@ def get_strategy_task_status(stg_id):
             })
 
         if p_row:
-            p_status, p_err = p_row[0], p_row[1]
+            p_status, p_err, started_at = p_row[0], p_row[1], p_row[2]
             if p_status == 'failed':
                 return jsonify({
                     'status': 'error',
                     'completed': True,
                     'message': f"计算中断或失败: {p_err or '未生成有效推荐数据'}"
+                })
+            elif p_status == 'running' and started_at and (datetime.now() - started_at).total_seconds() > 300:
+                cursor.execute("""
+                    UPDATE update_progress
+                    SET status = 'failed', completed_at = NOW(), error_msg = '超时中断：后台线程无响应或已被系统重启杀掉'
+                    WHERE task_date = %s AND script_name = %s
+                """, (target_date, task_name))
+                conn.commit()
+                return jsonify({
+                    'status': 'error',
+                    'completed': True,
+                    'message': '任务运行已超过 5 分钟超时中断（后台线程已被重置），建议通过 GitHub Actions 离线算力或勾选轻量因子。'
                 })
             else:
                 return jsonify({
