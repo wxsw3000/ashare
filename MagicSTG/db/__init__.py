@@ -9,6 +9,7 @@
 from .db_config import (
     get_connection,
     get_connection_with_retry,
+    ensure_connection_alive,
     get_config,
     get_connection_info,
     execute_query,
@@ -39,6 +40,7 @@ __all__ = [
     # 数据库连接
     'get_connection',
     'get_connection_with_retry',
+    'ensure_connection_alive',
     'get_config',
     'get_connection_info',
     'execute_query',

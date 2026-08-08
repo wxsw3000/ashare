@@ -26,6 +26,7 @@ import pandas as pd
 from MagicSTG.db import (
     get_connection,
     get_connection_with_retry,
+    ensure_connection_alive,
     safe_float,
     safe_str,
     safe_int,
@@ -62,10 +63,10 @@ def fetch_all_stock_basic():
     return data_list
 
 
-def sync_stock_basic(conn, data_list):
-    """全量同步 stock_basic 表"""
+def sync_stock_basic(conn, data_list, batch_size=500):
+    """分批同步 stock_basic 表，防止超大单 SQL 断开连接"""
     if not data_list:
-        return 0
+        return 0, conn
     
     sql = """
     INSERT INTO stock_basic (code, code_name, ipo_date, out_date, type, status, update_date)
@@ -93,10 +94,16 @@ def sync_stock_basic(conn, data_list):
             update_date
         ))
     
-    with conn.cursor() as cur:
-        cur.executemany(sql, values)
+    total_inserted = 0
+    for i in range(0, len(values), batch_size):
+        batch = values[i:i + batch_size]
+        conn = ensure_connection_alive(conn)
+        with conn.cursor() as cur:
+            cur.executemany(sql, batch)
+        conn.commit()
+        total_inserted += len(batch)
     
-    return len(values)
+    return total_inserted, conn
 
 
 def print_summary(data_list, inserted_count):
@@ -134,15 +141,18 @@ def main():
             print("  [ERROR] No data fetched")
             return
         
-        print("\n[2] Syncing to database...")
-        inserted = sync_stock_basic(conn, data_list)
-        conn.commit()
+        print("\n[2] Syncing to database (batched)...")
+        inserted, conn = sync_stock_basic(conn, data_list)
         print(f"  [SUCCESS] {inserted} records inserted/updated")
         
         print_summary(data_list, inserted)
         
     except Exception as e:
-        conn.rollback()
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
         print(f"  [ERROR] Failed to sync: {e}")
         import traceback
         traceback.print_exc()
@@ -151,7 +161,11 @@ def main():
             bs.logout()
         except Exception:
             pass
-        conn.close()
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
