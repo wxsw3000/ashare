@@ -442,3 +442,33 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * Removed the silent fallback to Render's local `threading.Thread` when `GH_PAT` is not set.
      * Online manual strategy execution (`POST /api/strategies/<id>/run`) now strictly checks `GH_PAT`. If missing, immediately returns a clear UI error message: *"尚未在 Render 平台控制台添加 GH_PAT (GitHub Token) 环境变量。为保护 Render 512MB 内存，已阻止在线重算。"*, directing the user to configure `GH_PAT` or use the automated daily workflow.
      * Prevents any possibility of Render local background threads starving system RAM or crashing Gunicorn workers.
+
+---
+
+## 25. Session Summary & Memory (2026-08-10) - Simulated Portfolio & Paper Trading Architecture Design
+
+* **Strategic Roadmap Alignment**:
+  * Confirmed next major system evolution: **Simulated Portfolio & Paper Trading Engine (模拟持仓与实盘收益追踪系统)**.
+  * Connects daily post-market recommendations (`recommendations`) to live position tracking (`positions`), offering fund-like equity curve monitoring and real-time paper portfolio analytics in Web Dashboard.
+
+* **Money Management & Execution Rules Design Consensus**:
+  1. **Capital Allocation & Slot Sizing**:
+     * Strategy configurable `initial_capital` (default 100,000 CNY) divided equally into slots by `max_holdings` (e.g. 5 slots = 20,000 CNY per holding).
+     * Supports both `Fixed Slot Allocation` and `Compounding Mode` (reinvesting profits per slot).
+  2. **A-Share / Convertible Bond Lot Constraints**:
+     * Stock buy orders enforced to 100-share multiples (`floor(budget / price / 1.0003 / 100) * 100`).
+     * Convertible bond buy orders enforced to 10-bond multiples (100 CNY par value per bond).
+  3. **Transaction Costs & Stamp Tax (100% Net Profit Calculation)**:
+     * Natively integrated with [`MagicSTG/core/cost.py`](file:///E:/ashare/MagicSTG/core/cost.py).
+     * Stocks: 0.025% commission (min 5 CNY rule) + 0.05% sell stamp tax.
+     * Convertible Bonds: 0.005% commission (no min 5 CNY limit), 0% stamp tax.
+  4. **Execution Priority & Risk Control**:
+     * Post-market execution order: **Sell First** (realize PnL, free slots/cash), **Buy Second** (allocate free slots to Top N BUY recommendations).
+     * Dynamic Risk Guards: Hard stop-loss (default -8%), trailing stop-profit (default -5%), and CB forced redemption warnings.
+
+* **Pending Implementation Roadmap (Next Session Tasks)**:
+  * Initialize `portfolio_daily_history` table in TiDB Cloud for daily equity snapshots.
+  * Implement `PortfolioEngine` in [`MagicSTG/execution/portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/position_manager.py) to manage automatic rollover.
+  * Expose REST APIs `GET /api/portfolio` & `POST /api/portfolio/sync` in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
+  * Build dedicated **"模拟实盘持仓"** tab in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) featuring summary widgets, Chart.js equity curve, active positions table, and trade execution logs.
+
