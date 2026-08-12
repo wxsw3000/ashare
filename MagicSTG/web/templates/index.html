@@ -2005,10 +2005,17 @@
             }
 
             const consoleBox = document.getElementById('logConsoleOutput');
-            consoleBox.textContent = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 回测引擎...\n` +
-                                     `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
-                                     `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
-                                     `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
+            let elapsedSec = 0;
+            const baseLogsText = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 回测引擎...\n` +
+                                 `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
+                                 `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
+                                 `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
+            consoleBox.textContent = baseLogsText;
+
+            const progressTimer = setInterval(() => {
+                elapsedSec += 2;
+                consoleBox.textContent = baseLogsText + `[Progress ⚡] 全市场 5,200+ 股票行情扫描中，已耗时 ${elapsedSec} 秒 (计算正常运行中，请勿关闭窗口)...\n`;
+            }, 2000);
 
             try {
                 const res = await fetch('/api/backtest', {
@@ -2033,7 +2040,7 @@
 
                 if (result.status === 'success') {
                     const s = result.summary;
-                    let logsText = consoleBox.textContent;
+                    let logsText = baseLogsText;
                     logsText += `\n================== 回测统计汇总 ==================\n` +
                                 `初始资金: ¥${s.initial_equity}  | 最终资产: ¥${s.final_equity}\n` +
                                 `总回报率: ${s.total_return.toFixed(2)}% | 年化收益率: ${s.annual_return.toFixed(2)}%\n` +
@@ -2062,6 +2069,7 @@
             } catch (e) {
                 consoleBox.textContent += `\n❌ [NET ERROR] 网络异常: ${e.message}\n`;
             } finally {
+                clearInterval(progressTimer);
                 globalTaskRunning = false;
                 currentTaskName = '';
                 if (runBtn) {

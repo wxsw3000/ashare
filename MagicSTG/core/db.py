@@ -153,7 +153,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         # Direct target codes mode (for explicit stock lists)
         if target_codes is not None:
-            batch_size = 100
+            batch_size = 500
             all_dfs = []
             for i in range(0, len(target_codes), batch_size):
                 batch = target_codes[i:i+batch_size]
