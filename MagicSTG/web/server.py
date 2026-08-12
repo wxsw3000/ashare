@@ -28,12 +28,20 @@ def sanitize_json(obj):
         return [sanitize_json(v) for v in obj]
     return obj
 
-# ========== 加载环境变量 ==========
-# 获取项目根目录
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# ========== 加载环境变量与路径配置 ==========
+# 获取项目根目录 (包含 MagicSTG 包的父目录 E:\ashare)
+WEB_DIR = os.path.dirname(os.path.abspath(__file__))
+MAGICSTG_DIR = os.path.dirname(WEB_DIR)
+PROJECT_ROOT = os.path.dirname(MAGICSTG_DIR)
+
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
+if MAGICSTG_DIR not in sys.path:
+    sys.path.insert(0, MAGICSTG_DIR)
+
+ENV_PATH = os.path.join(MAGICSTG_DIR, 'dbconfig', '.env')
+if not os.path.exists(ENV_PATH):
+    ENV_PATH = os.path.join(PROJECT_ROOT, 'dbconfig', '.env')
 
 # 加载 .env 文件
 if os.path.exists(ENV_PATH):
