@@ -492,5 +492,10 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   5. **Web Dashboard Integration ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
      * Added **"模拟实盘持仓"** tab as the 5th main navigation section (`#sectionPortfolio`).
      * Rendered 4 key metrics cards, dual-axis Chart.js cumulative return curve, active holdings table, and closed trades log.
+  6. **Bug Fixes & Backtest Engine Performance Optimizations**:
+     * **Strategy Fallback & Registration ([`MagicSTG/strategies/registry.py`](file:///E:/ashare/MagicSTG/strategies/registry.py))**: Updated `StrategyRegistry.get()` to fallback dynamically to `DynamicFactorStrategy` for custom/legacy strategy names (`pe_strategy`, `roe_strategy`, `price_strategy`), resolving *"Strategy is not registered"* errors.
+     * **Module Path Resolution ([`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py))**: Fixed 3-level parent directory calculation for `PROJECT_ROOT`, fixing local `ModuleNotFoundError: No module named 'MagicSTG'` errors when launching server directly.
+     * **MySQL 2013 Socket Drop Guard ([`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py))**: Created `safe_read_sql_with_retry` and exported `get_connection_with_retry` to handle transient network drops during large SQL queries automatically.
+     * **4x DB Load Acceleration & UI Console Timer**: Increased target code batch size in `load_all_data_db` and skipped quarterly report queries when financial filters are disabled. Added a 2-second live progress timer in `index.html` backtest execution console box.
 
 
