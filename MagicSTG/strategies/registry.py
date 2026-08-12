@@ -24,13 +24,15 @@ class StrategyRegistry:
     @classmethod
     def get(cls, name: str, config: Optional[Dict[str, Any]] = None) -> BaseStrategy:
         """Instantiates and returns a registered strategy by name."""
-        if name not in cls._registry:
-            # Fallback to dynamic factor if strategy name is dynamic or default
-            if name in ['dynamic', 'dynamic_factor', 'default']:
-                return DynamicFactorStrategy(name="dynamic_factor", config=config)
-            raise ValueError(f"Strategy '{name}' is not registered. Registered strategies: {list(cls._registry.keys())}")
+        if name in cls._registry:
+            return cls._registry[name](name=name, config=config)
 
-        return cls._registry[name](name=name, config=config)
+        # Fallback for convertible bond strategies
+        if name == 'cb_double_low' or name.startswith('cb_') or (config and config.get('category') == 'convertible_bond'):
+            return CBDoubleLowStrategy(name=name, config=config)
+
+        # Default fallback for stock multi-factor strategies
+        return DynamicFactorStrategy(name=name, config=config)
 
     @classmethod
     def list_strategies(cls) -> List[str]:
@@ -41,5 +43,8 @@ class StrategyRegistry:
 # Automatically register default strategies
 StrategyRegistry.register('dynamic_factor', DynamicFactorStrategy)
 StrategyRegistry.register('dynamic', DynamicFactorStrategy)
+StrategyRegistry.register('pe_strategy', DynamicFactorStrategy)
+StrategyRegistry.register('roe_strategy', DynamicFactorStrategy)
+StrategyRegistry.register('price_strategy', DynamicFactorStrategy)
 StrategyRegistry.register('cb_double_low', CBDoubleLowStrategy)
 StrategyRegistry.register('cb_double_low_strategy', CBDoubleLowStrategy)
