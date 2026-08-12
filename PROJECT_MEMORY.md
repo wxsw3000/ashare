@@ -466,9 +466,31 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * Post-market execution order: **Sell First** (realize PnL, free slots/cash), **Buy Second** (allocate free slots to Top N BUY recommendations).
      * Dynamic Risk Guards: Hard stop-loss (default -8%), trailing stop-profit (default -5%), and CB forced redemption warnings.
 
-* **Pending Implementation Roadmap (Next Session Tasks)**:
-  * Initialize `portfolio_daily_history` table in TiDB Cloud for daily equity snapshots.
-  * Implement `PortfolioEngine` in [`MagicSTG/execution/portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/position_manager.py) to manage automatic rollover.
-  * Expose REST APIs `GET /api/portfolio` & `POST /api/portfolio/sync` in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
-  * Build dedicated **"模拟实盘持仓"** tab in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) featuring summary widgets, Chart.js equity curve, active positions table, and trade execution logs.
+* **Implementation Completed (2026-08-12)**:
+  * Initialized `portfolio_daily_history` table in TiDB Cloud for daily equity snapshots.
+  * Implemented `PortfolioEngine` in [`MagicSTG/execution/portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/portfolio_engine.py) to manage automatic rollover.
+  * Exposed REST APIs `GET /api/portfolio` & `POST /api/portfolio/sync` in [`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py).
+  * Built dedicated **"模拟实盘持仓"** tab in [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) featuring summary widgets, Chart.js equity curve, active positions table, and trade execution logs.
+
+---
+
+## 26. Session Summary & Memory (2026-08-12) - Simulated Portfolio & Paper Trading Engine Full Implementation
+
+* **Feature & Implementation Overview**:
+  1. **Database Schema Enhancements (`portfolio_daily_history` & `positions`)**:
+     * Created `portfolio_daily_history` table in TiDB Cloud with unique key `(strategy, date)` to persist daily equity snapshots (`total_equity`, `cash`, `market_value`, `daily_pnl`, `cum_pnl`, `cum_return`, `holding_count`).
+     * Enhanced `positions` table with `stock_name`, `highest_price`, `slot_idx` for detailed tracking.
+  2. **Core Trading & Simulation Engine ([`MagicSTG/execution/portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/portfolio_engine.py))**:
+     * Implemented `PortfolioEngine` supporting automatic daily signal processing, price updating from `stock_kline_day` / `cb_kline_day`, 100-share / 10-bond lot size constraint enforcement, and transaction cost calculation (`cost.py` + CB zero-stamp tax).
+     * Implemented Hard Stop-Loss (-8%) & Trailing Stop-Profit (-5%) dynamic risk controls.
+  3. **Backend REST APIs ([`MagicSTG/web/server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     * Added `/api/portfolio/strategies` to query available portfolio strategies.
+     * Added `GET /api/portfolio` to fetch current portfolio state, active holdings, closed trade logs, and full equity curve data.
+     * Added `POST /api/portfolio/sync` to trigger instant post-market backfill/sync.
+  4. **Strategy Runner Integration ([`MagicSTG/strategies/runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py))**:
+     * Integrated `PortfolioEngine` sync calls into daily post-market execution workflow (`run_single_strategy_recommendation` and `run_all_strategy_recommendations`).
+  5. **Web Dashboard Integration ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
+     * Added **"模拟实盘持仓"** tab as the 5th main navigation section (`#sectionPortfolio`).
+     * Rendered 4 key metrics cards, dual-axis Chart.js cumulative return curve, active holdings table, and closed trades log.
+
 

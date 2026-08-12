@@ -684,13 +684,16 @@
             </div>
         </div>
 
-        <!-- 顶部四大主 Tab 导航 -->
+        <!-- 顶部五大主 Tab 导航 -->
         <div class="main-nav">
             <button class="nav-btn active" id="tabNavStrategies" onclick="switchMainTab('strategies')">
                 <i class="fa-solid fa-gears"></i> 策略管理
             </button>
             <button class="nav-btn" id="tabNavWorkflow" onclick="switchMainTab('workflow')">
                 <i class="fa-solid fa-robot"></i> 工作流策略配置
+            </button>
+            <button class="nav-btn" id="tabNavPortfolio" onclick="switchMainTab('portfolio')">
+                <i class="fa-solid fa-chart-line"></i> 模拟实盘持仓
             </button>
             <button class="nav-btn" id="tabNavBacktests" onclick="switchMainTab('backtests')">
                 <i class="fa-solid fa-clock-rotate-left"></i> 回测记录
@@ -760,6 +763,133 @@
                 <div class="stg-card-grid" id="workflowStrategyCardGrid">
                     <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">加载工作流策略配置中...</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ==================== 模块 1.8: 模拟实盘持仓与组合收益看板 (Simulated Portfolio Dashboard) ==================== -->
+        <div id="sectionPortfolio" class="tab-section" style="display: none;">
+            <div class="section-card" style="border: 1px solid rgba(0, 210, 196, 0.3); background: rgba(15, 23, 42, 0.7);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem;">
+                    <div>
+                        <h2 style="font-size: 1.3rem; font-weight: 800; color: #00d2c4; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="fa-solid fa-chart-line"></i> 模拟实盘持仓与组合收益跟踪
+                        </h2>
+                        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;">
+                            自动将每日盘后推荐信号撮合为模拟持仓，实时追踪收益率曲线、持仓浮盈与历史成交流水（扣除券商佣金与印花税）。
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                        <label style="font-size: 0.85rem; color: #8e95b2;">选择查看策略：</label>
+                        <select id="portfolioStrategySelect" class="form-control" style="width: auto; min-width: 180px;" onchange="loadPortfolioData()">
+                            <option value="cb_double_low">可转债双低策略</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="syncPortfolioData()" id="btnSyncPortfolio">
+                            <i class="fa-solid fa-arrows-rotate"></i> 重新同步/推演模拟盘
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4 Summary Stats Cards Grid -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
+                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-wallet"></i> 账户总资产 / 可用现金</div>
+                        <div style="font-size: 1.5rem; font-weight: 800; color: #f0f3fa;" id="portTotalEquity">¥ --</div>
+                        <div style="font-size: 0.82rem; color: #38bdf8; margin-top: 0.4rem;">可用现金: <span id="portCash">¥ --</span></div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
+                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-chart-pie"></i> 持仓市值 / 持仓只数</div>
+                        <div style="font-size: 1.5rem; font-weight: 800; color: #f0f3fa;" id="portMarketValue">¥ --</div>
+                        <div style="font-size: 0.82rem; color: #a855f7; margin-top: 0.4rem;">当前持仓: <span id="portHoldingCount">0</span> 只</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
+                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-arrow-trend-up"></i> 累计盈亏 / 累计收益率</div>
+                        <div style="font-size: 1.5rem; font-weight: 800;" id="portCumPnl">¥ --</div>
+                        <div style="font-size: 0.82rem; margin-top: 0.4rem;">累计收益率: <span id="portCumReturn">0.00%</span></div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
+                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-calendar-day"></i> 当日变动 / 结算日期</div>
+                        <div style="font-size: 1.5rem; font-weight: 800;" id="portDailyPnl">¥ --</div>
+                        <div style="font-size: 0.82rem; color: #94a3b8; margin-top: 0.4rem;">行情日期: <span id="portLatestDate">--</span></div>
+                    </div>
+                </div>
+
+                <!-- Chart Section: 收益率曲线图 -->
+                <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="font-size: 1rem; font-weight: 700; color: #f0f3fa; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="fa-solid fa-chart-area" style="color: #00d2c4;"></i> 模拟实盘累计收益率走势图 (%)
+                        </h3>
+                    </div>
+                    <div class="chart-box" style="height: 340px;">
+                        <canvas id="portfolioEquityChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tables Section: 持仓明细与成交流水 Sub-Tabs -->
+                <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.25rem;">
+                    <!-- Sub Nav Buttons -->
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+                        <button class="nav-btn active" id="subTabNavActiveHoldings" style="padding: 0.4rem 1rem; font-size: 0.9rem;" onclick="switchPortfolioSubTab('active')">
+                            <i class="fa-solid fa-briefcase"></i> 当前持仓明细 (<span id="countActivePositions">0</span>)
+                        </button>
+                        <button class="nav-btn" id="subTabNavClosedTrades" style="padding: 0.4rem 1rem; font-size: 0.9rem;" onclick="switchPortfolioSubTab('closed')">
+                            <i class="fa-solid fa-receipt"></i> 成交与离场流水 (<span id="countClosedTrades">0</span>)
+                        </button>
+                    </div>
+
+                    <!-- Active Holdings Table -->
+                    <div id="subSectionActiveHoldings">
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>标的代码</th>
+                                        <th>名称</th>
+                                        <th>建仓日期</th>
+                                        <th>买入成本价</th>
+                                        <th>最新价格</th>
+                                        <th>持仓数量</th>
+                                        <th>投入成本 (元)</th>
+                                        <th>最新市值 (元)</th>
+                                        <th>浮动盈亏 (元)</th>
+                                        <th>盈亏比例 (%)</th>
+                                        <th>槽位</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableActivePositions">
+                                    <tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无活跃持仓</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Closed Trades Table -->
+                    <div id="subSectionClosedTrades" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>标的代码</th>
+                                        <th>名称</th>
+                                        <th>建仓日期</th>
+                                        <th>买入价</th>
+                                        <th>平仓日期</th>
+                                        <th>卖出平仓价</th>
+                                        <th>数量</th>
+                                        <th>建仓成本 (元)</th>
+                                        <th>实现净盈亏 (元)</th>
+                                        <th>盈亏比例 (%)</th>
+                                        <th>离场原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableClosedTrades">
+                                    <tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无离场成交记录</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -1293,7 +1423,7 @@
         let currentDetailRunData = [];
         let currentDetailCategory = 'stock';
 
-        // 切换三大主 Tab
+        // 切换主 Tab 导航
         function switchMainTab(tabName) {
             document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-section').forEach(sec => sec.style.display = 'none');
@@ -1306,6 +1436,10 @@
                 document.getElementById('tabNavWorkflow').classList.add('active');
                 document.getElementById('sectionWorkflow').style.display = 'block';
                 loadWorkflowStrategies();
+            } else if (tabName === 'portfolio') {
+                document.getElementById('tabNavPortfolio').classList.add('active');
+                document.getElementById('sectionPortfolio').style.display = 'block';
+                loadPortfolioStrategyOptions().then(() => loadPortfolioData());
             } else if (tabName === 'backtests') {
                 document.getElementById('tabNavBacktests').classList.add('active');
                 document.getElementById('sectionBacktests').style.display = 'block';
@@ -2629,6 +2763,265 @@
                         <td data-label="推荐原因" style="font-size:0.8rem; color:#8e95b2;">${d.reason || '-'}</td>
                     </tr>
                 `).join('');
+            }
+        }
+
+        // ==================== 模拟实盘持仓与组合收益 JavaScript 引擎 ====================
+        let portfolioChartInstance = null;
+
+        async function loadPortfolioStrategyOptions() {
+            try {
+                const res = await fetch('/api/portfolio/strategies');
+                const result = await res.json();
+                if (result.status === 'success' && result.data && result.data.length > 0) {
+                    const select = document.getElementById('portfolioStrategySelect');
+                    const currVal = select.value;
+                    select.innerHTML = '';
+                    result.data.forEach(stg => {
+                        const opt = document.createElement('option');
+                        opt.value = stg.strategy_id;
+                        opt.textContent = stg.name || stg.strategy_id;
+                        select.appendChild(opt);
+                    });
+                    if (currVal && result.data.some(s => s.strategy_id === currVal)) {
+                        select.value = currVal;
+                    }
+                }
+            } catch (err) {
+                console.error("加载持仓策略下拉失败:", err);
+            }
+        }
+
+        async function loadPortfolioData() {
+            const stgId = document.getElementById('portfolioStrategySelect').value || 'cb_double_low';
+            try {
+                const res = await fetch(`/api/portfolio?strategy_id=${stgId}`);
+                const result = await res.json();
+                if (result.status === 'success' && result.data) {
+                    renderPortfolioDashboard(result.data);
+                }
+            } catch (err) {
+                console.error("加载模拟持仓失败:", err);
+            }
+        }
+
+        async function syncPortfolioData() {
+            const stgId = document.getElementById('portfolioStrategySelect').value || 'cb_double_low';
+            const btn = document.getElementById('btnSyncPortfolio');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在推演中...';
+
+            try {
+                const res = await fetch('/api/portfolio/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_id: stgId })
+                });
+                const result = await res.json();
+                if (result.status === 'success' && result.data) {
+                    renderPortfolioDashboard(result.data);
+                    alert(`✅ 模拟实盘盘后推演成功！推演 ${result.sync_result?.days_count || 0} 个交易日。`);
+                } else {
+                    alert(`⚠️ 同步失败: ${result.message || '未知错误'}`);
+                }
+            } catch (err) {
+                alert(`❌ 同步失败: ${err.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> 重新同步/推演模拟盘';
+            }
+        }
+
+        function renderPortfolioDashboard(data) {
+            document.getElementById('portTotalEquity').textContent = '¥ ' + (data.total_equity || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('portCash').textContent = '¥ ' + (data.cash || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('portMarketValue').textContent = '¥ ' + (data.market_value || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('portHoldingCount').textContent = data.holding_count || 0;
+            document.getElementById('portLatestDate').textContent = data.latest_date || '--';
+
+            const cumPnl = data.cum_pnl || 0;
+            const cumRet = data.cum_return || 0;
+            const dailyPnl = data.daily_pnl || 0;
+
+            const elCumPnl = document.getElementById('portCumPnl');
+            const elCumRet = document.getElementById('portCumReturn');
+            const elDailyPnl = document.getElementById('portDailyPnl');
+
+            elCumPnl.textContent = (cumPnl >= 0 ? '+¥ ' : '-¥ ') + Math.abs(cumPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            elCumPnl.className = cumPnl >= 0 ? 'up-val' : 'down-val';
+            elCumRet.textContent = (cumRet >= 0 ? '+' : '') + cumRet.toFixed(2) + '%';
+            elCumRet.className = cumRet >= 0 ? 'up-val' : 'down-val';
+
+            elDailyPnl.textContent = (dailyPnl >= 0 ? '+¥ ' : '-¥ ') + Math.abs(dailyPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            elDailyPnl.className = dailyPnl >= 0 ? 'up-val' : 'down-val';
+
+            // Active Holdings
+            const activeTable = document.getElementById('tableActivePositions');
+            const activePositions = data.active_positions || [];
+            document.getElementById('countActivePositions').textContent = activePositions.length;
+
+            if (activePositions.length === 0) {
+                activeTable.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">当前无活跃持仓</td></tr>`;
+            } else {
+                activeTable.innerHTML = activePositions.map(pos => {
+                    const pnlClass = pos.pnl >= 0 ? 'up-val' : 'down-val';
+                    const pnlSign = pos.pnl >= 0 ? '+' : '';
+                    return `
+                        <tr>
+                            <td><strong style="color: #00d2c4;">${pos.stock_code}</strong></td>
+                            <td style="font-weight: 700;">${pos.stock_name}</td>
+                            <td>${pos.buy_date}</td>
+                            <td>¥ ${pos.buy_price.toFixed(2)}</td>
+                            <td>¥ ${pos.current_price.toFixed(2)}</td>
+                            <td>${pos.shares.toLocaleString()}</td>
+                            <td>¥ ${pos.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td>¥ ${pos.market_value.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="${pnlClass}">${pnlSign}¥ ${pos.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="${pnlClass}">${pnlSign}${pos.pnl_pct.toFixed(2)}%</td>
+                            <td><span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">槽位 #${pos.slot_idx + 1}</span></td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // Closed Trades
+            const closedTable = document.getElementById('tableClosedTrades');
+            const closedTrades = data.closed_trades || [];
+            document.getElementById('countClosedTrades').textContent = closedTrades.length;
+
+            if (closedTrades.length === 0) {
+                closedTable.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无离场成交记录</td></tr>`;
+            } else {
+                closedTable.innerHTML = closedTrades.map(tr => {
+                    const pnlClass = tr.pnl >= 0 ? 'up-val' : 'down-val';
+                    const pnlSign = tr.pnl >= 0 ? '+' : '';
+                    const reason = tr.extra_data?.exit_reason || '策略卖出平仓';
+                    return `
+                        <tr>
+                            <td><strong style="color: #a855f7;">${tr.stock_code}</strong></td>
+                            <td style="font-weight: 700;">${tr.stock_name}</td>
+                            <td>${tr.buy_date}</td>
+                            <td>¥ ${tr.buy_price.toFixed(2)}</td>
+                            <td>${tr.sell_date}</td>
+                            <td>¥ ${tr.sell_price.toFixed(2)}</td>
+                            <td>${tr.shares.toLocaleString()}</td>
+                            <td>¥ ${tr.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="${pnlClass}">${pnlSign}¥ ${tr.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="${pnlClass}">${pnlSign}${tr.pnl_pct.toFixed(2)}%</td>
+                            <td style="font-size: 0.85rem; color: #94a3b8;">${reason}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // Chart
+            renderPortfolioChart(data.equity_curve || []);
+        }
+
+        function renderPortfolioChart(equityCurve) {
+            const ctx = document.getElementById('portfolioEquityChart').getContext('2d');
+            if (portfolioChartInstance) {
+                portfolioChartInstance.destroy();
+            }
+
+            const labels = equityCurve.map(item => item.date);
+            const returns = equityCurve.map(item => item.cum_return);
+            const equities = equityCurve.map(item => (item.total_equity / 10000).toFixed(2));
+
+            portfolioChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '累计收益率 (%)',
+                            data: returns,
+                            borderColor: '#00d2c4',
+                            backgroundColor: 'rgba(0, 210, 196, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: equityCurve.length > 50 ? 0 : 3,
+                            pointHoverRadius: 6,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '总资产 (万元)',
+                            data: equities,
+                            borderColor: '#a855f7',
+                            borderWidth: 1.5,
+                            borderDash: [4, 4],
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 0,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#f0f3fa', font: { family: 'Outfit' } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    if (context.dataset.yAxisID === 'y') {
+                                        return `累计收益率: ${context.parsed.y.toFixed(2)}%`;
+                                    } else {
+                                        return `账户总资产: ${context.parsed.y} 万元`;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#8e95b2' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: {
+                                color: '#00d2c4',
+                                callback: function(val) { return val.toFixed(1) + '%'; }
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            ticks: {
+                                color: '#a855f7',
+                                callback: function(val) { return val + '万'; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function switchPortfolioSubTab(tabName) {
+            if (tabName === 'active') {
+                document.getElementById('subTabNavActiveHoldings').classList.add('active');
+                document.getElementById('subTabNavClosedTrades').classList.remove('active');
+                document.getElementById('subSectionActiveHoldings').style.display = 'block';
+                document.getElementById('subSectionClosedTrades').style.display = 'none';
+            } else {
+                document.getElementById('subTabNavActiveHoldings').classList.remove('active');
+                document.getElementById('subTabNavClosedTrades').classList.add('active');
+                document.getElementById('subSectionActiveHoldings').style.display = 'none';
+                document.getElementById('subSectionClosedTrades').style.display = 'block';
             }
         }
 

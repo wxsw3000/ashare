@@ -971,6 +971,64 @@ def run_dynamic_backtest():
 
 
 
+# ========== 模拟实盘持仓与组合收益 API ==========
+
+@app.route('/api/portfolio/strategies', methods=['GET'])
+def get_portfolio_strategies():
+    """获取存在模拟持仓与推荐记录的策略列表"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT strategy_id, name FROM custom_strategies ORDER BY id ASC")
+        rows = cursor.fetchall()
+        stg_list = [{'strategy_id': r[0], 'name': r[1]} for r in rows]
+
+        cursor.execute("SELECT DISTINCT strategy FROM recommendations")
+        rec_stgs = [r[0] for r in cursor.fetchall()]
+        existing_ids = {s['strategy_id'] for s in stg_list}
+        for r_id in rec_stgs:
+            if r_id not in existing_ids:
+                stg_list.append({'strategy_id': r_id, 'name': r_id})
+
+        return jsonify({'status': 'success', 'data': stg_list})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/portfolio', methods=['GET'])
+def get_portfolio_data():
+    """获取指定策略的模拟持仓看板、成交流水与收益率曲线"""
+    strategy_id = request.args.get('strategy_id', 'cb_double_low')
+    try:
+        from MagicSTG.execution.portfolio_engine import PortfolioEngine
+        engine = PortfolioEngine(strategy_id)
+        summary = engine.get_portfolio_summary()
+        return jsonify(sanitize_json({'status': 'success', 'data': summary}))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': f'获取模拟持仓失败: {str(e)}'})
+
+
+@app.route('/api/portfolio/sync', methods=['POST'])
+def sync_portfolio_data():
+    """根据最新推荐信号重新同步/推演模拟持仓"""
+    req_data = request.json or {}
+    strategy_id = req_data.get('strategy_id', 'cb_double_low')
+    try:
+        from MagicSTG.execution.portfolio_engine import PortfolioEngine
+        engine = PortfolioEngine(strategy_id)
+        res = engine.sync_portfolio_history()
+        summary = engine.get_portfolio_summary()
+        return jsonify(sanitize_json({'status': 'success', 'sync_result': res, 'data': summary}))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': f'同步持仓失败: {str(e)}'})
+
+
 if __name__ == '__main__':
     # 获取 Render 等云托管平台分配的端口，默认为 5000
     port = int(os.environ.get("PORT", 5000))

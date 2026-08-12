@@ -184,6 +184,14 @@ def run_single_strategy_recommendation(strategy_id: str, target_date: str, force
         else:
             success = run_dynamic_factor_recommendation(target_date, strategy_id=stg_code, config=parsed_cfg)
 
+        if success:
+            try:
+                from MagicSTG.execution.portfolio_engine import PortfolioEngine
+                engine = PortfolioEngine(stg_code, config={'strategy': parsed_cfg})
+                engine.sync_portfolio_history()
+            except Exception as pe_err:
+                print(f"  [Portfolio ⚠️] 策略 {stg_code} 模拟持仓更新失败: {pe_err}", flush=True)
+
         conn = ensure_connection_alive(conn)
         cursor = conn.cursor()
         cursor.execute("""
@@ -274,8 +282,16 @@ def run_all_strategy_recommendations(target_date: Optional[str] = None):
             else:
                 run_dynamic_factor_recommendation(target_date, strategy_id=stg_id, config=cfg)
 
+            # 同步模拟持仓与收益率
+            try:
+                from MagicSTG.execution.portfolio_engine import PortfolioEngine
+                pe = PortfolioEngine(stg_id, config={'strategy': cfg})
+                pe.sync_portfolio_history()
+            except Exception as pe_err:
+                print(f"  [Portfolio ⚠️] {stg_id} 模拟持仓更新失败: {pe_err}", flush=True)
+
     print("\n" + "=" * 78)
-    print(f"  ✅ 盘后激活策略推荐信号生成完毕！(目标日: {target_date})")
+    print(f"  ✅ 盘后激活策略推荐信号与模拟持仓同步完毕！(目标日: {target_date})")
     print("=" * 78, flush=True)
 
     # 发送盘后选股推荐日报邮件
