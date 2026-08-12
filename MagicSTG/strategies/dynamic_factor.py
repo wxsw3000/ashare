@@ -91,10 +91,17 @@ class DynamicFactorStrategy(BaseStrategy):
 
     def load_financial_data(self, target_codes: Optional[List[str]] = None) -> Dict[str, Any]:
         """Loads and merges quarterly financial reports from TiDB for target stocks."""
+        # 性能与内存优化：若当前策略无需财报因子（如仅为纯股价/均线/PE策略），跳过4张财报大表的跨表查询
+        if not (self.enable_roe or self.enable_growth or self.enable_debt_limit or self.enable_cash_quality):
+            self.financial_data = {}
+            self._financial_data_cached = {}
+            return {}
+
         if hasattr(self, '_financial_data_cached') and self._financial_data_cached:
             if not target_codes or all(c in self._financial_data_cached for c in target_codes):
                 return self._financial_data_cached
 
+        from MagicSTG.core.db import safe_read_sql_with_retry
         conn = get_connection()
         try:
             print("  [DynamicStrategy] Loading merged quarterly financial reports...", flush=True)
@@ -121,7 +128,11 @@ class DynamicFactorStrategy(BaseStrategy):
             {where_clause}
             ORDER BY p.code, p.pub_date ASC
             """
-            merged = pd.read_sql(query, conn, params=params)
+            merged, conn = safe_read_sql_with_retry(query, conn, params=params)
+            if merged.empty:
+                self.financial_data = {}
+                return {}
+
             merged['pub_date'] = pd.to_datetime(merged['pub_date'])
             merged['code'] = merged['code'].str.replace('_', '.', regex=False)
 

@@ -57,6 +57,35 @@ def ensure_connection_alive(conn: pymysql.Connection) -> pymysql.Connection:
         return get_connection()
 
 
+def safe_read_sql_with_retry(query: str, conn: pymysql.Connection, params: Optional[Any] = None, max_retries: int = 3) -> Tuple[pd.DataFrame, pymysql.Connection]:
+    """
+    Executes pd.read_sql safely with automatic reconnect and exponential backoff retry.
+    Returns (df, updated_connection).
+    """
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            conn = ensure_connection_alive(conn)
+            batch_df = pd.read_sql(query, conn, params=params)
+            return batch_df, conn
+        except (pymysql.err.OperationalError, pymysql.err.InterfaceError, Exception) as e:
+            last_err = e
+            print(f"  [DB Read ⚠️] SQL query attempt ({attempt}/{max_retries}) failed: {e}. Reconnecting...", flush=True)
+            time.sleep(0.3 * attempt)
+            try:
+                conn = get_connection()
+            except Exception:
+                pass
+
+    try:
+        conn = get_connection()
+        batch_df = pd.read_sql(query, conn, params=params)
+        return batch_df, conn
+    except Exception as e:
+        print(f"  [DB Read ❌] Final SQL query attempt failed: {e}", flush=True)
+        return pd.DataFrame(), conn
+
+
 def load_all_stock_codes_db(limit_to_csi300: bool = False) -> List[str]:
     """
     Retrieves all distinct stock codes from database.
@@ -113,7 +142,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         # Direct target codes mode (for explicit stock lists)
         if target_codes is not None:
-            batch_size = 50
+            batch_size = 100
             all_dfs = []
             for i in range(0, len(target_codes), batch_size):
                 batch = target_codes[i:i+batch_size]
@@ -129,14 +158,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                     params.append(max_date_str)
                 query += " ORDER BY date ASC"
 
-                try:
-                    conn = ensure_connection_alive(conn)
-                    batch_df = pd.read_sql(query, conn, params=params)
-                except (pymysql.err.OperationalError, pymysql.err.InterfaceError):
-                    print("  [DB] Connection lost, reconnecting...", flush=True)
-                    conn = get_connection()
-                    batch_df = pd.read_sql(query, conn, params=params)
-
+                batch_df, conn = safe_read_sql_with_retry(query, conn, params=params)
                 if not batch_df.empty:
                     all_dfs.append(batch_df)
 
@@ -163,7 +185,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                     params.append(max_date_str)
                 query += " ORDER BY date ASC"
 
-                batch_df = pd.read_sql(query, conn, params=params)
+                batch_df, conn = safe_read_sql_with_retry(query, conn, params=params)
                 if not batch_df.empty:
                     all_dfs.append(batch_df)
 
@@ -188,13 +210,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                     params.append(max_date_str)
                 query += " ORDER BY date ASC"
 
-                try:
-                    conn = ensure_connection_alive(conn)
-                    batch_df = pd.read_sql(query, conn, params=params)
-                except (pymysql.err.OperationalError, pymysql.err.InterfaceError):
-                    conn = get_connection()
-                    batch_df = pd.read_sql(query, conn, params=params)
-
+                batch_df, conn = safe_read_sql_with_retry(query, conn, params=params)
                 if not batch_df.empty:
                     all_dfs.append(batch_df)
 
