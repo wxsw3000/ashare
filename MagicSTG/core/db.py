@@ -57,28 +57,26 @@ def ensure_connection_alive(conn: pymysql.Connection) -> pymysql.Connection:
         return get_connection()
 
 
-def safe_read_sql_with_retry(query: str, conn: pymysql.Connection, params: Optional[Any] = None, max_retries: int = 3) -> Tuple[pd.DataFrame, pymysql.Connection]:
+def safe_read_sql_with_retry(query: str, conn: Optional[pymysql.Connection] = None, params: Optional[Any] = None, max_retries: int = 3) -> Tuple[pd.DataFrame, pymysql.Connection]:
     """
     Executes pd.read_sql safely with automatic reconnect and exponential backoff retry.
     Returns (df, updated_connection).
     """
-    last_err = None
     for attempt in range(1, max_retries + 1):
         try:
             conn = ensure_connection_alive(conn)
             batch_df = pd.read_sql(query, conn, params=params)
             return batch_df, conn
         except (pymysql.err.OperationalError, pymysql.err.InterfaceError, Exception) as e:
-            last_err = e
             print(f"  [DB Read ⚠️] SQL query attempt ({attempt}/{max_retries}) failed: {e}. Reconnecting...", flush=True)
-            time.sleep(0.3 * attempt)
+            time.sleep(0.5 * attempt)
             try:
-                conn = get_connection()
+                conn = get_connection_with_retry()
             except Exception:
-                pass
+                conn = None
 
     try:
-        conn = get_connection()
+        conn = get_connection_with_retry()
         batch_df = pd.read_sql(query, conn, params=params)
         return batch_df, conn
     except Exception as e:
@@ -90,7 +88,7 @@ def load_all_stock_codes_db(limit_to_csi300: bool = False) -> List[str]:
     """
     Retrieves all distinct stock codes from database.
     """
-    conn = get_connection()
+    conn = get_connection_with_retry()
     try:
         with conn.cursor() as cur:
             if limit_to_csi300:
@@ -106,7 +104,7 @@ def get_trading_dates_db(start_date_str: str, end_date_str: str) -> List[pd.Time
     """
     Retrieves sorted trading dates within specified date range.
     """
-    conn = get_connection()
+    conn = get_connection_with_retry()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT DISTINCT date FROM stock_kline_day WHERE date >= %s AND date <= %s ORDER BY date ASC", (start_date_str, end_date_str))
@@ -119,7 +117,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
     """
     Load stock K-line daily data from TiDB Cloud database.
     """
-    conn = get_connection()
+    conn = get_connection_with_retry()
     try:
         min_date_str = None
         max_date_str = None
