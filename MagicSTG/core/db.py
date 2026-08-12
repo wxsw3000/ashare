@@ -44,6 +44,19 @@ def get_connection() -> pymysql.Connection:
     return pymysql.connect(**conn_params)
 
 
+def get_connection_with_retry(max_retries: int = 3, delay: float = 1.0) -> pymysql.Connection:
+    """
+    Establishes connection with automatic retry logic for transient network failures.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            return get_connection()
+        except Exception as e:
+            if attempt == max_retries:
+                raise
+            time.sleep(delay * attempt)
+
+
 def ensure_connection_alive(conn: pymysql.Connection) -> pymysql.Connection:
     """
     Ensures that the MySQL connection is active. Reconnects if dropped.
