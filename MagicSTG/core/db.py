@@ -9,7 +9,7 @@ import time
 import pymysql
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from MagicSTG.config import (
     DB_HOST,
