@@ -604,21 +604,15 @@ async function startBacktestExecution() {
     const runBtn = document.getElementById('btnStartExecAction');
     if (runBtn) {
         runBtn.disabled = true;
-        runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 回测计算中...`;
+        runBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 回测调度中...`;
     }
 
     const consoleBox = document.getElementById('logConsoleOutput');
-    let elapsedSec = 0;
     const baseLogsText = `[System Init] 开始初始化策略 『${stg.name} (${stg.strategy_id})』 回测引擎...\n` +
-                         `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}, 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
-                         `[DB Engine] 连接 TiDB Cloud 引擎加载 K 线数据区间...\n` +
-                         `[Running...] 正在执行历史数据扫描与模拟交易撮合，请稍候...\n`;
+                         `[Params] 回测时间区间: ${startDateStr} 至 ${endDateStr}\n` +
+                         `[Params] 因子约束: ${JSON.stringify(stg.factors_config)}\n` +
+                         `[Engine Hub] 正在调度算力节点...\n`;
     consoleBox.textContent = baseLogsText;
-
-    const progressTimer = setInterval(() => {
-        elapsedSec += 2;
-        consoleBox.textContent = baseLogsText + `[Progress ⚡] 全市场 5,200+ 股票行情扫描中，已耗时 ${elapsedSec} 秒 (计算正常运行中，请勿关闭窗口)...\n`;
-    }, 2000);
 
     try {
         const res = await fetch('/api/backtest', {
@@ -636,12 +630,27 @@ async function startBacktestExecution() {
 
         if (!res.ok) {
             const text = await res.text();
-            throw new Error(`服务器 HTTP ${res.status} 响应异常: ${text || '请求超时或 Worker 正在重启'}`);
+            throw new Error(`服务器 HTTP ${res.status} 响应异常: ${text || '请求超时'}`);
         }
 
         const result = await res.json();
 
-        if (result.status === 'success') {
+        if (result.status === 'processing') {
+            consoleBox.textContent += `\n[Status 200 OK] ⚡ 0.1s 秒级响应成功！\n` +
+                                     `[Engine Hub] 算力引擎: GitHub Actions (7GB 离线高性能节点)\n` +
+                                     `[Notice] ${result.message}\n` +
+                                     `-------------------------------------------------\n` +
+                                     `[Action] 回测计算正在 GitHub 算力节点全速跑数中！计算完成后会自动写入【历史回测档案】。\n`;
+
+            const goToBtn = document.getElementById('btnGoToResultTab');
+            if (goToBtn) {
+                goToBtn.style.display = 'inline-flex';
+                goToBtn.onclick = () => {
+                    closeExecutionLogModal();
+                    switchMainTab('backtests');
+                };
+            }
+        } else if (result.status === 'success') {
             const s = result.summary;
             let logsText = baseLogsText;
             logsText += `\n================== 回测统计汇总 ==================\n` +
@@ -651,7 +660,7 @@ async function startBacktestExecution() {
                         `成交笔数: ${s.total_buys + s.total_sells} (买入: ${s.total_buys}, 卖出: ${s.total_sells})\n` +
                         `================== 交易明细 Log ==================\n`;
 
-            (result.trade_log || []).forEach((t, i) => {
+            (result.trade_log || []).forEach((t) => {
                 logsText += `[${t.trade_date || t.date}] ${t.action} ${t.stock_code || t.code} | 价格: ¥${t.price} | 数量: ${t.shares} | 盈亏: ${t.pnl !== null ? '¥' + t.pnl.toFixed(2) : '--'} | 原因: ${t.reason || '-'}\n`;
             });
 
@@ -672,7 +681,6 @@ async function startBacktestExecution() {
     } catch (e) {
         consoleBox.textContent += `\n❌ [NET ERROR] 网络异常: ${e.message}\n`;
     } finally {
-        clearInterval(progressTimer);
         globalTaskRunning = false;
         currentTaskName = '';
         if (runBtn) {
