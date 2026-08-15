@@ -96,41 +96,76 @@ E:\ashare\
 在 MagicSTG 中，策略可以通过**“声明式配置 (Configuration Mode)”** 和 **“代码级扩展 (Plugin Mode)”** 两种方式产生：
 
 ### 模式一：声明式 JSON 配置模式 (Configuration Mode)
-系统提供了通用多因子引擎 `DynamicFactorStrategy`，**无需编写任何 Python 代码**，只需传递一个 JSON 配置即可组合策略。
+系统提供了通用多因子引擎 `DynamicFactorStrategy`，**无需编写任何 Python 代码**，即可通过 Web 界面或直接粘贴 JSON 字符串自由定制策略！
 
-#### 配置示例：
+系统原生支持 **股票策略 JSON 模版** 和 **可转债策略 JSON 模版**。
+
+#### 1. 股票策略 JSON 完整字段模版 (Stock Strategy JSON Spec)
 ```json
 {
-  "name": "多因子增强选股策略",
-  "technical": {
-    "enable_golden_cross": true,
-    "short_ma": 5, "long_ma": 20,
-    "volume_surge_factor": 1.2,
-    "enable_turnover": true, "min_turnover": 1.0, "max_turnover": 15.0,  // 换手率 %
-    "enable_rsi": true, "rsi_min": 30.0, "rsi_max": 70.0,               // RSI 超买超卖过滤
-    "enable_macd": true,                                                // MACD 金叉过滤
-    "enable_boll": false,                                               // BOLL 上轨突破
-    "enable_kdj": false                                                 // KDJ 金叉
+  "top_n": 10,                 // 选股推荐 Top N 标的数量限制
+  "stock_scope": "csi300",     // 标的股票池: "csi300" (沪深300) 或 "all" (全市场A股)
+  "sort_by": "pe",             // 主因子排序规则: "pe" (估值), "pb" (市净率), "roe" (盈利), "growth" (成长), "price" (低股价)
+  "tech": {
+    "enable_golden_cross": true, // 均线金叉开关 (短期均线 > 长期均线)
+    "short_ma": 5,              // 短期均线周期 (如 MA5)
+    "long_ma": 20,              // 长期均线周期 (如 MA20)
+    "enable_volume_surge": true, // 成交量放量开关
+    "volume_surge_factor": 1.2, // 放量倍数门槛 (大于均量 1.2 倍)
+    "enable_di_ratio": true,    // DMI 趋势比率开关
+    "buy_di_threshold": 0.70,   // PDI/NDI 比率门槛
+    "enable_turnover": true,    // 换手率 % 过滤开关
+    "min_turnover": 1.0,        // 最低换手率 (%)
+    "max_turnover": 15.0,       // 最高换手率 (%)
+    "enable_rsi": true,         // RSI 超买超卖过滤开关
+    "rsi_min": 30.0,            // RSI 下限
+    "rsi_max": 70.0,            // RSI 上限
+    "enable_macd": true,        // MACD 金叉过滤开关 (DIF > DEA)
+    "enable_boll": false,       // BOLL 突破上轨开关
+    "enable_kdj": false         // KDJ 低位金叉开关 (K > D 且 K < 30)
   },
   "financial": {
-    "enable_pe": true, "pe_range": [0, 30],
-    "enable_pb": true, "pb_range": [0.5, 5.0],                           // PB 市净率过滤
-    "enable_roe": true, "min_roe": 0.10,
-    "enable_growth": true, "min_net_profit_yoy": 0.15,
-    "enable_debt_limit": true, "max_debt_ratio": 0.60
-  },
-  "market": {
-    "enable_market_trend": true,
-    "index_code": "sh.000300"
-  },
-  "ranking": {
-    "primary_factor": "pe", // 支持 'pe', 'pb', 'roe', 'growth', 'price'
-    "reverse": false,
-    "top_n": 5
+    "enable_roe": true,         // 盈利能力 ROE 过滤开关
+    "roe_min": 0.05,            // 最低 ROE 门槛 (5%)
+    "enable_pe": true,          // PE 动态估值区间开关
+    "pe_min": 0.0,              // PE 最小值
+    "pe_max": 35.0,             // PE 最大值
+    "enable_pb": true,          // PB 市净率区间开关
+    "pb_min": 0.5,              // PB 最小值
+    "pb_max": 5.0,              // PB 最大值
+    "enable_growth": true,      // 净利润同比增长 (YoY) 开关
+    "growth_min": 0.10,         // 最低净利润增长率 (10%)
+    "enable_debt_limit": true,  // 资产负债率上限开关
+    "debt_max": 0.70,           // 最高资产负债率 (70%)
+    "enable_cash_quality": true,// 现金流质量开关 (经营现金流/净利润)
+    "cfo_np_min": 0.80          // 最低现金保障率 (0.80)
   }
 }
 ```
-*通过修改 `pe_range`、`pb_range`、`enable_rsi`、`enable_macd` 等配置项，无需修改 Python 代码即可实时生效全新策略！*
+
+#### 2. 可转债策略 JSON 完整字段模版 (Convertible Bond Strategy JSON Spec)
+```json
+{
+  "top_n": 10,                      // 选债推荐 Top N 标的数量限制
+  "stock_scope": "all",             // 标的池: "all" (全市场可转债)
+  "sort_by": "db_low_value",        // 转债排序算法: "db_low_value" (双低优先), "cb_price" (价格优先), "convert_premium_rate" (溢价率优先), "ytm" (到期收益率优先)
+  "max_price": 130.0,               // 最高转债价格限制 (元)
+  "min_convert_premium": -20.0,     // 最低转股溢价率 (%)
+  "max_convert_premium": 50.0,      // 最高转股溢价率 (%)
+  "max_pure_bond_premium": 30.0,    // 纯债溢价率上限 (%, null 为不限制)
+  "min_ytm": 0.0,                   // 到期收益率 YTM 下限 (%, null 为不限制)
+  "stock_linkage": {
+    "enable_stock_roe": true,       // 正股盈利 ROE 联动限制开关
+    "stock_roe_min": 0.05,          // 发行正股最低 ROE (5%)
+    "enable_stock_pe": true,        // 正股 PE 估值联动限制开关
+    "stock_pe_min": 0.0,            // 正股 PE 下限
+    "stock_pe_max": 35.0,           // 正股 PE 上限
+    "enable_stock_ma": false,       // 正股均线趋势联动开关 (短期均线 > 长期均线)
+    "short_ma": 5,                  // 正股短期均线
+    "long_ma": 20                   // 正股长期均线
+  }
+}
+```
 
 ---
 
