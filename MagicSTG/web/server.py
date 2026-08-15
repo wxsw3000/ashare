@@ -134,6 +134,102 @@ def index():
     return render_template('index.html')
 
 
+def validate_and_sanitize_factors_config(category: str, config: dict) -> tuple[bool, str, dict]:
+    """
+    后端 JSON Schema 强类型校验与格式化清洗器。
+    按 category 规范清洗 JSON 字段，确保数据纯净无错配。
+    """
+    if not isinstance(config, dict):
+        return False, "因子配置根节点必须是一个 JSON 对象 (字典)", {}
+
+    sanitized = {}
+
+    if category == 'convertible_bond':
+        # 可转债策略标准 Schema 清洗
+        sanitized = {
+            "top_n": int(config.get("top_n", 10)),
+            "stock_scope": str(config.get("stock_scope", "all")),
+            "sort_by": str(config.get("sort_by", "db_low_value")),
+            "max_price": float(config.get("max_price", 130.0)),
+            "min_convert_premium": float(config.get("min_convert_premium", -20.0)),
+            "max_convert_premium": float(config.get("max_convert_premium", 50.0)),
+            "max_pure_bond_premium": float(config["max_pure_bond_premium"]) if config.get("max_pure_bond_premium") is not None else None,
+            "min_ytm": float(config["min_ytm"]) if config.get("min_ytm") is not None else None,
+        }
+        
+        linkage = config.get("stock_linkage", {})
+        if not isinstance(linkage, dict):
+            linkage = {}
+            
+        sanitized["stock_linkage"] = {
+            "enable_stock_roe": bool(linkage.get("enable_stock_roe", False)),
+            "stock_roe_min": float(linkage.get("stock_roe_min", 0.05)),
+            "enable_stock_pe": bool(linkage.get("enable_stock_pe", False)),
+            "stock_pe_min": float(linkage.get("stock_pe_min", 0)),
+            "stock_pe_max": float(linkage.get("stock_pe_max", 35)),
+            "enable_stock_ma": bool(linkage.get("enable_stock_ma", False)),
+            "short_ma": int(linkage.get("short_ma", 5)),
+            "long_ma": int(linkage.get("long_ma", 20))
+        }
+    else:
+        # 股票策略标准 Schema 清洗
+        tech = config.get("tech", {})
+        if not isinstance(tech, dict):
+            tech = {}
+
+        fin = config.get("financial", {})
+        if not isinstance(fin, dict):
+            fin = {}
+
+        sort_by = str(config.get("sort_by", config.get("ranking", {}).get("primary_factor", "pe")))
+
+        sanitized = {
+            "top_n": int(config.get("top_n", 10)),
+            "stock_scope": str(config.get("stock_scope", "csi300")),
+            "sort_by": sort_by,
+            "tech": {
+                "enable_golden_cross": bool(tech.get("enable_golden_cross", True)),
+                "short_ma": int(tech.get("short_ma", 5)),
+                "long_ma": int(tech.get("long_ma", 20)),
+                "enable_volume_surge": bool(tech.get("enable_volume_surge", True)),
+                "volume_surge_factor": float(tech.get("volume_surge_factor", 1.2)),
+                "enable_di_ratio": bool(tech.get("enable_di_ratio", True)),
+                "buy_di_threshold": float(tech.get("buy_di_threshold", 0.70)),
+                "enable_turnover": bool(tech.get("enable_turnover", False)),
+                "min_turnover": float(tech.get("min_turnover", 1.0)),
+                "max_turnover": float(tech.get("max_turnover", 15.0)),
+                "enable_rsi": bool(tech.get("enable_rsi", False)),
+                "rsi_min": float(tech.get("rsi_min", 30.0)),
+                "rsi_max": float(tech.get("rsi_max", 70.0)),
+                "enable_macd": bool(tech.get("enable_macd", False)),
+                "enable_boll": bool(tech.get("enable_boll", False)),
+                "enable_kdj": bool(tech.get("enable_kdj", False))
+            },
+            "financial": {
+                "enable_roe": bool(fin.get("enable_roe", False)),
+                "roe_min": float(fin.get("roe_min", 0.05)),
+                "enable_pe": bool(fin.get("enable_pe", False)),
+                "pe_min": float(fin.get("pe_min", 0)),
+                "pe_max": float(fin.get("pe_max", 35)),
+                "enable_pb": bool(fin.get("enable_pb", False)),
+                "pb_min": float(fin.get("pb_min", 0.5)),
+                "pb_max": float(fin.get("pb_max", 5.0)),
+                "enable_growth": bool(fin.get("enable_growth", False)),
+                "growth_min": float(fin.get("growth_min", 0.10)),
+                "enable_debt_limit": bool(fin.get("enable_debt_limit", False)),
+                "debt_max": float(fin.get("debt_max", 0.70)),
+                "enable_cash_quality": bool(fin.get("enable_cash_quality", False)),
+                "cfo_np_min": float(fin.get("cfo_np_min", 0.80))
+            },
+            "ranking": {
+                "primary_factor": sort_by,
+                "reverse": sort_by in ["roe", "growth"]
+            }
+        }
+
+    return True, "", sanitized
+
+
 # ========== 策略管理 API (v1.0 架构) ==========
 @app.route('/api/strategies', methods=['GET'])
 def get_strategies():
@@ -211,6 +307,10 @@ def create_strategy():
     if not name:
         return jsonify({'status': 'error', 'message': '策略名称不能为空'})
 
+    ok, err_msg, clean_config = validate_and_sanitize_factors_config(category, factors_config)
+    if not ok:
+        return jsonify({'status': 'error', 'message': f'因子配置格式不合法: {err_msg}'})
+
     import json
     conn = get_db_connection()
     try:
@@ -225,7 +325,7 @@ def create_strategy():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             strategy_id, name, category, description,
-            json.dumps(factors_config, ensure_ascii=False),
+            json.dumps(clean_config, ensure_ascii=False),
             buy_signals_rule, sell_signals_rule, is_active
         ))
         new_id = cursor.lastrowid
@@ -254,6 +354,10 @@ def update_strategy(stg_id):
     if not name:
         return jsonify({'status': 'error', 'message': '策略名称不能为空'})
 
+    ok, err_msg, clean_config = validate_and_sanitize_factors_config(category, factors_config)
+    if not ok:
+        return jsonify({'status': 'error', 'message': f'因子配置格式不合法: {err_msg}'})
+
     import json
     conn = get_db_connection()
     try:
@@ -265,7 +369,7 @@ def update_strategy(stg_id):
             WHERE id = %s
         """, (
             name, category, description,
-            json.dumps(factors_config, ensure_ascii=False),
+            json.dumps(clean_config, ensure_ascii=False),
             buy_signals_rule, sell_signals_rule, is_active,
             stg_id
         ))
