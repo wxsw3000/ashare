@@ -1019,67 +1019,83 @@ def get_backtest_trades(backtest_id):
 
 @app.route('/api/backtest', methods=['POST'])
 def run_dynamic_backtest():
-    """执行自定义因子的动态策略回测"""
+    """触发离线 GitHub Actions 算力引擎执行策略回测，防止 Render 节点超时 (HTTP 502/504)"""
     data = request.json or {}
     start_date_str = data.get('start_date', '2024-01-01')
     end_date_str = data.get('end_date', '2026-06-30')
-    universe = data.get('universe', 'csi300')
-    config = data.get('config', {})
+    stg_name = data.get('strategy_name', 'dynamic_factor')
 
-    if 'strategy' not in config:
-        config['strategy'] = {}
-    config['strategy']['max_holdings'] = int(config['strategy'].get('max_holdings', 4))
-    config['strategy']['per_stock_capital'] = float(config['strategy'].get('per_stock_capital', 10000.0))
-    config['strategy']['buy_di_threshold'] = float(config.get('tech', {}).get('buy_di_threshold', 0.70))
-    config['strategy']['sell_di_threshold'] = float(config.get('tech', {}).get('sell_di_threshold', 0.70))
-    config['strategy']['short_ma'] = int(config.get('tech', {}).get('short_ma', 5))
-    config['strategy']['long_ma'] = int(config.get('tech', {}).get('long_ma', 20))
-    config['strategy']['volume_surge_factor'] = float(config.get('tech', {}).get('volume_surge_factor', 1.2))
+    gh_token = os.getenv("GH_PAT") or os.getenv("GITHUB_TOKEN")
+    gh_repo = os.getenv("GITHUB_REPOSITORY", "wxsw3000/ashare")
 
+    if not gh_token:
+        # 如果没有 GH_PAT，对于轻量小标的池在本地保护运行；对大标的池提警
+        try:
+            from MagicSTG.backtests.engine import run_backtest_engine
+            res = run_backtest_engine(
+                config=data.get('config', {}),
+                start_date_str=start_date_str,
+                end_date_str=end_date_str,
+                strategy_name=stg_name,
+                universe=data.get('universe', 'csi300'),
+                save_to_db=bool(data.get('save_db', True))
+            )
+            if res.get('status') == 'error':
+                return jsonify({'status': 'error', 'message': res.get('message', '回测失败')})
+
+            equity_history_tuples = [[h['date'], h['equity']] for h in res.get('equity_history', [])]
+            return jsonify(sanitize_json({
+                'status': 'success',
+                'summary': {
+                    'initial_equity': res['initial_equity'],
+                    'final_equity': res['final_equity'],
+                    'total_return': res['total_return'],
+                    'annual_return': res['annual_return'],
+                    'max_drawdown': res['max_drawdown'],
+                    'win_rate': res['win_rate'],
+                    'total_buys': res['total_buys'],
+                    'total_sells': res['total_sells'],
+                    'total_fees': res['total_fees']
+                },
+                'equity_history': equity_history_tuples,
+                'trade_log': res['trades']
+            }))
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)})
+
+    # 具备 GH_PAT 密钥时，下发 7GB Actions 高性能算力引擎处理
     try:
-        from MagicSTG.backtests.engine import run_backtest_engine
-
-        save_db = bool(data.get('save_db', False))
-        stg_name = data.get('strategy_name', 'dynamic_factor')
-
-        res = run_backtest_engine(
-            config=config,
-            start_date_str=start_date_str,
-            end_date_str=end_date_str,
-            strategy_name=stg_name,
-            universe=universe,
-            save_to_db=save_db
-        )
-
-        if res.get('status') == 'error':
-            return jsonify({'status': 'error', 'message': res.get('message', '回测失败')})
-
-        equity_history_tuples = [[h['date'], h['equity']] for h in res.get('equity_history', [])]
-
-        resp_data = {
-            'status': 'success',
-            'summary': {
-                'initial_equity': res['initial_equity'],
-                'final_equity': res['final_equity'],
-                'total_return': res['total_return'],
-                'annual_return': res['annual_return'],
-                'max_drawdown': res['max_drawdown'],
-                'win_rate': res['win_rate'],
-                'total_buys': res['total_buys'],
-                'total_sells': res['total_sells'],
-                'total_fees': res['total_fees']
-            },
-            'equity_history': equity_history_tuples,
-            'trade_log': res['trades']
-        }
-        return jsonify(sanitize_json(resp_data))
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'status': 'error', 'message': f'回测执行失败: {str(e)}'})
-    finally:
-        gc.collect()
+        import urllib.request
+        url = f"https://api.github.com/repos/{gh_repo}/dispatches"
+        payload = json.dumps({
+            "event_type": "run-backtest",
+            "client_payload": {
+                "strategy": stg_name,
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "capital": "100000",
+                "top_n": "10"
+            }
+        }).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, headers={
+            "Authorization": f"token {gh_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "MagicSTG-Server"
+        })
+        with urllib.request.urlopen(req) as resp:
+            if resp.status in (200, 204):
+                return jsonify({
+                    'status': 'processing',
+                    'engine': 'github_actions',
+                    'message': f'⚡ 回测计算已成功分发给 GitHub Actions 7GB 离线算力引擎！数据计算完成后将自动写入回测报告表，请在【历史回测】列表中查看。',
+                    'strategy': stg_name,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str
+                })
+            else:
+                return jsonify({'status': 'error', 'message': f'分发 GitHub Actions 回测任务失败 HTTP {resp.status}'})
+    except Exception as gh_err:
+        return jsonify({'status': 'error', 'message': f'调度 GitHub Actions 回测节点异常 ({gh_err})'})
 
 
 

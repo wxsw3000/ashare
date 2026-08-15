@@ -10,6 +10,9 @@ on:
         options:
           - cb_double_low
           - dynamic_factor
+          - pe_strategy
+          - roe_strategy
+          - price_strategy
         default: cb_double_low
       start_date:
         description: '回测起始日期 (YYYY-MM-DD)'
@@ -31,6 +34,10 @@ on:
         required: false
         type: string
         default: '10'
+
+  repository_dispatch:
+    types:
+      - run-backtest
 
 jobs:
   backtest:
@@ -58,11 +65,13 @@ jobs:
           DB_NAME: ${{ secrets.TIDB_DB_NAME }}
           DB_SSL_CA: ${{ secrets.TIDB_SSL_CA }}
         run: |
-          STRATEGY="${{ inputs.strategy }}"
-          START_DATE="${{ inputs.start_date }}"
-          END_DATE="${{ inputs.end_date }}"
-          CAPITAL="${{ inputs.capital }}"
-          TOP_N="${{ inputs.top_n }}"
+          STRATEGY="${{ inputs.strategy || github.event.client_payload.strategy }}"
+          START_DATE="${{ inputs.start_date || github.event.client_payload.start_date }}"
+          END_DATE="${{ inputs.end_date || github.event.client_payload.end_date }}"
+          CAPITAL="${{ inputs.capital || github.event.client_payload.capital || '100000' }}"
+          TOP_N="${{ inputs.top_n || github.event.client_payload.top_n || '10' }}"
+
+          echo "开始触发 Actions 高性能算力节点回测: 策略=$STRATEGY, 起始=$START_DATE, 结束=$END_DATE..."
 
           if [ "$STRATEGY" = "cb_double_low" ]; then
             python MagicSTG/run_cb_backtest.py --start "$START_DATE" --end "$END_DATE" --capital "$CAPITAL" --top "$TOP_N"
