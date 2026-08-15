@@ -498,4 +498,60 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * **MySQL 2013 Socket Drop Guard ([`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py))**: Created `safe_read_sql_with_retry` and exported `get_connection_with_retry` to handle transient network drops during large SQL queries automatically.
      * **4x DB Load Acceleration & UI Console Timer**: Increased target code batch size in `load_all_data_db` and skipped quarterly report queries when financial filters are disabled. Added a 2-second live progress timer in `index.html` backtest execution console box.
 
+---
+
+## 28. Session Summary & Memory (2026-08-15) - Factor Library & Dynamic Factor Engine V2 Upgrade
+
+* **Feature & Technical Improvements**:
+  1. **Database & Data Layer Enrichment ([`MagicSTG/core/db.py`](file:///E:/ashare/MagicSTG/core/db.py))**:
+     * Enhanced `load_all_data_db()` query & parser to load **`pbMRQ` (市净率)**, **`turn` (换手率 %)**, and **`psTTM` (市销率)** directly from `stock_kline_day` table into Pandas DataFrames.
+  2. **Dynamic Factor Strategy Engine V2 Upgrade ([`MagicSTG/strategies/dynamic_factor.py`](file:///E:/ashare/MagicSTG/strategies/dynamic_factor.py))**:
+     * Integrated **PB (市净率)** range filtering & sorting.
+     * Integrated **Turnover Rate (换手率 %)** filtering.
+     * Built vector calculation and signal logic for **RSI** (Relative Strength Index), **MACD** (Exponential Moving Average Difference/Signal line Golden Cross), **BOLL** (Bollinger Bands upper band breakthrough), and **KDJ** (Stochastic Oscillator Golden Cross).
+---
+
+## 29. Session Summary & Memory (2026-08-15) - Convertible Bond Strategy Verification & System Alignment
+
+* **Feature & Technical Audit**:
+  1. **Convertible Bond Strategy Audit ([`MagicSTG/strategies/cb_double_low.py`](file:///E:/ashare/MagicSTG/strategies/cb_double_low.py))**:
+     * Verified `CBDoubleLowStrategy` engine logic: Supports Double-Low filtering (`db_low_value = cb_price + convert_premium_rate * 100`), price ceiling limits (`max_price`), premium rate bounds (`min_convert_premium`, `max_convert_premium`), Pure Bond Premium (`pure_bond_premium`), Yield-to-Maturity (`ytm`), and underlying stock fundamental linkage (`stock_roe`, `stock_pe`).
+  2. **Convertible Bond Database Pipeline ([`MagicSTG/data/bond/`](file:///E:/ashare/MagicSTG/data/bond/))**:
+     * Audited `update_cb_basic.py`, `update_cb_kline_day.py`, and `update_cb_daily_indicator.py`.
+     * Validated seamless data flow from TiDB Cloud to `load_cb_data_db()` and `PortfolioEngine` paper trading execution.
+
+---
+
+## 30. Session Summary & Memory (2026-08-15) - Market Money Flow & Sentiment Pipeline Implemented
+
+* **Feature & Technical Improvements**:
+  1. **New Money Flow Data Sync Script ([`update_money_flow.py`](file:///E:/ashare/MagicSTG/data/macro/update_money_flow.py))**:
+     * Created new updater to fetch **Northbound Capital Net Inflows (北向资金)** and **SSE/SZSE Margin Trading Balance (两融余额与融资买入额)** from AKShare (`stock_hsgt_fund_flow_summary_em` & `stock_margin_sse`).
+     * Auto-creates and populates `market_money_flow` system table in TiDB Cloud.
+  2. **Daily Data Runner Integration ([`MagicSTG/data/runner.py`](file:///E:/ashare/MagicSTG/data/runner.py))**:
+     * Registered `update_money_flow.py` into daily pipeline `SCRIPT_GROUPS['daily']` and `SCRIPT_TABLE_MAP` for automated post-market execution.
+---
+
+## 31. Session Summary & Memory (2026-08-15) - Web Dashboard UI Factor Controls & Engine Integration
+
+* **Feature & UI Improvements ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
+  1. **Interactive Strategy Modal Controls**:
+     * Added HTML input form controls and switch toggles for **PB (市净率范围)**, **Turnover Rate (换手率 %)**, **RSI (相对强弱指标区间)**, **MACD 金叉**, **BOLL 突破上轨**, and **KDJ 低位金叉**.
+     * Updated `getSortByLabel` to display **"低 PB 市净率优先"** in strategy cards and summary badges.
+  2. **Form Handlers & State Persistence**:
+     * Updated `openCreateStrategyModal()`, `openEditStrategyModal()`, and `saveStrategySubmit()` to serialize/deserialize all newly added technical and valuation factors to/from `factors_config` JSON payloads.
+---
+
+## 32. Session Summary & Memory (2026-08-15) - Modular Web Frontend Refactoring
+
+* **Frontend Architecture Refactoring ([`MagicSTG/web/`](file:///E:/ashare/MagicSTG/web/))**:
+  1. **Separation of Concerns**:
+     * Extracted all CSS styling (~660 lines) from `index.html` to [`MagicSTG/web/static/css/main.css`](file:///E:/ashare/MagicSTG/web/static/css/main.css).
+     * Extracted all JavaScript functions and engines (~1,670 lines) from `index.html` to [`MagicSTG/web/static/js/app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js).
+  2. **Template Slimming ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
+     * Reduced HTML template file size from 176 KB / 3,141 lines down to ~810 lines of clean DOM structure.
+     * Connected assets via Flask `url_for('static', filename=...)`.
+  3. **Verification**:
+     * Tested Flask Web App (`server.py`) initialization clean with zero errors.
+
 

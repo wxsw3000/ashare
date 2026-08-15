@@ -102,6 +102,7 @@ SCRIPT_TABLE_MAP = {
     'update_cb_basic.py': 'cb_basic',
     'update_cb_kline_day.py': 'cb_kline_day',
     'update_cb_daily_indicator.py': 'cb_daily_indicator',
+    'update_money_flow.py': 'market_money_flow',
 }
 
 # 按频率分组
@@ -114,6 +115,7 @@ SCRIPT_GROUPS = {
         'update_cb_basic.py',
         'update_cb_kline_day.py',
         'update_cb_daily_indicator.py',
+        'update_money_flow.py',
         'update_macro_deposit_rate.py',
         'update_macro_loan_rate.py',
         'update_macro_reserve_ratio.py',

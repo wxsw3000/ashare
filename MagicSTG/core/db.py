@@ -152,6 +152,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         df = None
 
         # Direct target codes mode (for explicit stock lists)
+        # Direct target codes mode (for explicit stock lists)
         if target_codes is not None:
             batch_size = 500
             all_dfs = []
@@ -159,7 +160,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 batch = target_codes[i:i+batch_size]
                 format_strings = ','.join(['%s'] * len(batch))
                 query = f"""
-                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm, pbMRQ AS pb_mrq, turn, psTTM AS ps_ttm
                 FROM stock_kline_day
                 WHERE code IN ({format_strings}) AND date >= %s
                 """
@@ -186,7 +187,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 batch = db_codes[i:i+batch_size]
                 format_strings = ','.join(['%s'] * len(batch))
                 query = f"""
-                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm, pbMRQ AS pb_mrq, turn, psTTM AS ps_ttm
                 FROM stock_kline_day
                 WHERE code IN ({format_strings}) AND date >= %s
                 """
@@ -211,7 +212,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 batch = db_codes[i:i+batch_size]
                 format_strings = ','.join(['%s'] * len(batch))
                 query = f"""
-                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm
+                SELECT code AS stock_code, date, open, close, high, low, volume, peTTM AS pe_ttm, pbMRQ AS pb_mrq, turn, psTTM AS ps_ttm
                 FROM stock_kline_day
                 WHERE code IN ({format_strings}) AND date >= %s
                 """
@@ -236,9 +237,9 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
 
         df['code'] = df['stock_code'].str.replace('_', '.', regex=False)
         df['date'] = pd.to_datetime(df['date'])
-        df.rename(columns={'pe_ttm': 'peTTM'}, inplace=True)
+        df.rename(columns={'pe_ttm': 'peTTM', 'pb_mrq': 'pbMRQ', 'ps_ttm': 'psTTM'}, inplace=True)
 
-        for col in ['open', 'close', 'high', 'low', 'peTTM']:
+        for col in ['open', 'close', 'high', 'low', 'peTTM', 'pbMRQ', 'psTTM', 'turn']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').astype(np.float32)
         if 'volume' in df.columns:
@@ -254,6 +255,9 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
         lows = df['low'].values
         vols = df['volume'].values if 'volume' in df.columns else None
         pes = df['peTTM'].values if 'peTTM' in df.columns else None
+        pbs = df['pbMRQ'].values if 'pbMRQ' in df.columns else None
+        turns = df['turn'].values if 'turn' in df.columns else None
+        pss = df['psTTM'].values if 'psTTM' in df.columns else None
 
         del df
         if 'all_dfs' in locals():
@@ -276,6 +280,12 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 sub_dict['volume'] = vols[start:end]
             if pes is not None:
                 sub_dict['peTTM'] = pes[start:end]
+            if pbs is not None:
+                sub_dict['pbMRQ'] = pbs[start:end]
+            if turns is not None:
+                sub_dict['turn'] = turns[start:end]
+            if pss is not None:
+                sub_dict['psTTM'] = pss[start:end]
 
             sub_df = pd.DataFrame(sub_dict, index=pd.Index(dates[start:end], name='date'))
             all_data[ucode] = sub_df

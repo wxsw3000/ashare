@@ -36,6 +36,20 @@ class DynamicFactorStrategy(BaseStrategy):
         self.enable_volume_surge = self.config.get('enable_volume_surge', self.tech_config.get('enable_volume_surge', default_tech_enable))
         self.enable_di_ratio = self.config.get('enable_di_ratio', self.tech_config.get('enable_di_ratio', default_tech_enable))
 
+        # 新增扩展技术指标: RSI, MACD, BOLL, KDJ, Turn (换手率)
+        self.enable_turnover = self.config.get('enable_turnover', self.tech_config.get('enable_turnover', False))
+        self.turnover_min = float(self.config.get('min_turnover', self.tech_config.get('min_turnover', 1.0))) # 换手率 %
+        self.turnover_max = float(self.config.get('max_turnover', self.tech_config.get('max_turnover', 15.0)))
+
+        self.enable_rsi = self.config.get('enable_rsi', self.tech_config.get('enable_rsi', False))
+        self.rsi_period = int(self.config.get('rsi_period', self.tech_config.get('rsi_period', 14)))
+        self.rsi_max = float(self.config.get('rsi_max', self.tech_config.get('rsi_max', 70.0)))
+        self.rsi_min = float(self.config.get('rsi_min', self.tech_config.get('rsi_min', 30.0)))
+
+        self.enable_macd = self.config.get('enable_macd', self.tech_config.get('enable_macd', False))
+        self.enable_boll = self.config.get('enable_boll', self.tech_config.get('enable_boll', False))
+        self.enable_kdj = self.config.get('enable_kdj', self.tech_config.get('enable_kdj', False))
+
         self.fin_config = self.config.get('financial', {})
         self.enable_roe = ('min_roe' in self.config) or self.fin_config.get('enable_roe', False)
         self.roe_min = float(self.config.get('min_roe', self.fin_config.get('roe_min', 0.05)))
@@ -48,6 +62,16 @@ class DynamicFactorStrategy(BaseStrategy):
         else:
             self.pe_min = 0.0
             self.pe_max = 35.0
+
+        # 新增估值因子: PB (市净率)
+        self.enable_pb = ('pb_range' in self.config) or self.fin_config.get('enable_pb', False)
+        pb_range = self.config.get('pb_range', [self.fin_config.get('pb_min', 0.5), self.fin_config.get('pb_max', 10.0)])
+        if isinstance(pb_range, (list, tuple)) and len(pb_range) >= 2:
+            self.pb_min = float(pb_range[0])
+            self.pb_max = float(pb_range[1])
+        else:
+            self.pb_min = 0.5
+            self.pb_max = 10.0
 
         self.enable_growth = ('min_net_profit_yoy' in self.config) or self.fin_config.get('enable_growth', False)
         self.growth_min = float(self.config.get('min_net_profit_yoy', self.fin_config.get('growth_min', 0.1)))
@@ -71,6 +95,9 @@ class DynamicFactorStrategy(BaseStrategy):
                 self.reverse = True
             elif sort_by == 'pe_asc':
                 self.primary_factor = 'pe'
+                self.reverse = False
+            elif sort_by == 'pb_asc':
+                self.primary_factor = 'pb'
                 self.reverse = False
             elif sort_by == 'price_asc':
                 self.primary_factor = 'price'
@@ -229,6 +256,38 @@ class DynamicFactorStrategy(BaseStrategy):
         df['ndi'] = 100 * (df['ndm'].rolling(14).mean() / atr_s)
         df['di_ratio'] = df['pdi'] / df['ndi']
 
+        # 计算 RSI 指标
+        delta = df['close'].diff()
+        gain = np.where(delta > 0, delta, 0)
+        loss = np.where(delta < 0, -delta, 0)
+        avg_gain = pd.Series(gain, index=df.index).rolling(self.rsi_period).mean()
+        avg_loss = pd.Series(loss, index=df.index).rolling(self.rsi_period).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df['rsi'] = 100 - (100 / (1 + rs))
+
+        # 计算 MACD 指标
+        ema12 = df['close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd_dif'] = ema12 - ema26
+        df['macd_dea'] = df['macd_dif'].ewm(span=9, adjust=False).mean()
+        df['macd_hist'] = (df['macd_dif'] - df['macd_dea']) * 2
+        df['macd_golden_cross'] = (df['macd_dif'] > df['macd_dea']) & (df['macd_dif'].shift(1) <= df['macd_dea'].shift(1))
+
+        # 计算 BOLL 布林带
+        boll_mid = df['close'].rolling(20).mean()
+        boll_std = df['close'].rolling(20).std()
+        df['boll_upper'] = boll_mid + 2 * boll_std
+        df['boll_lower'] = boll_mid - 2 * boll_std
+
+        # 计算 KDJ 指标
+        low_min = df['low'].rolling(9).min()
+        high_max = df['high'].rolling(9).max()
+        rsv = 100 * (df['close'] - low_min) / (high_max - low_min).replace(0, np.nan)
+        df['kdj_k'] = rsv.ewm(com=2, adjust=False).mean()
+        df['kdj_d'] = df['kdj_k'].ewm(com=2, adjust=False).mean()
+        df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
+        df['kdj_golden_cross'] = (df['kdj_k'] > df['kdj_d']) & (df['kdj_k'].shift(1) <= df['kdj_d'].shift(1))
+
         tech_buy = pd.Series(True, index=df.index)
         if self.enable_golden_cross:
             tech_buy &= df['golden_cross']
@@ -236,6 +295,16 @@ class DynamicFactorStrategy(BaseStrategy):
             tech_buy &= df['volume_surge']
         if self.enable_di_ratio:
             tech_buy &= (df['di_ratio'] >= self.buy_di_threshold)
+        if self.enable_turnover and 'turn' in df.columns:
+            tech_buy &= (df['turn'] >= self.turnover_min) & (df['turn'] <= self.turnover_max)
+        if self.enable_rsi:
+            tech_buy &= (df['rsi'] >= self.rsi_min) & (df['rsi'] <= self.rsi_max)
+        if self.enable_macd:
+            tech_buy &= df['macd_golden_cross']
+        if self.enable_boll:
+            tech_buy &= (df['close'] > df['boll_upper'])
+        if self.enable_kdj:
+            tech_buy &= df['kdj_golden_cross']
 
         roes = np.full(len(df), np.nan, dtype=np.float32)
         growth = np.full(len(df), np.nan, dtype=np.float32)
@@ -264,6 +333,8 @@ class DynamicFactorStrategy(BaseStrategy):
             buy_cond &= (df['fin_roe_avg'] >= self.roe_min)
         if self.enable_pe and 'peTTM' in df.columns:
             buy_cond &= (df['peTTM'] >= self.pe_min) & (df['peTTM'] <= self.pe_max)
+        if self.enable_pb and 'pbMRQ' in df.columns:
+            buy_cond &= (df['pbMRQ'] >= self.pb_min) & (df['pbMRQ'] <= self.pb_max)
         if self.enable_growth:
             buy_cond &= (df['fin_YOYNI'] >= self.growth_min)
         if self.enable_debt_limit:
@@ -278,6 +349,8 @@ class DynamicFactorStrategy(BaseStrategy):
             df['rank_val'] = df['fin_roe_avg'].fillna(-999.0)
         elif self.primary_factor == 'pe':
             df['rank_val'] = df['peTTM'].fillna(999.0 if self.reverse else -999.0)
+        elif self.primary_factor == 'pb':
+            df['rank_val'] = df['pbMRQ'].fillna(999.0 if self.reverse else -999.0) if 'pbMRQ' in df.columns else df['close']
         elif self.primary_factor == 'growth':
             df['rank_val'] = df['fin_YOYNI'].fillna(-999.0)
         else:
