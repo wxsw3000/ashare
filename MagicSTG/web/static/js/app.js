@@ -703,16 +703,18 @@ function switchFactorEditMode(mode) {
     const jsonMsg = document.getElementById('jsonFormatStatusMsg');
 
     if (mode === 'json') {
-        // 从表单组装当前 JSON 填入 textarea
-        const currentConfig = buildConfigFromForm();
-        document.getElementById('stgFactorsJsonInput').value = JSON.stringify(currentConfig, null, 4);
+        // 如果 textarea 目前为空，才从表单组装填入
+        if (!document.getElementById('stgFactorsJsonInput').value.trim()) {
+            const currentConfig = buildConfigFromForm();
+            document.getElementById('stgFactorsJsonInput').value = JSON.stringify(currentConfig, null, 4);
+        }
 
         btnForm.classList.remove('active');
         btnJson.classList.add('active');
         panelStock.style.display = 'none';
         panelCB.style.display = 'none';
         panelJson.style.display = 'block';
-        jsonMsg.innerHTML = `<span style="color:#00d2c4;"><i class="fa-solid fa-check"></i> 已将当前图形表单参数自动序列化为 JSON</span>`;
+        jsonMsg.innerHTML = `<span style="color:#00d2c4;"><i class="fa-solid fa-check"></i> 正在编辑原生 JSON 源代码</span>`;
     } else {
         // 从 JSON textarea 解析并反填回表单控件
         const jsonText = document.getElementById('stgFactorsJsonInput').value.trim();
@@ -1032,84 +1034,19 @@ function openEditStrategyModal(dbId) {
     document.getElementById('stgFormSellRule').value = stg.sell_signals_rule || '';
 
     const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+    
+    // 直接将数据库中的原生 JSON 填入源码编辑器
+    document.getElementById('stgFactorsJsonInput').value = JSON.stringify(cfg, null, 4);
+
     if (cfg) {
-        if (cfg.top_n) document.getElementById('stgFormTopN').value = cfg.top_n;
-
-        if (stg.category === 'convertible_bond') {
-            if (cfg.max_price !== undefined) document.getElementById('stg_cb_max_price').value = cfg.max_price;
-            if (cfg.min_convert_premium !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_convert_premium;
-            else if (cfg.min_premium_rate !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_premium_rate;
-
-            if (cfg.max_convert_premium !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_convert_premium;
-            else if (cfg.max_premium_rate !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_premium_rate;
-
-            document.getElementById('stg_cb_enable_pure_bond').checked = cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null;
-            if (cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null) {
-                document.getElementById('stg_cb_max_pure_bond_premium').value = cfg.max_pure_bond_premium;
-            }
-
-            document.getElementById('stg_cb_enable_ytm').checked = cfg.min_ytm !== undefined && cfg.min_ytm !== null;
-            if (cfg.min_ytm !== undefined && cfg.min_ytm !== null) {
-                document.getElementById('stg_cb_min_ytm').value = cfg.min_ytm;
-            }
-
-            if (cfg.sort_by) document.getElementById('stg_cb_primary_factor').value = cfg.sort_by;
-            if (cfg.stock_scope) document.getElementById('stg_cb_universe').value = cfg.stock_scope;
-
-            if (cfg.stock_linkage) {
-                const link = cfg.stock_linkage;
-                document.getElementById('stg_cb_enable_stock_roe').checked = !!link.enable_stock_roe;
-                if (link.stock_roe_min !== undefined) document.getElementById('stg_cb_stock_roe_min').value = link.stock_roe_min * 100;
-                document.getElementById('stg_cb_enable_stock_pe').checked = !!link.enable_stock_pe;
-                if (link.stock_pe_min !== undefined) document.getElementById('stg_cb_stock_pe_min').value = link.stock_pe_min;
-                if (link.stock_pe_max !== undefined) document.getElementById('stg_cb_stock_pe_max').value = link.stock_pe_max;
-                document.getElementById('stg_cb_enable_stock_ma').checked = !!link.enable_stock_ma;
-                if (link.short_ma !== undefined) document.getElementById('stg_cb_stock_short_ma').value = link.short_ma;
-                if (link.long_ma !== undefined) document.getElementById('stg_cb_stock_long_ma').value = link.long_ma;
-            }
-        } else {
-            if (cfg.stock_scope) document.getElementById('stg_universe').value = cfg.stock_scope;
-            if (cfg.sort_by || cfg.ranking?.primary_factor) document.getElementById('stg_primary_factor').value = cfg.sort_by || cfg.ranking?.primary_factor;
-
-            if (cfg.tech) {
-                document.getElementById('stg_enable_golden_cross').checked = !!cfg.tech.enable_golden_cross;
-                document.getElementById('stg_short_ma').value = cfg.tech.short_ma || 5;
-                document.getElementById('stg_long_ma').value = cfg.tech.long_ma || 20;
-                document.getElementById('stg_enable_volume_surge').checked = !!cfg.tech.enable_volume_surge;
-                document.getElementById('stg_volume_surge_factor').value = cfg.tech.volume_surge_factor || 1.2;
-                document.getElementById('stg_enable_di_ratio').checked = !!cfg.tech.enable_di_ratio;
-                document.getElementById('stg_buy_di_threshold').value = cfg.tech.buy_di_threshold || 0.70;
-
-                if (document.getElementById('stg_enable_turnover')) document.getElementById('stg_enable_turnover').checked = !!cfg.tech.enable_turnover;
-                if (document.getElementById('stg_turnover_min')) document.getElementById('stg_turnover_min').value = cfg.tech.min_turnover || 1.0;
-                if (document.getElementById('stg_turnover_max')) document.getElementById('stg_turnover_max').value = cfg.tech.max_turnover || 15.0;
-                if (document.getElementById('stg_enable_rsi')) document.getElementById('stg_enable_rsi').checked = !!cfg.tech.enable_rsi;
-                if (document.getElementById('stg_rsi_min')) document.getElementById('stg_rsi_min').value = cfg.tech.rsi_min || 30.0;
-                if (document.getElementById('stg_rsi_max')) document.getElementById('stg_rsi_max').value = cfg.tech.rsi_max || 70.0;
-                if (document.getElementById('stg_enable_macd')) document.getElementById('stg_enable_macd').checked = !!cfg.tech.enable_macd;
-                if (document.getElementById('stg_enable_boll')) document.getElementById('stg_enable_boll').checked = !!cfg.tech.enable_boll;
-                if (document.getElementById('stg_enable_kdj')) document.getElementById('stg_enable_kdj').checked = !!cfg.tech.enable_kdj;
-            }
-            if (cfg.financial) {
-                document.getElementById('stg_enable_roe').checked = !!cfg.financial.enable_roe;
-                document.getElementById('stg_roe_min').value = (cfg.financial.roe_min || 0.05) * 100;
-                document.getElementById('stg_enable_pe').checked = !!cfg.financial.enable_pe;
-                document.getElementById('stg_pe_min').value = cfg.financial.pe_min || 0;
-                document.getElementById('stg_pe_max').value = cfg.financial.pe_max || 35;
-
-                if (document.getElementById('stg_enable_pb')) document.getElementById('stg_enable_pb').checked = !!cfg.financial.enable_pb;
-                if (document.getElementById('stg_pb_min')) document.getElementById('stg_pb_min').value = cfg.financial.pb_min || 0.5;
-                if (document.getElementById('stg_pb_max')) document.getElementById('stg_pb_max').value = cfg.financial.pb_max || 5.0;
-
-                document.getElementById('stg_enable_growth').checked = !!cfg.financial.enable_growth;
-                document.getElementById('stg_growth_min').value = (cfg.financial.growth_min || 0.10) * 100;
-                document.getElementById('stg_enable_debt_limit').checked = !!cfg.financial.enable_debt_limit;
-                document.getElementById('stg_debt_max').value = cfg.financial.debt_max || 0.70;
-                document.getElementById('stg_enable_cash_quality').checked = !!cfg.financial.enable_cash_quality;
-                document.getElementById('stg_cfo_np_min').value = cfg.financial.cfo_np_min || 0.80;
-            }
-        }
+        applyConfigToForm(cfg);
     }
+
+    // 重置编辑模式为表单模式
+    currentFactorEditMode = 'form';
+    document.getElementById('btnModeForm').classList.add('active');
+    document.getElementById('btnModeJson').classList.remove('active');
+    document.getElementById('factorPanelJson').style.display = 'none';
 
     onCategoryChange();
     document.getElementById('strategyModal').classList.add('active');
