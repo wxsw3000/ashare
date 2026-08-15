@@ -21,23 +21,38 @@ from MagicSTG.backtests.engine import run_backtest_engine
 
 def main(args_list: Optional[list] = None):
     parser = argparse.ArgumentParser(description="MagicSTG Quantitative Strategy CLI Backtester")
-    parser.add_argument("--strategy", type=str, default="dynamic_factor", help="Strategy name: dynamic_factor, price, pe, roe")
+    parser.add_argument("--strategy", type=str, default="dynamic_factor", help="Strategy name/ID")
     parser.add_argument("--start", type=str, default="2024-01-01", help="Start date YYYY-MM-DD")
     parser.add_argument("--end", type=str, default="2026-06-30", help="End date YYYY-MM-DD")
     parser.add_argument("--universe", type=str, default="all", choices=["all", "csi300"], help="Stock universe: all or csi300")
-    parser.add_argument("--save-db", action="store_true", help="Save backtest results to TiDB database")
+    parser.add_argument("--capital", type=float, default=100000.0, help="Initial capital in RMB")
+    parser.add_argument("--top-n", type=int, default=10, help="Top N holdings count")
+    parser.add_argument("--save-db", action="store_true", default=True, help="Save backtest results to TiDB database")
 
     args = parser.parse_args(args_list)
 
     config = load_yaml_config()
-    # Apply strategy specific overrides
-    stg_name = args.strategy.lower()
-    if stg_name in ['price', 'pe', 'roe']:
-        config['strategy']['name'] = f"{stg_name.upper()}优先策略"
+    stg_name = args.strategy
+
+    # 如果是自定义策略 ID，尝试从 TiDB 读取并加载其因素配置
+    try:
+        from MagicSTG.core.db import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT factors_config FROM custom_strategies WHERE strategy_id = %s OR id = %s", (stg_name, stg_name))
+        row = cursor.fetchone()
+        if row and row[0]:
+            import json
+            custom_cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            if isinstance(custom_cfg, dict):
+                config.update(custom_cfg)
+        conn.close()
+    except Exception as db_err:
+        print(f"  [*] 读取 TiDB 策略因子配置提示: {db_err}")
 
     print("=" * 70)
-    print("  [*] MagicSTG CLI 回测引擎启动")
-    print(f"  [*] 策略名称: {args.strategy}")
+    print("  [*] MagicSTG CLI 回测引擎启动 (GitHub Actions Node)")
+    print(f"  [*] 策略代码: {args.strategy}")
     print(f"  [*] 回测区间: {args.start} ~ {args.end}")
     print(f"  [*] 股票池:   {args.universe.upper()}")
     print("=" * 70)
