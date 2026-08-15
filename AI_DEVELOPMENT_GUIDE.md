@@ -6,9 +6,14 @@
 
 ---
 
-## 1. 项目整体架构与目录结构
+## 1. 项目整体架构与算力隔离原则 (Core System Architecture)
 
-MagicSTG 采用插件化、模块化的 Python/Flask + TiDB Cloud 架构：
+> ⚠️ **核心架构铁律（必须时刻遵循）**：
+> 1. **Render Node (前端与API层)**：仅运行 Web 仪表盘与轻量级 REST API，**绝不上线运行全市场 5,200+ 股票的 CPU/内存密集型计算循环**（如选股推演、历史回测等），防止触发 Render 免费节点 100 秒 HTTP 502/504 响应超时。
+> 2. **GitHub Actions Runner (离线算力引擎层)**：所有全市场 K 线扫描、因子计算、盘后选股推演和历史回测计算，**100% 分发给 GitHub Actions 7GB 内存 + 高性能 CPU 节点**运行，计算结果异步持久化写入 TiDB Cloud 数据库。
+> 3. **交互调度流**：Render 接收用户操作 ➔ 0.1 秒内触发 `repository_dispatch` (或 GitHub API) 下发任务并返回 200/202 响应 ➔ GitHub Actions 跑完结果落库 ➔ 前端 3 秒探针轮询并渲染图表。
+
+### 1.1 目录结构与模块划分
 
 ```text
 E:\ashare\
