@@ -27,13 +27,10 @@
             </div>
         </div>
 
-        <!-- 顶部五大主 Tab 导航 -->
+        <!-- 顶部四大主 Tab 导航 -->
         <div class="main-nav">
             <button class="nav-btn active" id="tabNavStrategies" onclick="switchMainTab('strategies')">
                 <i class="fa-solid fa-gears"></i> 策略管理
-            </button>
-            <button class="nav-btn" id="tabNavWorkflow" onclick="switchMainTab('workflow')">
-                <i class="fa-solid fa-robot"></i> 工作流策略配置
             </button>
             <button class="nav-btn" id="tabNavPortfolio" onclick="switchMainTab('portfolio')">
                 <i class="fa-solid fa-chart-line"></i> 模拟实盘持仓
@@ -73,43 +70,7 @@
             </div>
         </div>
 
-        <!-- ==================== 模块 1.5: 工作流策略配置 (Workflow Strategy Management) ==================== -->
-        <div id="sectionWorkflow" class="tab-section" style="display: none;">
-            <div class="section-card" style="border: 1px solid rgba(0, 210, 196, 0.3); background: rgba(15, 23, 42, 0.7);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem;">
-                    <div>
-                        <h2 style="font-size: 1.3rem; font-weight: 800; color: #38bdf8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="fa-solid fa-robot"></i> 每日盘后 Workflow 自动推演策略接管池
-                        </h2>
-                        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;">
-                            在此可一键控制哪些策略加入 GitHub Actions 每日 18:31 盘后自动推演。已开启策略将在离线 7GB 节点高速扫描全市场并发送选股日报至您的邮箱。
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 0.75rem; align-items: center;">
-                        <span id="workflowActiveStatsBadge" class="badge-tag badge-active" style="font-size: 0.85rem; padding: 0.4rem 0.85rem;">
-                            <i class="fa-solid fa-circle-check"></i> 盘后工作流激活策略: --
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Filter Bar -->
-                <div class="filter-bar">
-                    <input type="text" id="searchWorkflowStrategyInput" class="form-control" placeholder="搜索工作流策略..." oninput="loadWorkflowStrategies()">
-                    <select id="filterWorkflowCategorySelect" class="form-control" onchange="loadWorkflowStrategies()">
-                        <option value="all">全部分类</option>
-                        <option value="stock">股票策略</option>
-                        <option value="convertible_bond">可转债策略</option>
-                    </select>
-                </div>
-
-                <!-- Workflow Strategy Cards Grid -->
-                <div class="stg-card-grid" id="workflowStrategyCardGrid">
-                    <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">加载工作流策略配置中...</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================== 模块 1.8: 模拟实盘持仓与组合收益看板 (Simulated Portfolio Dashboard) ==================== -->
+        <!-- ==================== 模块 2: 模拟实盘持仓与组合收益看板 (Simulated Portfolio Dashboard) ==================== -->
         <div id="sectionPortfolio" class="tab-section" style="display: none;">
             <div class="section-card" style="border: 1px solid rgba(0, 210, 196, 0.3); background: rgba(15, 23, 42, 0.7);">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem;">

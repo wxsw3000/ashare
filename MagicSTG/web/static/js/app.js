@@ -85,6 +85,10 @@ async function loadStrategies() {
                 ? `<span class="badge-tag badge-cb"><i class="fa-solid fa-link"></i> 可转债</span>` 
                 : `<span class="badge-tag badge-stock"><i class="fa-solid fa-chart-line"></i> 股票</span>`;
 
+            const activeBadge = stg.is_active
+                ? `<span class="badge-tag badge-active"><i class="fa-solid fa-circle-play"></i> 盘后推演中</span>`
+                : `<span class="badge-tag badge-inactive"><i class="fa-solid fa-circle-pause"></i> 草稿/关闭</span>`;
+
             const cfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
             let factorTags = [];
             
@@ -109,10 +113,13 @@ async function loadStrategies() {
             const tagsHtml = factorTags.slice(0, 4).map(t => `<span class="factor-summary-badge">${t}</span>`).join(' ');
 
             return `
-                <div class="stg-card ${isCb ? 'cb-stg-card' : ''}" onclick="openStrategyDetailModal(${stg.id})">
+                <div class="stg-card ${isCb ? 'cb-stg-card' : ''}" style="border: 1px solid ${stg.is_active ? 'rgba(0, 210, 196, 0.4)' : 'rgba(255, 255, 255, 0.08)'};" onclick="openStrategyDetailModal(${stg.id})">
                     <div>
                         <div class="stg-card-header">
-                            ${catBadge}
+                            <div>
+                                ${catBadge}
+                                ${activeBadge}
+                            </div>
                             <code style="font-size: 0.78rem; color: #8e95b2;">${stg.strategy_id}</code>
                         </div>
                         <div class="stg-card-title">${stg.name}</div>
@@ -121,10 +128,19 @@ async function loadStrategies() {
                             ${tagsHtml}
                         </div>
                     </div>
-                    <div class="stg-card-footer">
-                        <span class="stg-card-date"><i class="fa-regular fa-clock"></i> ${stg.created_at || '系统策略'}</span>
-                        <button class="btn btn-primary" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;" onclick="event.stopPropagation(); openStrategyDetailModal(${stg.id})">
-                            <i class="fa-solid fa-folder-open"></i> 进入策略详情
+
+                    <div class="stg-card-footer" style="display: flex; justify-content: space-between; align-items: center;" onclick="event.stopPropagation();">
+                        <div class="switch-box" title="开启后此策略将在每日 18:31 盘后工作流中自动运行并发送邮件到您的邮箱">
+                            <label class="switch">
+                                <input type="checkbox" ${stg.is_active ? 'checked' : ''} onchange="toggleStrategyActiveAction(${stg.id})">
+                                <span class="slider round"></span>
+                            </label>
+                            <span style="font-size: 0.78rem; color: ${stg.is_active ? '#00d2c4' : '#8e95b2'}; font-weight: 600;">
+                                ${stg.is_active ? '盘后推演: 开启' : '盘后推演: 关闭'}
+                            </span>
+                        </div>
+                        <button class="btn btn-primary" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;" onclick="openStrategyDetailModal(${stg.id})">
+                            <i class="fa-solid fa-folder-open"></i> 策略详情
                         </button>
                     </div>
                 </div>
@@ -258,7 +274,8 @@ async function toggleStrategyActiveAction(stgId) {
 
 // 打开策略详情模态框
 function openStrategyDetailModal(stgDbId) {
-    const stg = allStrategiesList.find(s => s.id === stgDbId);
+    let stg = allStrategiesList.find(s => s.id === stgDbId);
+    if (!stg) stg = allWorkflowStrategiesList.find(s => s.id === stgDbId);
     if (!stg) return;
 
     activeDetailStgDbId = stgDbId;
@@ -767,7 +784,8 @@ function openCreateStrategyModal() {
 }
 
 function openEditStrategyModal(dbId) {
-    const stg = allStrategiesList.find(s => s.id === dbId);
+    let stg = allStrategiesList.find(s => s.id === dbId);
+    if (!stg) stg = allWorkflowStrategiesList.find(s => s.id === dbId);
     if (!stg) return;
 
     document.getElementById('modalStrategyTitle').textContent = `编辑策略: ${stg.name}`;
@@ -865,6 +883,7 @@ function openEditStrategyModal(dbId) {
     }
 
     onCategoryChange();
+    document.getElementById('strategyModal').classList.add('active');
 }
 
 function closeStrategyModal() {
