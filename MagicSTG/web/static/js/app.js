@@ -689,8 +689,237 @@ function copyConsoleLog() {
     }).catch(e => alert('复制失败: ' + e));
 }
 
+// 当前因子编辑模式 ('form' 或 'json')
+let currentFactorEditMode = 'form';
+
+// 切换因子编辑模式 (可视化表单 VS JSON 代码文本)
+function switchFactorEditMode(mode) {
+    currentFactorEditMode = mode;
+    const btnForm = document.getElementById('btnModeForm');
+    const btnJson = document.getElementById('btnModeJson');
+    const panelStock = document.getElementById('factorPanelStock');
+    const panelCB = document.getElementById('factorPanelCB');
+    const panelJson = document.getElementById('factorPanelJson');
+    const jsonMsg = document.getElementById('jsonFormatStatusMsg');
+
+    if (mode === 'json') {
+        // 从表单组装当前 JSON 填入 textarea
+        const currentConfig = buildConfigFromForm();
+        document.getElementById('stgFactorsJsonInput').value = JSON.stringify(currentConfig, null, 4);
+
+        btnForm.classList.remove('active');
+        btnJson.classList.add('active');
+        panelStock.style.display = 'none';
+        panelCB.style.display = 'none';
+        panelJson.style.display = 'block';
+        jsonMsg.innerHTML = `<span style="color:#00d2c4;"><i class="fa-solid fa-check"></i> 已将当前图形表单参数自动序列化为 JSON</span>`;
+    } else {
+        // 从 JSON textarea 解析并反填回表单控件
+        const jsonText = document.getElementById('stgFactorsJsonInput').value.trim();
+        if (jsonText) {
+            try {
+                const parsedCfg = JSON.parse(jsonText);
+                applyConfigToForm(parsedCfg);
+                jsonMsg.innerHTML = `<span style="color:#2ebd85;"><i class="fa-solid fa-circle-check"></i> JSON 验证合法并已同步至可视化控件</span>`;
+            } catch (err) {
+                alert(`⚠️ 无法切换回表单配置: 输入的 JSON 语法错误！\n错误详情: ${err.message}\n请修正 JSON 语法后再试。`);
+                return;
+            }
+        }
+
+        btnJson.classList.remove('active');
+        btnForm.classList.add('active');
+        panelJson.style.display = 'none';
+        onCategoryChange();
+    }
+}
+
+// 格式化与校验 textarea 中的 JSON 文本
+function formatJsonTextareaInput() {
+    const jsonInput = document.getElementById('stgFactorsJsonInput');
+    const jsonMsg = document.getElementById('jsonFormatStatusMsg');
+    const text = jsonInput.value.trim();
+
+    if (!text) {
+        jsonMsg.innerHTML = `<span style="color:#ffb86c;">⚠️ 内容为空</span>`;
+        return false;
+    }
+
+    try {
+        const obj = JSON.parse(text);
+        jsonInput.value = JSON.stringify(obj, null, 4);
+        jsonMsg.innerHTML = `<span style="color:#2ebd85; font-weight:bold;"><i class="fa-solid fa-circle-check"></i> JSON 语法校验无误！格式化成功。</span>`;
+        return true;
+    } catch (err) {
+        jsonMsg.innerHTML = `<span style="color:#df4b5e; font-weight:bold;"><i class="fa-solid fa-triangle-exclamation"></i> 语法错误: ${err.message}</span>`;
+        return false;
+    }
+}
+
+// 从当前 HTML 表单控件读取构建 JSON 字典
+function buildConfigFromForm() {
+    const category = document.getElementById('stgFormCategory').value;
+    const topN = parseInt(document.getElementById('stgFormTopN').value || 10);
+
+    if (category === 'convertible_bond') {
+        const enablePureBond = document.getElementById('stg_cb_enable_pure_bond').checked;
+        const enableYTM = document.getElementById('stg_cb_enable_ytm').checked;
+
+        return {
+            max_price: parseFloat(document.getElementById('stg_cb_max_price').value || 130.0),
+            min_convert_premium: parseFloat(document.getElementById('stg_cb_min_premium').value || -20.0),
+            max_convert_premium: parseFloat(document.getElementById('stg_cb_max_premium').value || 50.0),
+            max_pure_bond_premium: enablePureBond ? parseFloat(document.getElementById('stg_cb_max_pure_bond_premium').value || 30.0) : null,
+            min_ytm: enableYTM ? parseFloat(document.getElementById('stg_cb_min_ytm').value || 0.0) : null,
+            sort_by: document.getElementById('stg_cb_primary_factor').value,
+            stock_scope: document.getElementById('stg_cb_universe').value,
+            top_n: topN,
+            stock_linkage: {
+                enable_stock_roe: document.getElementById('stg_cb_enable_stock_roe').checked,
+                stock_roe_min: parseFloat(document.getElementById('stg_cb_stock_roe_min').value || 5.0) / 100.0,
+                enable_stock_pe: document.getElementById('stg_cb_enable_stock_pe').checked,
+                stock_pe_min: parseFloat(document.getElementById('stg_cb_stock_pe_min').value || 0),
+                stock_pe_max: parseFloat(document.getElementById('stg_cb_stock_pe_max').value || 35),
+                enable_stock_ma: document.getElementById('stg_cb_enable_stock_ma').checked,
+                short_ma: parseInt(document.getElementById('stg_cb_stock_short_ma').value || 5),
+                long_ma: parseInt(document.getElementById('stg_cb_stock_long_ma').value || 20)
+            }
+        };
+    } else {
+        const primaryFactor = document.getElementById('stg_primary_factor').value;
+        return {
+            top_n: topN,
+            stock_scope: document.getElementById('stg_universe').value,
+            sort_by: primaryFactor,
+            tech: {
+                enable_golden_cross: document.getElementById('stg_enable_golden_cross').checked,
+                short_ma: parseInt(document.getElementById('stg_short_ma').value || 5),
+                long_ma: parseInt(document.getElementById('stg_long_ma').value || 20),
+                enable_volume_surge: document.getElementById('stg_enable_volume_surge').checked,
+                volume_surge_factor: parseFloat(document.getElementById('stg_volume_surge_factor').value || 1.2),
+                enable_di_ratio: document.getElementById('stg_enable_di_ratio').checked,
+                buy_di_threshold: parseFloat(document.getElementById('stg_buy_di_threshold').value || 0.7),
+                enable_turnover: document.getElementById('stg_enable_turnover') ? document.getElementById('stg_enable_turnover').checked : false,
+                min_turnover: document.getElementById('stg_turnover_min') ? parseFloat(document.getElementById('stg_turnover_min').value || 1.0) : 1.0,
+                max_turnover: document.getElementById('stg_turnover_max') ? parseFloat(document.getElementById('stg_turnover_max').value || 15.0) : 15.0,
+                enable_rsi: document.getElementById('stg_enable_rsi') ? document.getElementById('stg_enable_rsi').checked : false,
+                rsi_min: document.getElementById('stg_rsi_min') ? parseFloat(document.getElementById('stg_rsi_min').value || 30.0) : 30.0,
+                rsi_max: document.getElementById('stg_rsi_max') ? parseFloat(document.getElementById('stg_rsi_max').value || 70.0) : 70.0,
+                enable_macd: document.getElementById('stg_enable_macd') ? document.getElementById('stg_enable_macd').checked : false,
+                enable_boll: document.getElementById('stg_enable_boll') ? document.getElementById('stg_enable_boll').checked : false,
+                enable_kdj: document.getElementById('stg_enable_kdj') ? document.getElementById('stg_enable_kdj').checked : false
+            },
+            financial: {
+                enable_roe: document.getElementById('stg_enable_roe').checked,
+                roe_min: parseFloat(document.getElementById('stg_roe_min').value || 5.0) / 100.0,
+                enable_pe: document.getElementById('stg_enable_pe').checked,
+                pe_min: parseFloat(document.getElementById('stg_pe_min').value || 0),
+                pe_max: parseFloat(document.getElementById('stg_pe_max').value || 35),
+                enable_pb: document.getElementById('stg_enable_pb') ? document.getElementById('stg_enable_pb').checked : false,
+                pb_min: document.getElementById('stg_pb_min') ? parseFloat(document.getElementById('stg_pb_min').value || 0.5) : 0.5,
+                pb_max: document.getElementById('stg_pb_max') ? parseFloat(document.getElementById('stg_pb_max').value || 5.0) : 5.0,
+                enable_growth: document.getElementById('stg_enable_growth').checked,
+                growth_min: parseFloat(document.getElementById('stg_growth_min').value || 10.0) / 100.0,
+                enable_debt_limit: document.getElementById('stg_enable_debt_limit').checked,
+                debt_max: parseFloat(document.getElementById('stg_debt_max').value || 0.7),
+                enable_cash_quality: document.getElementById('stg_enable_cash_quality').checked,
+                cfo_np_min: parseFloat(document.getElementById('stg_cfo_np_min').value || 0.8)
+            },
+            ranking: {
+                primary_factor: primaryFactor,
+                reverse: ['roe', 'growth'].includes(primaryFactor)
+            }
+        };
+    }
+}
+
+// 将传入的 config 对象解包同步反填回 HTML 表单控件
+function applyConfigToForm(cfg) {
+    if (!cfg || typeof cfg !== 'object') return;
+
+    if (cfg.top_n) document.getElementById('stgFormTopN').value = cfg.top_n;
+
+    const category = document.getElementById('stgFormCategory').value;
+    if (category === 'convertible_bond') {
+        if (cfg.max_price !== undefined) document.getElementById('stg_cb_max_price').value = cfg.max_price;
+        if (cfg.min_convert_premium !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_convert_premium;
+        else if (cfg.min_premium_rate !== undefined) document.getElementById('stg_cb_min_premium').value = cfg.min_premium_rate;
+
+        if (cfg.max_convert_premium !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_convert_premium;
+        else if (cfg.max_premium_rate !== undefined) document.getElementById('stg_cb_max_premium').value = cfg.max_premium_rate;
+
+        document.getElementById('stg_cb_enable_pure_bond').checked = cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null;
+        if (cfg.max_pure_bond_premium !== undefined && cfg.max_pure_bond_premium !== null) {
+            document.getElementById('stg_cb_max_pure_bond_premium').value = cfg.max_pure_bond_premium;
+        }
+
+        document.getElementById('stg_cb_enable_ytm').checked = cfg.min_ytm !== undefined && cfg.min_ytm !== null;
+        if (cfg.min_ytm !== undefined && cfg.min_ytm !== null) {
+            document.getElementById('stg_cb_min_ytm').value = cfg.min_ytm;
+        }
+
+        if (cfg.sort_by) document.getElementById('stg_cb_primary_factor').value = cfg.sort_by;
+        if (cfg.stock_scope) document.getElementById('stg_cb_universe').value = cfg.stock_scope;
+
+        if (cfg.stock_linkage) {
+            const link = cfg.stock_linkage;
+            document.getElementById('stg_cb_enable_stock_roe').checked = !!link.enable_stock_roe;
+            if (link.stock_roe_min !== undefined) document.getElementById('stg_cb_stock_roe_min').value = link.stock_roe_min * 100;
+            document.getElementById('stg_cb_enable_stock_pe').checked = !!link.enable_stock_pe;
+            if (link.stock_pe_min !== undefined) document.getElementById('stg_cb_stock_pe_min').value = link.stock_pe_min;
+            if (link.stock_pe_max !== undefined) document.getElementById('stg_cb_stock_pe_max').value = link.stock_pe_max;
+            document.getElementById('stg_cb_enable_stock_ma').checked = !!link.enable_stock_ma;
+            if (link.short_ma !== undefined) document.getElementById('stg_cb_stock_short_ma').value = link.short_ma;
+            if (link.long_ma !== undefined) document.getElementById('stg_cb_stock_long_ma').value = link.long_ma;
+        }
+    } else {
+        if (cfg.stock_scope) document.getElementById('stg_universe').value = cfg.stock_scope;
+        if (cfg.sort_by || cfg.ranking?.primary_factor) document.getElementById('stg_primary_factor').value = cfg.sort_by || cfg.ranking?.primary_factor;
+
+        if (cfg.tech) {
+            document.getElementById('stg_enable_golden_cross').checked = !!cfg.tech.enable_golden_cross;
+            document.getElementById('stg_short_ma').value = cfg.tech.short_ma || 5;
+            document.getElementById('stg_long_ma').value = cfg.tech.long_ma || 20;
+            document.getElementById('stg_enable_volume_surge').checked = !!cfg.tech.enable_volume_surge;
+            document.getElementById('stg_volume_surge_factor').value = cfg.tech.volume_surge_factor || 1.2;
+            document.getElementById('stg_enable_di_ratio').checked = !!cfg.tech.enable_di_ratio;
+            document.getElementById('stg_buy_di_threshold').value = cfg.tech.buy_di_threshold || 0.70;
+
+            if (document.getElementById('stg_enable_turnover')) document.getElementById('stg_enable_turnover').checked = !!cfg.tech.enable_turnover;
+            if (document.getElementById('stg_turnover_min')) document.getElementById('stg_turnover_min').value = cfg.tech.min_turnover || 1.0;
+            if (document.getElementById('stg_turnover_max')) document.getElementById('stg_turnover_max').value = cfg.tech.max_turnover || 15.0;
+            if (document.getElementById('stg_enable_rsi')) document.getElementById('stg_enable_rsi').checked = !!cfg.tech.enable_rsi;
+            if (document.getElementById('stg_rsi_min')) document.getElementById('stg_rsi_min').value = cfg.tech.rsi_min || 30.0;
+            if (document.getElementById('stg_rsi_max')) document.getElementById('stg_rsi_max').value = cfg.tech.rsi_max || 70.0;
+            if (document.getElementById('stg_enable_macd')) document.getElementById('stg_enable_macd').checked = !!cfg.tech.enable_macd;
+            if (document.getElementById('stg_enable_boll')) document.getElementById('stg_enable_boll').checked = !!cfg.tech.enable_boll;
+            if (document.getElementById('stg_enable_kdj')) document.getElementById('stg_enable_kdj').checked = !!cfg.tech.enable_kdj;
+        }
+        if (cfg.financial) {
+            document.getElementById('stg_enable_roe').checked = !!cfg.financial.enable_roe;
+            document.getElementById('stg_roe_min').value = (cfg.financial.roe_min || 0.05) * 100;
+            document.getElementById('stg_enable_pe').checked = !!cfg.financial.enable_pe;
+            document.getElementById('stg_pe_min').value = cfg.financial.pe_min || 0;
+            document.getElementById('stg_pe_max').value = cfg.financial.pe_max || 35;
+
+            if (document.getElementById('stg_enable_pb')) document.getElementById('stg_enable_pb').checked = !!cfg.financial.enable_pb;
+            if (document.getElementById('stg_pb_min')) document.getElementById('stg_pb_min').value = cfg.financial.pb_min || 0.5;
+            if (document.getElementById('stg_pb_max')) document.getElementById('stg_pb_max').value = cfg.financial.pb_max || 5.0;
+
+            document.getElementById('stg_enable_growth').checked = !!cfg.financial.enable_growth;
+            document.getElementById('stg_growth_min').value = (cfg.financial.growth_min || 0.10) * 100;
+            document.getElementById('stg_enable_debt_limit').checked = !!cfg.financial.enable_debt_limit;
+            document.getElementById('stg_debt_max').value = cfg.financial.debt_max || 0.70;
+            document.getElementById('stg_enable_cash_quality').checked = !!cfg.financial.enable_cash_quality;
+            document.getElementById('stg_cfo_np_min').value = cfg.financial.cfo_np_min || 0.80;
+        }
+    }
+}
+
 // 动态因子面板切换 (股票策略 vs 可转债策略)
 function onCategoryChange() {
+    if (currentFactorEditMode === 'json') return;
+
     const cat = document.getElementById('stgFormCategory').value;
     const stockPanel = document.getElementById('factorPanelStock');
     const cbPanel = document.getElementById('factorPanelCB');
@@ -894,79 +1123,28 @@ function closeStrategyModal() {
 async function saveStrategySubmit() {
     const dbId = document.getElementById('editStrategyDbId').value;
     const category = document.getElementById('stgFormCategory').value;
-    const topN = parseInt(document.getElementById('stgFormTopN').value || 10);
 
     let factorsConfig = {};
 
-    if (category === 'convertible_bond') {
-        const enablePureBond = document.getElementById('stg_cb_enable_pure_bond').checked;
-        const enableYTM = document.getElementById('stg_cb_enable_ytm').checked;
-
-        factorsConfig = {
-            max_price: parseFloat(document.getElementById('stg_cb_max_price').value || 130.0),
-            min_convert_premium: parseFloat(document.getElementById('stg_cb_min_premium').value || -20.0),
-            max_convert_premium: parseFloat(document.getElementById('stg_cb_max_premium').value || 50.0),
-            max_pure_bond_premium: enablePureBond ? parseFloat(document.getElementById('stg_cb_max_pure_bond_premium').value || 30.0) : null,
-            min_ytm: enableYTM ? parseFloat(document.getElementById('stg_cb_min_ytm').value || 0.0) : null,
-            sort_by: document.getElementById('stg_cb_primary_factor').value,
-            stock_scope: document.getElementById('stg_cb_universe').value,
-            top_n: topN,
-            stock_linkage: {
-                enable_stock_roe: document.getElementById('stg_cb_enable_stock_roe').checked,
-                stock_roe_min: parseFloat(document.getElementById('stg_cb_stock_roe_min').value || 5.0) / 100.0,
-                enable_stock_pe: document.getElementById('stg_cb_enable_stock_pe').checked,
-                stock_pe_min: parseFloat(document.getElementById('stg_cb_stock_pe_min').value || 0),
-                stock_pe_max: parseFloat(document.getElementById('stg_cb_stock_pe_max').value || 35),
-                enable_stock_ma: document.getElementById('stg_cb_enable_stock_ma').checked,
-                short_ma: parseInt(document.getElementById('stg_cb_stock_short_ma').value || 5),
-                long_ma: parseInt(document.getElementById('stg_cb_stock_long_ma').value || 20)
+    if (currentFactorEditMode === 'json') {
+        const jsonText = document.getElementById('stgFactorsJsonInput').value.trim();
+        if (!jsonText) {
+            alert('⚠️ 因子配置 JSON 不能为空！');
+            return;
+        }
+        try {
+            factorsConfig = JSON.parse(jsonText);
+            // 校验根节点是否为对象
+            if (typeof factorsConfig !== 'object' || Array.isArray(factorsConfig) || factorsConfig === null) {
+                alert('⚠️ 因子配置 JSON 格式不合法: 根节点必须是一个字典对象 {...}！');
+                return;
             }
-        };
+        } catch (err) {
+            alert(`❌ 无法保存: JSON 格式语法不合法！\n错误信息: ${err.message}\n请修正文本框中的 JSON 格式后再试。`);
+            return;
+        }
     } else {
-        const primaryFactor = document.getElementById('stg_primary_factor').value;
-        factorsConfig = {
-            top_n: topN,
-            stock_scope: document.getElementById('stg_universe').value,
-            sort_by: primaryFactor,
-            tech: {
-                enable_golden_cross: document.getElementById('stg_enable_golden_cross').checked,
-                short_ma: parseInt(document.getElementById('stg_short_ma').value || 5),
-                long_ma: parseInt(document.getElementById('stg_long_ma').value || 20),
-                enable_volume_surge: document.getElementById('stg_enable_volume_surge').checked,
-                volume_surge_factor: parseFloat(document.getElementById('stg_volume_surge_factor').value || 1.2),
-                enable_di_ratio: document.getElementById('stg_enable_di_ratio').checked,
-                buy_di_threshold: parseFloat(document.getElementById('stg_buy_di_threshold').value || 0.7),
-                enable_turnover: document.getElementById('stg_enable_turnover') ? document.getElementById('stg_enable_turnover').checked : false,
-                min_turnover: document.getElementById('stg_turnover_min') ? parseFloat(document.getElementById('stg_turnover_min').value || 1.0) : 1.0,
-                max_turnover: document.getElementById('stg_turnover_max') ? parseFloat(document.getElementById('stg_turnover_max').value || 15.0) : 15.0,
-                enable_rsi: document.getElementById('stg_enable_rsi') ? document.getElementById('stg_enable_rsi').checked : false,
-                rsi_min: document.getElementById('stg_rsi_min') ? parseFloat(document.getElementById('stg_rsi_min').value || 30.0) : 30.0,
-                rsi_max: document.getElementById('stg_rsi_max') ? parseFloat(document.getElementById('stg_rsi_max').value || 70.0) : 70.0,
-                enable_macd: document.getElementById('stg_enable_macd') ? document.getElementById('stg_enable_macd').checked : false,
-                enable_boll: document.getElementById('stg_enable_boll') ? document.getElementById('stg_enable_boll').checked : false,
-                enable_kdj: document.getElementById('stg_enable_kdj') ? document.getElementById('stg_enable_kdj').checked : false
-            },
-            financial: {
-                enable_roe: document.getElementById('stg_enable_roe').checked,
-                roe_min: parseFloat(document.getElementById('stg_roe_min').value || 5.0) / 100.0,
-                enable_pe: document.getElementById('stg_enable_pe').checked,
-                pe_min: parseFloat(document.getElementById('stg_pe_min').value || 0),
-                pe_max: parseFloat(document.getElementById('stg_pe_max').value || 35),
-                enable_pb: document.getElementById('stg_enable_pb') ? document.getElementById('stg_enable_pb').checked : false,
-                pb_min: document.getElementById('stg_pb_min') ? parseFloat(document.getElementById('stg_pb_min').value || 0.5) : 0.5,
-                pb_max: document.getElementById('stg_pb_max') ? parseFloat(document.getElementById('stg_pb_max').value || 5.0) : 5.0,
-                enable_growth: document.getElementById('stg_enable_growth').checked,
-                growth_min: parseFloat(document.getElementById('stg_growth_min').value || 10.0) / 100.0,
-                enable_debt_limit: document.getElementById('stg_enable_debt_limit').checked,
-                debt_max: parseFloat(document.getElementById('stg_debt_max').value || 0.7),
-                enable_cash_quality: document.getElementById('stg_enable_cash_quality').checked,
-                cfo_np_min: parseFloat(document.getElementById('stg_cfo_np_min').value || 0.8)
-            },
-            ranking: {
-                primary_factor: primaryFactor,
-                reverse: ['roe', 'growth'].includes(primaryFactor)
-            }
-        };
+        factorsConfig = buildConfigFromForm();
     }
 
     const payload = {
