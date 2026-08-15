@@ -1,5 +1,5 @@
 # MagicSTG Quantitative System - Project Memory & Handoff
-*Last Updated: 2026-08-02 00:08 (Local Time)*
+*Last Updated: 2026-08-16 00:24 (Local Time)*
 
 This document serves as a persistent context handoff for MagicSTG. It ensures future development sessions or different AI agents can pick up the work instantly without confusion.
 
@@ -553,5 +553,23 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * Connected assets via Flask `url_for('static', filename=...)`.
   3. **Verification**:
      * Tested Flask Web App (`server.py`) initialization clean with zero errors.
+
+---
+
+## 33. Session Summary & Memory (2026-08-16) - Dual-Mode Factor Configuration, Schema Validation & GitHub Actions Zero-Compute Rule Enforced
+
+* **Key Achievements & Architecture Upgrades**:
+  1. **Dual-Mode Factor Editing UI ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html), [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     * Implemented sub-tab switcher for **"可视化表单"** vs **"直接粘贴 JSON 配置"**.
+     * Added syntax validation & formatting engine (`formatJsonTextareaInput`).
+     * Refactored modal handlers (`openEditStrategyModal`, `switchFactorEditMode`) to preserve raw DB JSON without default-form overwrites.
+  2. **Backend JSON Schema Validation & Sanitizer ([`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     * Created `validate_and_sanitize_factors_config(category, config)` to enforce strong-typing and sanitize stock/convertible_bond JSON structures prior to DB write.
+     * Cleaned and updated all 5 live DB strategy records in TiDB Cloud with precise, differentiated factor JSONs (`cb_double_low`, `dynamic_factor`, `pe_strategy`, `roe_strategy`, `price_strategy`).
+  3. **Render Zero-Compute Architectural Rule & GitHub Actions Offloading**:
+     * Enforced strict rule: **Render handles Web UI & instant API dispatches only; 100% of compute-heavy tasks (backtests, strategy scans) are offloaded to GitHub Actions 7GB runners via `repository_dispatch`**.
+     * Refactored `/api/backtest` to dispatch `run-backtest` event asynchronously with 0.1s response time, eliminating Render HTTP 502/504 timeouts.
+     * Added `--capital` and `--top-n` CLI parameters to [`MagicSTG/backtests/runner.py`](file:///E:/ashare/MagicSTG/backtests/runner.py) and added TiDB strategy config auto-loading.
+     * Written core architectural rule into [`AI_DEVELOPMENT_GUIDE.md`](file:///E:/ashare/AI_DEVELOPMENT_GUIDE.md).
 
 
