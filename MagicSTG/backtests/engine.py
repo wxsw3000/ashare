@@ -177,9 +177,10 @@ def run_backtest_engine(
                                 continue
                             rank_val = float(row['rank_val']) if 'rank_val' in row and not pd.isna(row['rank_val']) else c_price
                             daily_buy_candidates[dt].append((c_code, c_price, rank_val))
-                            candidate_kline_pool[c_code] = df
-                            candidate_kline_pool[c_code.replace('.', '_')] = df
-                            candidate_kline_pool[c_code.replace('_', '.')] = df
+                            df_copy = df.copy()
+                            candidate_kline_pool[c_code] = df_copy
+                            candidate_kline_pool[c_code.replace('.', '_')] = df_copy
+                            candidate_kline_pool[c_code.replace('_', '.')] = df_copy
 
                 if 'sell_signal' in df.columns:
                     s_rows = df[df['sell_signal']]
@@ -187,9 +188,10 @@ def run_backtest_engine(
                         if dt in daily_sell_signals:
                             s_price = float(row['close'])
                             daily_sell_signals[dt].append((c_code, s_price))
-                            candidate_kline_pool[c_code] = df
-                            candidate_kline_pool[c_code.replace('.', '_')] = df
-                            candidate_kline_pool[c_code.replace('_', '.')] = df
+                            df_copy = df.copy()
+                            candidate_kline_pool[c_code] = df_copy
+                            candidate_kline_pool[c_code.replace('.', '_')] = df_copy
+                            candidate_kline_pool[c_code.replace('_', '.')] = df_copy
 
             del b_data, b_processed
             gc.collect()

@@ -118,6 +118,10 @@ class PositionManager:
             slot_idx=slot_idx
         )
         self.positions.append(pos)
+        if slot_idx >= 0 and slot_idx < self.max_holdings:
+            self.slot_cash[slot_idx] -= cost_total
+            if self.slot_cash[slot_idx] < 0:
+                self.slot_cash[slot_idx] = 0.0
         self.save()
         return True
 
