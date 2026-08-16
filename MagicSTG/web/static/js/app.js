@@ -636,20 +636,93 @@ async function startBacktestExecution() {
         const result = await res.json();
 
         if (result.status === 'processing') {
+            const lastId = result.dispatch_id || 0;
+            const stgId = stg.strategy_id;
+            let elapsedSec = 0;
+
             consoleBox.textContent += `\n[Status 200 OK] ⚡ 0.1s 秒级响应成功！\n` +
                                      `[Engine Hub] 算力引擎: GitHub Actions (7GB 离线高性能节点)\n` +
                                      `[Notice] ${result.message}\n` +
                                      `-------------------------------------------------\n` +
-                                     `[Action] 回测计算正在 GitHub 算力节点全速跑数中！计算完成后会自动写入【历史回测档案】。\n`;
+                                     `[Polling ⏳] 正在实时监听算力节点进度...\n`;
 
             const goToBtn = document.getElementById('btnGoToResultTab');
             if (goToBtn) {
                 goToBtn.style.display = 'inline-flex';
+                goToBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 算力节点计算中...`;
                 goToBtn.onclick = () => {
                     closeExecutionLogModal();
                     switchMainTab('backtests');
                 };
             }
+
+            // 开启 3 秒轮询监听引擎计算状态
+            const pollTimer = setInterval(async () => {
+                elapsedSec += 3;
+                try {
+                    const statusRes = await fetch(`/api/backtest/status?strategy=${encodeURIComponent(stgId)}&last_id=${lastId}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.completed && statusData.data) {
+                        clearInterval(pollTimer);
+                        globalTaskRunning = false;
+                        if (runBtn) {
+                            runBtn.disabled = false;
+                            runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 重新运行`;
+                        }
+
+                        const d = statusData.data;
+                        const retSign = d.total_return >= 0 ? '+' : '';
+                        const annSign = d.annual_return >= 0 ? '+' : '';
+
+                        let finalLogs = baseLogsText + 
+                                       `\n[Status 200 OK] ⚡ 秒级响应成功！\n` +
+                                       `[Engine Hub] 算力引擎: GitHub Actions (7GB 离线高性能节点)\n` +
+                                       `-------------------------------------------------\n` +
+                                       `================== 🎉 回测计算成功完成 ==================\n` +
+                                       `回测档案 ID: #${d.id}\n` +
+                                       `策略名称:    ${stg.name} (${stgId})\n` +
+                                       `回测区间:    ${d.date_range}\n` +
+                                       `初始资金:    ¥${d.initial_equity.toLocaleString()}\n` +
+                                       `期末总资产:  ¥${d.final_equity.toLocaleString()}\n` +
+                                       `累计收益率:  ${retSign}${d.total_return}%\n` +
+                                       `年化收益率:  ${annSign}${d.annual_return}%\n` +
+                                       `最大回撤:    ${d.max_drawdown}%\n` +
+                                       `胜率:        ${d.win_rate}%\n` +
+                                       `=======================================================\n` +
+                                       `[Success ✅] 数据已完整持久化保存至 TiDB 数据库！\n`;
+
+                        consoleBox.textContent = finalLogs;
+
+                        if (goToBtn) {
+                            goToBtn.style.display = 'inline-flex';
+                            goToBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                            goToBtn.innerHTML = `<i class="fa-solid fa-chart-line"></i> 查看最新回测报告档案`;
+                            goToBtn.onclick = () => {
+                                closeExecutionLogModal();
+                                switchMainTab('backtests');
+                                loadBacktests();
+                            };
+                        }
+
+                        if (typeof loadBacktests === 'function') loadBacktests();
+                    } else {
+                        // 正在计算中，追加更新倒计时日志
+                        const currentText = consoleBox.textContent;
+                        const lines = currentText.split('\n');
+                        const lastLine = lines[lines.length - 1] || '';
+                        if (lastLine.includes('[Polling ⏳]')) {
+                            lines[lines.length - 1] = `[Polling ⏳] 正在实时监听算力节点进度... (已等待 ${elapsedSec} 秒)`;
+                            consoleBox.textContent = lines.join('\n');
+                        } else {
+                            consoleBox.textContent += `[Polling ⏳] 正在实时监听算力节点进度... (已等待 ${elapsedSec} 秒)\n`;
+                        }
+                    }
+                } catch (pollErr) {
+                    console.warn('轮询回测状态异常:', pollErr);
+                }
+            }, 3000);
+
         } else if (result.status === 'success') {
             const s = result.summary;
             let logsText = baseLogsText;

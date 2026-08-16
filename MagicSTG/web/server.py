@@ -1084,18 +1084,84 @@ def run_dynamic_backtest():
         })
         with urllib.request.urlopen(req) as resp:
             if resp.status in (200, 204):
+                # 获取该策略当前最新的回测 id 作为基准
+                latest_id = 0
+                try:
+                    conn_tmp = get_db_connection()
+                    cur_tmp = conn_tmp.cursor()
+                    cur_tmp.execute("SELECT MAX(id) FROM backtest_results WHERE strategy = %s", (stg_name,))
+                    r_tmp = cur_tmp.fetchone()
+                    latest_id = r_tmp[0] if (r_tmp and r_tmp[0]) else 0
+                    conn_tmp.close()
+                except Exception:
+                    pass
+
                 return jsonify({
                     'status': 'processing',
                     'engine': 'github_actions',
-                    'message': f'⚡ 回测计算已成功分发给 GitHub Actions 7GB 离线算力引擎！数据计算完成后将自动写入回测报告表，请在【历史回测】列表中查看。',
+                    'message': f'⚡ 回测计算已成功分发给 GitHub Actions 7GB 离线算力引擎！数据计算完成后将自动写入回测报告表。',
                     'strategy': stg_name,
                     'start_date': start_date_str,
-                    'end_date': end_date_str
+                    'end_date': end_date_str,
+                    'dispatch_id': latest_id,
+                    'dispatch_time': int(time.time())
                 })
             else:
                 return jsonify({'status': 'error', 'message': f'分发 GitHub Actions 回测任务失败 HTTP {resp.status}'})
     except Exception as gh_err:
         return jsonify({'status': 'error', 'message': f'调度 GitHub Actions 回测节点异常 ({gh_err})'})
+
+
+@app.route('/api/backtest/status')
+def get_backtest_status():
+    """查询指定策略的回测实时计算与入库状态（用于前端控制台轮询）"""
+    stg = request.args.get('strategy')
+    last_id = request.args.get('last_id', 0, type=int)
+
+    if not stg:
+        return jsonify({'status': 'error', 'message': '缺少 strategy 参数'})
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, strategy, run_date, date_range_start, date_range_end,
+                   total_return, annual_return, max_drawdown, win_rate, initial_equity, final_equity
+            FROM backtest_results
+            WHERE strategy = %s OR strategy = (SELECT strategy_id FROM custom_strategies WHERE id = %s LIMIT 1)
+            ORDER BY id DESC
+            LIMIT 1
+        """, (stg, stg if stg.isdigit() else -1))
+        row = cursor.fetchone()
+
+        if not row:
+            return jsonify({'status': 'running', 'completed': False, 'message': '算力节点排队/计算中...'})
+
+        b_id, b_stg, run_date, d_start, d_end, tot_ret, ann_ret, max_dd, win_rate, init_eq, fin_eq = row
+
+        if b_id > last_id:
+            return jsonify({
+                'status': 'success',
+                'completed': True,
+                'data': {
+                    'id': b_id,
+                    'strategy': b_stg,
+                    'run_date': run_date.strftime('%Y-%m-%d %H:%M:%S') if hasattr(run_date, 'strftime') else str(run_date),
+                    'date_range': f"{d_start} ~ {d_end}",
+                    'total_return': float(tot_ret) if tot_ret is not None else 0.0,
+                    'annual_return': float(ann_ret) if ann_ret is not None else 0.0,
+                    'max_drawdown': float(max_dd) if max_dd is not None else 0.0,
+                    'win_rate': float(win_rate) if win_rate else 0.0,
+                    'initial_equity': float(init_eq) if init_eq else 0.0,
+                    'final_equity': float(fin_eq) if fin_eq else 0.0
+                }
+            })
+        else:
+            return jsonify({'status': 'running', 'completed': False, 'message': '算力节点全速计算中...'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
 
 
 
