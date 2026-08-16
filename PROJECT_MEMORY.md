@@ -572,4 +572,22 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      * Added `--capital` and `--top-n` CLI parameters to [`MagicSTG/backtests/runner.py`](file:///E:/ashare/MagicSTG/backtests/runner.py) and added TiDB strategy config auto-loading.
      * Written core architectural rule into [`AI_DEVELOPMENT_GUIDE.md`](file:///E:/ashare/AI_DEVELOPMENT_GUIDE.md).
 
+---
 
+## 34. Session Summary & Memory (2026-08-16) - Rigorous No-Lookahead T+1 Execution Refactoring & Capital Ledger Conservation Fixes
+
+* **Root Cause & Core Architecture Refactoring**:
+  1. **Elimination of Same-Day Execution Look-ahead Bias (未来函数彻底消除)**:
+     - **Issue**: Previously, `engine.py` and `run_cb_backtest.py` evaluated signals on Date $T$ post-market using Date $T$ Close price and executed trades immediately on Date $T$ using Date $T$ Close price (same-day execution), giving the engine micro-lookahead bias.
+     - **Fix**: Refactored both stock (`engine.py`) and convertible bond (`run_cb_backtest.py`) backtest engines to enforce **strict T+1 Next-Day Open Execution (`Open` Price + 0.1% Slippage)**. Signals generated on Date $T$ post-market are executed on Date $T+1$ morning at Open price.
+  2. **Fix Capital Accounting Cash Deduction Bug (买入资金未扣除 Bug 修复)**:
+     - **Issue**: In `InMemoryPositionManager.add_position()` (`position_manager.py`), buy trades added position records and market values but failed to deduct `total_cost` from `self.slot_cash[slot_idx]`, causing fake compound asset inflation (yielding artificial 60,000%+ returns).
+     - **Fix**: Added explicit `self.slot_cash[slot_idx] -= total_cost` in `add_position()`. Total equity now mathematically equals `sum(slot_cash) + sum(market_values)` at all times.
+  3. **Fix Cross-Stock DataFrame Memory Pointer Contamination**:
+     - **Fix**: Added `df.copy()` deep copies when storing K-line DataFrames into `candidate_kline_pool` in `engine.py`, preventing cross-stock price map contamination.
+  4. **Automated Unit Testing & Ledger Integrity Safeguard**:
+     - Created automated unit test suite [`tests/test_ledger_integrity.py`](file:///E:/ashare/tests/test_ledger_integrity.py) (3/3 tests passed OK). Verified exact match between trade log PnLs and final portfolio equity.
+
+* **Real-time UX Upgrades & Realistic Benchmark**:
+  - Integrated real-time status polling endpoint `/api/backtest/status` in `server.py` and `app.js` with live progress timer and auto-refresh result buttons.
+  - Re-ran multi-factor strategy on 2020-01-01 ~ 2026-08-16: Total return **+22.77%** (Annualized **+3.27%**), Max Drawdown **-50.49%**, Win Rate **43.75%**, Final Equity **¥49,106.36** (100% aligned with trade log ledger).
