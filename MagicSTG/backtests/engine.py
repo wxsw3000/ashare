@@ -426,7 +426,15 @@ def run_backtest_engine(
     eq_df['daily_return'] = eq_df['equity'].pct_change().fillna(0.0)
     daily_rf = 0.02 / 252
     excess_returns = eq_df['daily_return'] - daily_rf
-    sharpe_ratio = float((excess_returns.mean() / excess_returns.std() * np.sqrt(252)) if excess_returns.std() > 0 else 0.0)
+    std_val = excess_returns.std()
+    if pd.isna(std_val) or std_val <= 0 or np.isnan(std_val):
+        sharpe_ratio = 0.0
+    else:
+        raw_sharpe = float((excess_returns.mean() / std_val) * np.sqrt(252))
+        if np.isnan(raw_sharpe) or np.isinf(raw_sharpe):
+            sharpe_ratio = 0.0
+        else:
+            sharpe_ratio = float(np.clip(raw_sharpe, -99.99, 99.99))
 
     result_summary = {
         'status': 'success',

@@ -4,6 +4,7 @@ MagicSTG Core Database Writer
 Handles persistence of recommendations, positions, and backtest results into TiDB.
 """
 
+import math
 from datetime import datetime
 import pandas as pd
 from typing import List, Tuple, Dict, Any, Union
@@ -153,6 +154,16 @@ def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
         except Exception:
             pass
 
+        sharpe = result_data.get('sharpe_ratio', 0.0)
+        try:
+            sharpe_val = float(sharpe) if sharpe is not None else 0.0
+            if math.isnan(sharpe_val) or math.isinf(sharpe_val):
+                sharpe_val = 0.0
+            else:
+                sharpe_val = max(-99.99, min(99.99, sharpe_val))
+        except Exception:
+            sharpe_val = 0.0
+
         cursor.execute("""
             INSERT INTO backtest_results 
             (strategy, run_date, date_range_start, date_range_end, 
@@ -173,7 +184,7 @@ def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
             result_data.get('total_buys', 0),
             result_data.get('total_sells', 0),
             result_data.get('total_fees', 0),
-            result_data.get('sharpe_ratio', 0.0)
+            sharpe_val
         ))
 
         backtest_id = cursor.lastrowid

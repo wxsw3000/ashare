@@ -930,7 +930,7 @@ def get_backtests():
                 r.initial_equity,
                 r.final_equity
             FROM backtest_results r
-            LEFT JOIN custom_strategies s ON r.strategy = s.strategy_id
+            LEFT JOIN custom_strategies s ON (r.strategy = s.strategy_id OR r.strategy = CAST(s.id AS CHAR))
             ORDER BY r.run_date DESC, r.id DESC
             LIMIT 50
         """)
