@@ -228,11 +228,7 @@ def run_backtest_engine(
                         c_code, c_price = cand[0], cand[1]
                         if c_code in processed_data and check_limit_up(processed_data[c_code], d, c_price):
                             continue
-                        daily_buy_candidates[d].append(cand)
-                if sells:
-                    daily_sell_signals[d].extend(sells)
-
-    # Initialize Position Manager & Simulation Loop
+                  # Initialize Position Manager & Simulation Loop (Strict T+1 Next-Day Open Execution Framework)
     position_manager = InMemoryPositionManager(config)
     max_holdings = config.get('strategy', {}).get('max_holdings', 5)
     per_stock_capital = config.get('strategy', {}).get('per_stock_capital', 20000.0)
@@ -246,8 +242,13 @@ def run_backtest_engine(
     equity_history = []
     holding_data = {}
 
-    for date in backtest_dates:
-        # Load K-lines for active holdings if needed
+    slippage_rate = float(config.get('execution', {}).get('slippage', 0.001)) # 0.1% 滑点成本
+
+    pending_sells = [] # 待在当前交易日开盘执行的卖单 [(code, sell_reason)]
+    pending_buys = []  # 待在当前交易日开盘执行的买单 [(code, rank_val)]
+
+    for date_idx, date in enumerate(backtest_dates):
+        # 预加载当前交易日已有持仓及候选股票的 K 线数据
         active_codes = [p.code for p in position_manager.get_positions()]
         missing_codes = [c for c in active_codes if c not in holding_data]
         if missing_codes:
@@ -270,130 +271,189 @@ def run_backtest_engine(
                         for code_h, df in fresh_h_data.items():
                             holding_data[c] = strategy.compute_indicators(df, code=c) if hasattr(strategy, 'compute_indicators') else df
 
-        # 1. Update highest price for holdings if applicable
-        for pos in position_manager.get_positions():
-            code = pos.code
-            if code in holding_data and date in holding_data[code].index:
-                high_price = holding_data[code].loc[date, 'high']
-                if not pd.isna(high_price) and hasattr(pos, 'highest_price'):
-                    pos.highest_price = max(getattr(pos, 'highest_price', pos.buy_price), high_price)
-
-        # 2. Make sell decisions
-        sells_to_exec = []
-        for pos in position_manager.get_positions():
-            code = pos.code
-            if code in holding_data and date in holding_data[code].index:
-                df = holding_data[code]
-                price = df.loc[date, 'close']
-                pnl_pct = (price - pos.buy_price) / pos.buy_price
-                sell_reason = None
-
-                if config.get('risk', {}).get('enable_stop_loss', False) and pnl_pct <= config.get('risk', {}).get('stop_loss', -0.08):
-                    sell_reason = f"止损触发 (盈亏: {pnl_pct*100:.2f}%)"
-                elif strategy.check_sell_signal(df, date):
-                    sell_reason = "技术指标卖出信号"
-
-                if sell_reason:
-                    sells_to_exec.append({
-                        'code': code,
-                        'price': price,
-                        'shares': pos.shares,
-                        'reason': sell_reason
-                    })
-
-        # 3. Execute Sell decisions
-        sold_codes = {s['code'] for s in sells_to_exec}
-        for sell in sells_to_exec:
-            code = sell['code']
+        # =========================================================================
+        # 1. 严格在 T+1 日【开盘时】(Open Price) 执行上一交易日盘后产生的卖出指令
+        # =========================================================================
+        unexecuted_sells = []
+        for sell_item in pending_sells:
+            code = sell_item['code']
+            reason = sell_item['reason']
             pos = position_manager.get_position(code)
             if not pos:
                 continue
-            sell_amount = sell['shares'] * sell['price']
-            fee = calc_sell_cost(sell_amount)
-            net_sell = sell_amount - fee
-            pnl = net_sell - pos.cost_total
-            pnl_pct = (pnl / pos.cost_total * 100) if pos.cost_total > 0 else 0.0
 
-            position_manager.remove_position(code, sell['price'], fee)
+            if code in holding_data and date in holding_data[code].index:
+                df_k = holding_data[code]
+                row_k = df_k.loc[date]
+                open_price = float(row_k['open'])
+                high_price = float(row_k['high'])
+                low_price = float(row_k['low'])
 
-            trade_log.append({
-                'trade_date': date.strftime('%Y-%m-%d'),
-                'stock_code': code,
-                'action': 'SELL',
-                'price': sell['price'],
-                'shares': sell['shares'],
-                'amount': round(sell_amount, 2),
-                'fee': round(fee, 2),
-                'pnl': round(pnl, 2),
-                'pnl_pct': round(pnl_pct, 2),
-                'reason': sell['reason']
-            })
+                # 检查是否为一字跌停 (若全天一字跌停，开盘无法卖出平仓，保留至下一个交易日继续尝试)
+                if open_price <= 0 or (open_price == low_price == high_price and 'close' in row_k and check_limit_up(df_k, date, open_price)):
+                    unexecuted_sells.append(sell_item)
+                    continue
 
-        # 4. Execute Buy decisions
+                # 扣除卖出滑点成本 (根据滑点向下修正卖出价格)
+                exec_sell_price = round(open_price * (1.0 - slippage_rate), 2)
+                sell_amount = pos.shares * exec_sell_price
+                fee = calc_sell_cost(sell_amount)
+                net_sell = sell_amount - fee
+                pnl = net_sell - pos.cost_total
+                pnl_pct = (pnl / pos.cost_total * 100) if pos.cost_total > 0 else 0.0
+
+                position_manager.remove_position(code, exec_sell_price, fee)
+
+                trade_log.append({
+                    'trade_date': date.strftime('%Y-%m-%d'),
+                    'stock_code': code,
+                    'action': 'SELL',
+                    'price': exec_sell_price,
+                    'shares': pos.shares,
+                    'amount': round(sell_amount, 2),
+                    'fee': round(fee, 2),
+                    'pnl': round(pnl, 2),
+                    'pnl_pct': round(pnl_pct, 2),
+                    'reason': f"[T+1开盘成交] {reason}"
+                })
+            else:
+                unexecuted_sells.append(sell_item)
+
+        # 挂单未成交的卖单保留到下一交易日
+        pending_sells = unexecuted_sells
+
+        # =========================================================================
+        # 2. 严格在 T+1 日【开盘时】(Open Price) 执行上一交易日盘后产生的买入指令
+        # =========================================================================
         holding_codes = [p.code for p in position_manager.get_positions()]
         exclude_codes = set(holding_codes)
-        active_slots_after_sells = {
-            p.slot_idx for p in position_manager.get_positions()
-        }
+        active_slots_after_sells = {p.slot_idx for p in position_manager.get_positions()}
         empty_slots = sorted(list(set(range(max_holdings)) - active_slots_after_sells))
 
-        cands = daily_buy_candidates.get(date, [])
-        for cand in cands:
+        for buy_item in pending_buys:
             if not empty_slots:
                 break
-            code = cand[0]
-            price = cand[1]
+            code = buy_item['code']
             if code in exclude_codes:
                 continue
 
-            slot_idx = empty_slots.pop(0)
-            available_cash = position_manager.slot_cash[slot_idx] if config.get('strategy', {}).get('enable_compounding', False) else per_stock_capital
-            max_shares = int(available_cash / price / 100) * 100
+            # 获取该股票在买入日的 K 线数据
+            df_k = None
+            if code in candidate_kline_pool:
+                df_k = candidate_kline_pool[code]
+            elif code.replace('_', '.') in candidate_kline_pool:
+                df_k = candidate_kline_pool[code.replace('_', '.')]
+            elif code in holding_data:
+                df_k = holding_data[code]
+            else:
+                fresh_b = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=[code])
+                if fresh_b and code in fresh_b:
+                    df_k = fresh_b[code]
+                    candidate_kline_pool[code] = df_k
 
-            if max_shares <= 0:
+            if df_k is None or date not in df_k.index:
                 continue
 
-            buy_amount = max_shares * price
+            row_k = df_k.loc[date]
+            open_price = float(row_k['open'])
+            high_price = float(row_k['high'])
+            low_price = float(row_k['low'])
+
+            if open_price <= 0:
+                continue
+
+            # 检查是否为一字涨停 (若全天一字涨停，开盘无法挂单买入，买单失效)
+            if open_price == high_price == low_price and check_limit_up(df_k, date, open_price):
+                continue
+
+            # 增加买入滑点成本 (根据滑点向上修正买入价格)
+            exec_buy_price = round(open_price * (1.0 + slippage_rate), 2)
+
+            slot_idx = empty_slots.pop(0)
+            available_cash = position_manager.slot_cash[slot_idx] if config.get('strategy', {}).get('enable_compounding', False) else per_stock_capital
+            max_shares = int(available_cash / exec_buy_price / 100) * 100
+
+            if max_shares <= 0:
+                empty_slots.append(slot_idx)
+                empty_slots.sort()
+                continue
+
+            buy_amount = max_shares * exec_buy_price
             cost_fee = calc_buy_cost(buy_amount)
             total_cost = buy_amount + cost_fee
 
             if total_cost > available_cash:
+                empty_slots.append(slot_idx)
+                empty_slots.sort()
                 continue
 
-            position_manager.add_position(code, price, max_shares, total_cost, slot_idx)
-            if code in candidate_kline_pool:
-                holding_data[code] = candidate_kline_pool[code]
-            elif code.replace('_', '.') in candidate_kline_pool:
-                holding_data[code] = candidate_kline_pool[code.replace('_', '.')]
+            position_manager.add_position(code, exec_buy_price, max_shares, total_cost, slot_idx)
+            holding_data[code] = df_k
             exclude_codes.add(code)
 
             trade_log.append({
                 'trade_date': date.strftime('%Y-%m-%d'),
                 'stock_code': code,
                 'action': 'BUY',
-                'price': price,
+                'price': exec_buy_price,
                 'shares': max_shares,
                 'amount': round(buy_amount, 2),
                 'fee': round(cost_fee, 2),
                 'pnl': 0.0,
                 'pnl_pct': 0.0,
-                'reason': '买入信号'
+                'reason': '[T+1开盘成交] 满足选股因子'
             })
 
-        # 5. Calculate daily equity
+        # 清空已处理的买单
+        pending_buys = []
+
+        # =========================================================================
+        # 3. 今日 (T日) 盘后：更新最高价、生成卖出信号与选股买入信号（供 T+1 日开盘执行）
+        # =========================================================================
+        # 3.1 更新最高价与卖出判断
+        next_pending_sells = []
+        for pos in position_manager.get_positions():
+            code = pos.code
+            if code in holding_data and date in holding_data[code].index:
+                df_k = holding_data[code]
+                high_price = float(df_k.loc[date, 'high'])
+                close_price = float(df_k.loc[date, 'close'])
+                if not pd.isna(high_price) and hasattr(pos, 'highest_price'):
+                    pos.highest_price = max(getattr(pos, 'highest_price', pos.buy_price), high_price)
+
+                pnl_pct = (close_price - pos.buy_price) / pos.buy_price if pos.buy_price > 0 else 0.0
+                sell_reason = None
+
+                if config.get('risk', {}).get('enable_stop_loss', False) and pnl_pct <= config.get('risk', {}).get('stop_loss', -0.08):
+                    sell_reason = f"止损触发 (盘后浮亏: {pnl_pct*100:.2f}%)"
+                elif strategy.check_sell_signal(df_k, date):
+                    sell_reason = "技术指标卖出信号"
+
+                if sell_reason:
+                    # 避免重复加入卖单
+                    if not any(s['code'] == code for s in pending_sells) and not any(s['code'] == code for s in next_pending_sells):
+                        next_pending_sells.append({'code': code, 'reason': sell_reason})
+
+        pending_sells.extend(next_pending_sells)
+
+        # 3.2 今日盘后生成新的买入候选信号
+        current_holding_count = len(position_manager.get_positions())
+        if current_holding_count < max_holdings:
+            cands = daily_buy_candidates.get(date, [])
+            for cand in cands:
+                cand_code = cand[0]
+                if cand_code not in set(p.code for p in position_manager.get_positions()):
+                    if not any(b['code'] == cand_code for b in pending_buys):
+                        pending_buys.append({'code': cand_code, 'rank_val': cand[2] if len(cand) > 2 else 0.0})
+
+        # =========================================================================
+        # 4. 今日 (T日) 盘后：以今日收盘价 Close 结算最新资产组合净值
+        # =========================================================================
         current_prices = {}
         for pos in position_manager.get_positions():
             code = pos.code
-            if code not in holding_data:
-                if all_data is not None and code in all_data:
-                    holding_data[code] = processed_data[code]
-                else:
-                    fresh_h_data = load_all_data_db(start_date=start_date_str, end_date=end_date_str, target_codes=[code])
-                    for c, df in fresh_h_data.items():
-                        holding_data[c] = strategy.compute_indicators(df) if hasattr(strategy, 'compute_indicators') else df
-
             if code in holding_data and date in holding_data[code].index:
-                current_prices[code] = holding_data[code].loc[date, 'close']
+                current_prices[code] = float(holding_data[code].loc[date, 'close'])
             else:
                 current_prices[code] = pos.buy_price
 

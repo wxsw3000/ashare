@@ -79,7 +79,8 @@ def run_cb_backtest(
     portfolio_history = []
     trade_logs = []
 
-    day_counter = 0
+    pending_cb_sells = []
+    pending_cb_buys = []
 
     for current_date in trading_dates:
         date_str = current_date.strftime('%Y-%m-%d')
@@ -95,33 +96,15 @@ def run_cb_backtest(
             if price and price > 0:
                 price_map[code] = price
 
-        # 更新当前已有持仓的市值
-        current_holdings_value = 0.0
-        active_codes = list(holdings.keys())
-        for code in active_codes:
-            if code in price_map:
-                holdings[code]['curr_price'] = price_map[code]
-            curr_price = holdings[code]['curr_price']
-            current_holdings_value += holdings[code]['shares'] * curr_price
-
-        total_asset = current_cash + current_holdings_value
-
-        # 判断是否到达轮动调仓日
-        is_rebalance_day = (day_counter % rebalance_days == 0) or (len(holdings) == 0)
-
-        if is_rebalance_day:
-            current_holding_codes = list(holdings.keys())
-            buy_signals, sell_signals = strategy.generate_signals(
-                date=current_date,
-                data={'cb_daily_indicator': today_df},
-                current_holdings=current_holding_codes
-            )
-
-            # 1) 执行卖出离场
-            for code, price, reason in sell_signals:
-                if code in holdings:
-                    shares = holdings[code]['shares']
-                    sell_price = price if price > 0 else holdings[code]['curr_price']
+        # =========================================================================
+        # 1. 严格在 T+1 日【开盘/当日行情】执行上一轮动日产生的卖出与买入指令
+        # =========================================================================
+        # 1.1 执行卖出离场
+        for code, reason in pending_cb_sells:
+            if code in holdings:
+                shares = holdings[code]['shares']
+                sell_price = price_map.get(code, holdings[code]['curr_price'])
+                if sell_price > 0:
                     income = shares * sell_price * (1 - 0.00005)  # 扣除万0.5佣金
                     current_cash += income
                     pnl = (sell_price - holdings[code]['cost_price']) * shares
@@ -132,47 +115,81 @@ def run_cb_backtest(
                         'price': sell_price,
                         'shares': shares,
                         'amount': income,
-                        'pnl': pnl,
-                        'reason': reason
+                        'pnl': round(pnl, 2),
+                        'reason': f"[T+1执行] {reason}"
                     })
                     del holdings[code]
 
-            #  recalculate total_asset after sell
-            current_holdings_val_after_sell = sum(h['shares'] * h['curr_price'] for h in holdings.values())
-            total_asset = current_cash + current_holdings_val_after_sell
+        pending_cb_sells = []
 
-            # 2) 执行买入建仓
-            if buy_signals:
-                # 均分可用资金买入入榜的转债
-                target_allocation = total_asset / top_n
-                for code, price, reason in buy_signals:
-                    if price <= 0:
-                        continue
-                    available_buy_cash = min(current_cash, target_allocation)
-                    if available_buy_cash >= price * 10:  # 至少买10张 (手)
-                        shares = int(available_buy_cash // (price * (1 + 0.00005)))
-                        if shares > 0:
-                            cost = shares * price * (1 + 0.00005)
-                            current_cash -= cost
-                            holdings[code] = {
-                                'shares': shares,
-                                'cost_price': price,
-                                'curr_price': price
-                            }
-                            trade_logs.append({
-                                'date': date_str,
-                                'action': 'BUY',
-                                'code': code,
-                                'price': price,
-                                'shares': shares,
-                                'amount': cost,
-                                'pnl': 0.0,
-                                'reason': reason
-                            })
+        # 1.2 执行买入建仓
+        if pending_cb_buys:
+            # 重新计算卖出后的组合资产并均分
+            cur_holdings_val = sum(h['shares'] * price_map.get(c, h['curr_price']) for c, h in holdings.items())
+            total_asset_now = current_cash + cur_holdings_val
+            target_allocation = total_asset_now / top_n
 
-        # 重新计算最新组合总资产
-        current_holdings_value = sum(h['shares'] * h['curr_price'] for h in holdings.values())
+            for code, reason in pending_cb_buys:
+                if code in holdings:
+                    continue
+                price = price_map.get(code, 0.0)
+                if price <= 0:
+                    continue
+                available_buy_cash = min(current_cash, target_allocation)
+                if available_buy_cash >= price * 10:  # 至少买10张 (手)
+                    shares = int(available_buy_cash // (price * (1 + 0.00005)))
+                    if shares > 0:
+                        cost = shares * price * (1 + 0.00005)
+                        current_cash -= cost
+                        holdings[code] = {
+                            'shares': shares,
+                            'cost_price': price,
+                            'curr_price': price
+                        }
+                        trade_logs.append({
+                            'date': date_str,
+                            'action': 'BUY',
+                            'code': code,
+                            'price': price,
+                            'shares': shares,
+                            'amount': round(cost, 2),
+                            'pnl': 0.0,
+                            'reason': f"[T+1执行] {reason}"
+                        })
+
+        pending_cb_buys = []
+
+        # =========================================================================
+        # 2. 更新当前持仓资产市值与轮动判断 (T日盘后)
+        # =========================================================================
+        current_holdings_value = 0.0
+        active_codes = list(holdings.keys())
+        for code in active_codes:
+            if code in price_map:
+                holdings[code]['curr_price'] = price_map[code]
+            curr_price = holdings[code]['curr_price']
+            current_holdings_value += holdings[code]['shares'] * curr_price
+
         total_asset = current_cash + current_holdings_value
+
+        # 判断是否到达轮动调仓日，生成供 T+1 日执行的信号
+        is_rebalance_day = (day_counter % rebalance_days == 0) or (len(holdings) == 0)
+
+        if is_rebalance_day:
+            current_holding_codes = list(holdings.keys())
+            buy_signals, sell_signals = strategy.generate_signals(
+                date=current_date,
+                data={'cb_daily_indicator': today_df},
+                current_holdings=current_holding_codes
+            )
+
+            for code, price, reason in sell_signals:
+                pending_cb_sells.append((code, reason))
+
+            for code, price, reason in buy_signals:
+                pending_cb_buys.append((code, reason))
+
+        day_counter += 1
 
         portfolio_history.append({
             'date': current_date,
