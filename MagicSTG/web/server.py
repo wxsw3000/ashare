@@ -1118,6 +1118,7 @@ def get_backtest_status():
     """查询指定策略的回测实时计算与入库状态（用于前端控制台轮询）"""
     stg = request.args.get('strategy')
     last_id = request.args.get('last_id', 0, type=int)
+    dispatch_time = request.args.get('dispatch_time', 0, type=int)
 
     if not stg:
         return jsonify({'status': 'error', 'message': '缺少 strategy 参数'})
@@ -1135,12 +1136,8 @@ def get_backtest_status():
         """, (stg, stg if stg.isdigit() else -1))
         row = cursor.fetchone()
 
-        if not row:
-            return jsonify({'status': 'running', 'completed': False, 'message': '算力节点排队/计算中...'})
-
-        b_id, b_stg, run_date, d_start, d_end, tot_ret, ann_ret, max_dd, win_rate, init_eq, fin_eq = row
-
-        if b_id > last_id:
+        if row and row[0] > last_id:
+            b_id, b_stg, run_date, d_start, d_end, tot_ret, ann_ret, max_dd, win_rate, init_eq, fin_eq = row
             return jsonify({
                 'status': 'success',
                 'completed': True,
@@ -1157,8 +1154,17 @@ def get_backtest_status():
                     'final_equity': float(fin_eq) if fin_eq else 0.0
                 }
             })
-        else:
-            return jsonify({'status': 'running', 'completed': False, 'message': '算力节点全速计算中...'})
+
+        # 超时检查：若已被触发且超过 300 秒未得到新 ID 结果，判定为计算异常/超时中断
+        import time
+        if dispatch_time > 0 and (int(time.time()) - dispatch_time) > 300:
+            return jsonify({
+                'status': 'error',
+                'completed': True,
+                'message': '算力节点在 5 分钟内未写入最新回测报告。离线任务可能发生程序报错（如变量未定义等）或被系统中断，请检查 GitHub Actions 执行日志。'
+            })
+
+        return jsonify({'status': 'running', 'completed': False, 'message': '算力节点全速计算中...'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
     finally:

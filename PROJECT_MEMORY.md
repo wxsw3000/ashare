@@ -591,3 +591,20 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 * **Real-time UX Upgrades & Realistic Benchmark**:
   - Integrated real-time status polling endpoint `/api/backtest/status` in `server.py` and `app.js` with live progress timer and auto-refresh result buttons.
   - Re-ran multi-factor strategy on 2020-01-01 ~ 2026-08-16: Total return **+22.77%** (Annualized **+3.27%**), Max Drawdown **-50.49%**, Win Rate **43.75%**, Final Equity **¥49,106.36** (100% aligned with trade log ledger).
+
+---
+
+## 35. Session Summary & Memory (2026-08-17) - CB Backtest Engine Bug Fix & Web UI Exception/Timeout Handling
+
+* **Root Cause & Fixes**:
+  1. **Fixed `UnboundLocalError: local variable 'day_counter' referenced before assignment` ([`MagicSTG/run_cb_backtest.py`](file:///E:/ashare/MagicSTG/run_cb_backtest.py))**:
+     - **Issue**: `day_counter` was used in `is_rebalance_day = (day_counter % rebalance_days == 0)` but was not initialized before the trading loop.
+     - **Fix**: Added explicit `day_counter = 0` initialization before the date loop and removed duplicate `day_counter += 1` increment inside `is_rebalance_day`.
+  2. **Integrated Database Persistence for Convertible Bond Backtest Results**:
+     - **Issue**: `run_cb_backtest.py` printed performance reports but did not save backtest summaries or trades into TiDB Cloud.
+     - **Fix**: Integrated `save_backtest_result('cb_double_low', db_data)` to write summary stats to `backtest_results` and trade logs to `backtest_trades`. Verified execution with ID `#480001` & `#510001` written to TiDB.
+  3. **Fixed Web UI Indefinite Polling / Silent Timeout Bug ([`server.py`](file:///E:/ashare/MagicSTG/web/server.py), [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - **Issue**: When a backtest crashed or timed out in GitHub Actions, `b_id > last_id` was never met, causing `/api/backtest/status` to return `status: 'running'` indefinitely and the frontend log modal to poll forever without showing error details.
+     - **Fix**:
+       - Updated `/api/backtest/status` in `server.py` to accept `dispatch_time`. If no new backtest result is written within 300s (5 mins), it returns `status: 'error', completed: True` with explicit diagnostic messages.
+       - Refactored `startBacktestExecution()` in `app.js` to handle `statusData.completed && statusData.status === 'error'` immediately, stopping polling, enabling controls, and printing clear red error messages in the console modal.

@@ -30,6 +30,7 @@ if hasattr(sys.stdout, 'reconfigure'):
         pass
 
 from MagicSTG.core.db import load_cb_data_db
+from MagicSTG.core.db_writer import save_backtest_result
 from MagicSTG.strategies.registry import StrategyRegistry
 
 
@@ -79,6 +80,7 @@ def run_cb_backtest(
     portfolio_history = []
     trade_logs = []
 
+    day_counter = 0
     pending_cb_sells = []
     pending_cb_buys = []
 
@@ -105,17 +107,21 @@ def run_cb_backtest(
                 shares = holdings[code]['shares']
                 sell_price = price_map.get(code, holdings[code]['curr_price'])
                 if sell_price > 0:
-                    income = shares * sell_price * (1 - 0.00005)  # 扣除万0.5佣金
+                    fee = round(shares * sell_price * 0.00005, 2)
+                    income = shares * sell_price - fee
                     current_cash += income
                     pnl = (sell_price - holdings[code]['cost_price']) * shares
+                    pnl_pct = round((sell_price / holdings[code]['cost_price'] - 1) * 100, 2)
                     trade_logs.append({
                         'date': date_str,
                         'action': 'SELL',
                         'code': code,
                         'price': sell_price,
                         'shares': shares,
-                        'amount': income,
+                        'amount': round(income, 2),
+                        'fee': fee,
                         'pnl': round(pnl, 2),
+                        'pnl_pct': pnl_pct,
                         'reason': f"[T+1执行] {reason}"
                     })
                     del holdings[code]
@@ -139,7 +145,8 @@ def run_cb_backtest(
                 if available_buy_cash >= price * 10:  # 至少买10张 (手)
                     shares = int(available_buy_cash // (price * (1 + 0.00005)))
                     if shares > 0:
-                        cost = shares * price * (1 + 0.00005)
+                        fee = round(shares * price * 0.00005, 2)
+                        cost = shares * price + fee
                         current_cash -= cost
                         holdings[code] = {
                             'shares': shares,
@@ -153,7 +160,9 @@ def run_cb_backtest(
                             'price': price,
                             'shares': shares,
                             'amount': round(cost, 2),
-                            'pnl': 0.0,
+                            'fee': fee,
+                            'pnl': None,
+                            'pnl_pct': None,
                             'reason': f"[T+1执行] {reason}"
                         })
 
@@ -188,8 +197,6 @@ def run_cb_backtest(
 
             for code, price, reason in buy_signals:
                 pending_cb_buys.append((code, reason))
-
-        day_counter += 1
 
         portfolio_history.append({
             'date': current_date,
@@ -240,6 +247,45 @@ def run_cb_backtest(
     print(f"  胜率 (Win Rate)            : {win_rate:.1f}% ({len(win_trades)}胜 / {len(sell_trades)}平卖)")
     print(f"  期末总资产 (Final Value)    : {perf_df['total_asset'].iloc[-1]:,.2f} 元")
     print("=" * 70)
+
+    buy_count = len([t for t in trade_logs if t['action'] == 'BUY'])
+    sell_count = len([t for t in trade_logs if t['action'] == 'SELL'])
+    total_fees = sum(t.get('fee', 0.0) for t in trade_logs)
+
+    db_data = {
+        'run_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'date_range_start': trading_dates[0].strftime('%Y-%m-%d'),
+        'date_range_end': trading_dates[-1].strftime('%Y-%m-%d'),
+        'initial_equity': initial_capital,
+        'final_equity': float(perf_df['total_asset'].iloc[-1]),
+        'total_return': float(total_return * 100),
+        'annual_return': float(annual_return * 100),
+        'max_drawdown': float(abs(max_drawdown) * 100),
+        'win_rate': float(win_rate),
+        'total_buys': buy_count,
+        'total_sells': sell_count,
+        'total_fees': float(total_fees),
+        'sharpe_ratio': float(sharpe_ratio),
+        'trades': [
+            {
+                'trade_date': t['date'],
+                'stock_code': t['code'],
+                'action': t['action'],
+                'price': float(t['price']),
+                'shares': int(t['shares']),
+                'fee': float(t.get('fee', 0.0)),
+                'pnl': float(t['pnl']) if t.get('pnl') is not None else None,
+                'pnl_pct': float(t['pnl_pct']) if t.get('pnl_pct') is not None else None,
+                'reason': t.get('reason')
+            }
+            for t in trade_logs
+        ]
+    }
+
+    try:
+        save_backtest_result('cb_double_low', db_data)
+    except Exception as db_err:
+        print(f"  [DB Warning] 保存可转债回测到数据库失败: {db_err}")
 
     return {
         'total_return': total_return,
