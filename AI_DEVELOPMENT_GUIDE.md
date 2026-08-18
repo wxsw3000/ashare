@@ -96,21 +96,39 @@ E:\ashare\
 
 ---
 
-## 3. 策略配置与开发模式 (How Strategies Work)
+## 3. 策略配置与开发模式 (How Strategies Work - Dual-Module Architecture)
 
-在 MagicSTG 中，策略可以通过**“声明式配置 (Configuration Mode)”** 和 **“代码级扩展 (Plugin Mode)”** 两种方式产生：
+在 MagicSTG 中，每一个完整的量化策略均由 **“选股/信号策略 (Selection Strategy)”** 与 **“持仓/资金风控策略 (Portfolio Strategy)”** 构成的**二元组**共同定义：
 
-### 模式一：声明式 JSON 配置模式 (Configuration Mode)
-系统提供了通用多因子引擎 `DynamicFactorStrategy`，**无需编写任何 Python 代码**，即可通过 Web 界面或直接粘贴 JSON 字符串自由定制策略！
+$$ \text{完整交易策略} = \text{选股策略 (选什么标的/买卖信号)} \ \bigotimes \ \text{持仓策略 (怎么分仓/执行/止损止盈)} $$
 
-系统原生支持 **股票策略 JSON 模版** 和 **可转债策略 JSON 模版**。
+策略可以通过 **“声明式 JSON 配置模式”** 和 **“代码级插件扩展模式”** 两种方式进行定义和扩展：
 
-#### 1. 股票策略 JSON 完整字段模版 (Stock Strategy JSON Spec)
+### 3.1 声明式双模块 JSON 配置规范 (Dual-Module JSON Spec)
+
+系统原生支持包含 `portfolio_config`（持仓与风控）及选股因子的完整 JSON 配置规范：
+
+#### 1. 股票双模块策略 JSON 完整模版 (Stock Dual-Module JSON Spec)
 ```json
 {
   "top_n": 10,                 // 选股推荐 Top N 标的数量限制
   "stock_scope": "csi300",     // 标的股票池: "csi300" (沪深300) 或 "all" (全市场A股)
   "sort_by": "pe",             // 主因子排序规则: "pe" (估值), "pb" (市净率), "roe" (盈利), "growth" (成长), "price" (低股价)
+
+  // 1. 持仓与资金风控策略配置 (Portfolio & Risk Management Config)
+  "portfolio_config": {
+    "strategy_type": "equal_slot",     // 持仓策略插件: "equal_slot" (等额分仓)
+    "initial_capital": 100000.0,       // 初始资金 (元)
+    "max_holdings": 5,                 // 持仓槽位数 / 最大持仓只数 (5 仓)
+    "allocation_mode": "EQUAL_SLOT",   // 资金分配模式: "EQUAL_SLOT" (平仓重置) 或 "COMPOUNDING" (复利)
+    "stop_loss_pct": -8.0,             // 硬止损线 (%)，小于该值触发平仓，null 或 0 为关闭
+    "trailing_stop_pct": -5.0,         // 移动止盈回撤 (%)，最高价回撤达到该值触发平仓，null 或 0 为关闭
+    "max_holding_days": null,          // 最大持仓天数，到达天数强平，null 为不限制
+    "execution_timing": "T+1_OPEN",    // 撮合执行时机: "T+1_OPEN" (T+1日开盘价+0.1%滑点，严格无未来函数) 或 "T_CLOSE" (T日收盘价)
+    "slippage": 0.001                  // 撮合滑点 (0.1%)
+  },
+
+  // 2. 选股技术面指标 (Tech Factors)
   "tech": {
     "enable_golden_cross": true, // 均线金叉开关 (短期均线 > 长期均线)
     "short_ma": 5,              // 短期均线周期 (如 MA5)
