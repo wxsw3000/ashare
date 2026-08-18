@@ -226,6 +226,8 @@ def validate_and_sanitize_factors_config(category: str, config: dict) -> tuple[b
                 "primary_factor": sort_by,
                 "reverse": sort_by in ["roe", "growth"]
             }
+        }
+
     # 持仓与资金风控策略 (portfolio_config) 统一清洗
     p_cfg = config.get("portfolio_config", {})
     if not isinstance(p_cfg, dict):
