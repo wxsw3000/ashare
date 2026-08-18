@@ -26,6 +26,7 @@ from MagicSTG.db import (
     safe_str
 )
 from MagicSTG.core.cost import calc_buy_cost, calc_sell_cost, calc_net_sell
+from MagicSTG.execution.portfolio_strategies import PortfolioStrategyRegistry, is_convertible_bond, calc_trade_cost_for_security
 
 
 def init_portfolio_db():
@@ -72,54 +73,19 @@ def init_portfolio_db():
         conn.close()
 
 
-def is_convertible_bond(code: str) -> bool:
-    """Checks if security code is a convertible bond."""
-    if not code:
-        return False
-    clean_code = str(code).lower()
-    return clean_code.startswith('sh.11') or clean_code.startswith('sz.12') or clean_code.startswith('11') or clean_code.startswith('12')
-
-
-def calc_trade_cost_for_security(code: str, price: float, shares_or_bonds: int, is_buy: bool) -> Tuple[float, float]:
-    """
-    Calculates friction fee and net amount for stocks or convertible bonds.
-    Returns (fee, total_cost_or_net_proceeds).
-    """
-    gross_amount = price * shares_or_bonds
-    if is_convertible_bond(code):
-        # CB Commission: 0.005%, No min limit, 0% stamp tax
-        fee = gross_amount * 0.00005
-        if is_buy:
-            return fee, gross_amount + fee
-        else:
-            return fee, gross_amount - fee
-    else:
-        # Stock: 0.025% commission (min 5 CNY rule) + 0.05% sell stamp tax
-        if is_buy:
-            fee = calc_buy_cost(gross_amount)
-            return fee, gross_amount + fee
-        else:
-            fee = calc_sell_cost(gross_amount)
-            return fee, gross_amount - fee
-
-
 class PortfolioEngine:
     """
     Simulated Portfolio & Paper Trading Engine.
-    Converts strategy recommendation signals (recommendations) into simulated holdings (positions)
-    and generates portfolio equity curves (portfolio_daily_history).
+    Orchestrates paper trading simulations by pairing strategy recommendation signals (recommendations)
+    with plugin-based portfolio management strategies (PortfolioStrategyRegistry).
     """
 
     def __init__(self, strategy_id: str, config: Optional[dict] = None):
         self.strategy_id = strategy_id
-        cfg = config or {}
-        stg_cfg = cfg.get('strategy', {})
-        self.initial_capital = float(stg_cfg.get('initial_capital', 100000.0))
-        self.max_holdings = int(stg_cfg.get('max_holdings', 5))
-        self.allocation_mode = stg_cfg.get('allocation_mode', 'EQUAL_SLOT')  # 'EQUAL_SLOT' or 'COMPOUNDING'
-        self.stop_loss_pct = float(stg_cfg.get('stop_loss_pct', -8.0))
-        self.trailing_stop_pct = float(stg_cfg.get('trailing_stop_pct', -5.0))
+        self.config = config or {}
         init_portfolio_db()
+        self.portfolio_strategy = PortfolioStrategyRegistry.get(self.config)
+        self.initial_capital = self.portfolio_strategy.initial_capital
 
     def sync_portfolio_history(self) -> dict:
         """
@@ -127,7 +93,22 @@ class PortfolioEngine:
         """
         conn = get_connection_with_retry()
         try:
-            # 1. Fetch all recommendation dates for this strategy
+            # 1. Load portfolio management strategy instance from registry
+            stg_cfg = self.config
+            if not stg_cfg:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT factors_config FROM custom_strategies WHERE strategy_id = %s", (self.strategy_id,))
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            stg_cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                except Exception as e:
+                    print(f"[PortfolioEngine] Notice: Could not query custom_strategies for config: {e}")
+                stg_cfg = stg_cfg or {}
+
+            portfolio_strategy = PortfolioStrategyRegistry.get(stg_cfg)
+
+            # 2. Fetch all recommendation dates for this strategy
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT DISTINCT signal_date FROM recommendations WHERE strategy = %s ORDER BY signal_date ASC",
@@ -139,7 +120,7 @@ class PortfolioEngine:
                 print(f"[PortfolioEngine] No recommendations found for strategy: {self.strategy_id}")
                 return {'status': 'empty', 'message': f'No recommendations found for {self.strategy_id}'}
 
-            # 2. Fetch security code names map
+            # 3. Fetch security code names map
             name_map = {}
             with conn.cursor() as cur:
                 cur.execute("SELECT code, code_name FROM stock_basic")
@@ -149,7 +130,7 @@ class PortfolioEngine:
                 for r in cur.fetchall():
                     name_map[r[0]] = r[1]
 
-            # 3. Fetch all recommendations for strategy
+            # 4. Fetch all recommendations for strategy
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT stock_code, action, price, reason, signal_date, factor_data FROM recommendations WHERE strategy = %s ORDER BY signal_date ASC, id ASC",
@@ -172,8 +153,8 @@ class PortfolioEngine:
                     'factor_data': factor_data
                 })
 
-            # 4. Fetch daily close prices for all referenced codes
-            price_map: Dict[Tuple[str, str], float] = {}
+            # 5. Fetch daily price records (close, open, high, low) for all referenced codes
+            price_map: Dict[Tuple[str, str], Dict[str, float]] = {}
             if all_codes:
                 codes_tuple = tuple(all_codes)
                 min_date = dates[0]
@@ -182,213 +163,74 @@ class PortfolioEngine:
                 with conn.cursor() as cur:
                     if len(codes_tuple) == 1:
                         cur.execute(
-                            "SELECT code, date, close FROM stock_kline_day WHERE code = %s AND date >= %s AND date <= %s",
+                            "SELECT code, date, close, open, high, low FROM stock_kline_day WHERE code = %s AND date >= %s AND date <= %s",
                             (codes_tuple[0], min_date, max_date)
                         )
                     else:
                         cur.execute(
-                            f"SELECT code, date, close FROM stock_kline_day WHERE code IN %s AND date >= %s AND date <= %s",
+                            f"SELECT code, date, close, open, high, low FROM stock_kline_day WHERE code IN %s AND date >= %s AND date <= %s",
                             (codes_tuple, min_date, max_date)
                         )
                     for r in cur.fetchall():
                         d_str = r[1].strftime('%Y-%m-%d') if hasattr(r[1], 'strftime') else str(r[1])
-                        price_map[(r[0], d_str)] = float(r[2])
+                        price_map[(r[0], d_str)] = {
+                            'close': float(r[2]),
+                            'open': float(r[3]) if r[3] is not None else float(r[2]),
+                            'high': float(r[4]) if r[4] is not None else float(r[2]),
+                            'low': float(r[5]) if r[5] is not None else float(r[2]),
+                        }
 
                     if len(codes_tuple) == 1:
                         cur.execute(
-                            "SELECT code, date, close FROM cb_kline_day WHERE code = %s AND date >= %s AND date <= %s",
+                            "SELECT code, date, close, open, high, low FROM cb_kline_day WHERE code = %s AND date >= %s AND date <= %s",
                             (codes_tuple[0], min_date, max_date)
                         )
                     else:
                         cur.execute(
-                            f"SELECT code, date, close FROM cb_kline_day WHERE code IN %s AND date >= %s AND date <= %s",
+                            f"SELECT code, date, close, open, high, low FROM cb_kline_day WHERE code IN %s AND date >= %s AND date <= %s",
                             (codes_tuple, min_date, max_date)
                         )
                     for r in cur.fetchall():
                         d_str = r[1].strftime('%Y-%m-%d') if hasattr(r[1], 'strftime') else str(r[1])
-                        price_map[(r[0], d_str)] = float(r[2])
+                        price_map[(r[0], d_str)] = {
+                            'close': float(r[2]),
+                            'open': float(r[3]) if r[3] is not None else float(r[2]),
+                            'high': float(r[4]) if r[4] is not None else float(r[2]),
+                            'low': float(r[5]) if r[5] is not None else float(r[2]),
+                        }
 
-            # 5. Initialize simulation state
-            per_slot_cash = self.initial_capital / self.max_holdings
-            slot_cash = [per_slot_cash] * self.max_holdings
+            # 6. Initialize simulation state using portfolio strategy instance
+            per_slot_cash = portfolio_strategy.initial_capital / portfolio_strategy.max_holdings
+            slot_cash = [per_slot_cash] * portfolio_strategy.max_holdings
             active_positions: Dict[int, dict] = {}  # slot_idx -> position dict
             all_positions: List[dict] = []
             daily_history: List[dict] = []
-            prev_total_equity = self.initial_capital
+            pending_orders: List[dict] = []
+            prev_total_equity = portfolio_strategy.initial_capital
 
-            # 6. Run daily simulation loop
+            # 7. Run daily simulation loop via portfolio_strategy plugin
             for d_str in dates:
                 day_recs = rec_by_date.get(d_str, {'BUY': [], 'SELL': []})
 
-                # --- Phase A: Update Active Positions Market Value & Check Risk Controls ---
-                for slot_idx in list(active_positions.keys()):
-                    pos = active_positions[slot_idx]
-                    code = pos['stock_code']
-                    curr_price = price_map.get((code, d_str), pos['current_price'])
+                active_positions, closed_trades_today, slot_cash, pending_orders = portfolio_strategy.evaluate_day(
+                    d_str=d_str,
+                    day_recs=day_recs,
+                    price_map=price_map,
+                    name_map=name_map,
+                    active_positions=active_positions,
+                    slot_cash=slot_cash,
+                    pending_orders=pending_orders
+                )
 
-                    if curr_price and curr_price > 0:
-                        pos['current_price'] = curr_price
-                        pos['highest_price'] = max(pos['highest_price'], curr_price)
-                        pos['market_value'] = round(pos['shares'] * curr_price, 4)
-                        pos['pnl'] = round(pos['market_value'] - pos['cost_total'], 4)
-                        pos['pnl_pct'] = round((pos['pnl'] / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
+                all_positions.extend(closed_trades_today)
 
-                    # Check Hard Stop-Loss
-                    if self.stop_loss_pct < 0 and pos['pnl_pct'] <= self.stop_loss_pct:
-                        # Auto SELL on Stop Loss
-                        sell_price = curr_price if curr_price > 0 else pos['buy_price']
-                        fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
-                        realized_pnl = net_proceeds - pos['cost_total']
-
-                        if self.allocation_mode == 'COMPOUNDING':
-                            slot_cash[slot_idx] += net_proceeds
-                        else:
-                            slot_cash[slot_idx] = per_slot_cash
-
-                        pos['status'] = 'SOLD'
-                        pos['sell_date'] = d_str
-                        pos['sell_price'] = sell_price
-                        pos['pnl'] = round(realized_pnl, 4)
-                        pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
-                        pos['extra_data'] = json.dumps({'exit_reason': f"触发止损线 ({pos['pnl_pct']:.2f}% <= {self.stop_loss_pct:.2f}%)"})
-                        all_positions.append(pos)
-                        del active_positions[slot_idx]
-                        continue
-
-                    # Check Trailing Stop-Profit
-                    if self.trailing_stop_pct < 0 and pos['highest_price'] > pos['buy_price']:
-                        drawdown = ((curr_price - pos['highest_price']) / pos['highest_price']) * 100.0
-                        if drawdown <= self.trailing_stop_pct:
-                            sell_price = curr_price if curr_price > 0 else pos['buy_price']
-                            fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
-                            realized_pnl = net_proceeds - pos['cost_total']
-
-                            if self.allocation_mode == 'COMPOUNDING':
-                                slot_cash[slot_idx] += net_proceeds
-                            else:
-                                slot_cash[slot_idx] = per_slot_cash
-
-                            pos['status'] = 'SOLD'
-                            pos['sell_date'] = d_str
-                            pos['sell_price'] = sell_price
-                            pos['pnl'] = round(realized_pnl, 4)
-                            pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
-                            pos['extra_data'] = json.dumps({'exit_reason': f"触发移动止盈 ({drawdown:.2f}% <= {self.trailing_stop_pct:.2f}%)"})
-                            all_positions.append(pos)
-                            del active_positions[slot_idx]
-                            continue
-
-                # --- Phase B: Execute Strategy SELL Signals ---
-                sell_signals = day_recs.get('SELL', [])
-                for sell_sig in sell_signals:
-                    code = sell_sig['code']
-                    # Find slot holding this code
-                    target_slot = None
-                    for slot_idx, pos in active_positions.items():
-                        if pos['stock_code'] == code:
-                            target_slot = slot_idx
-                            break
-
-                    if target_slot is not None:
-                        pos = active_positions[target_slot]
-                        sell_price = sell_sig['price'] if sell_sig['price'] > 0 else pos['current_price']
-                        fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
-                        realized_pnl = net_proceeds - pos['cost_total']
-
-                        if self.allocation_mode == 'COMPOUNDING':
-                            slot_cash[target_slot] += net_proceeds
-                        else:
-                            slot_cash[target_slot] = per_slot_cash
-
-                        pos['status'] = 'SOLD'
-                        pos['sell_date'] = d_str
-                        pos['sell_price'] = sell_price
-                        pos['pnl'] = round(realized_pnl, 4)
-                        pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
-                        pos['extra_data'] = json.dumps({'exit_reason': sell_sig.get('reason', '策略卖出信号')})
-                        all_positions.append(pos)
-                        del active_positions[target_slot]
-
-                # --- Phase C: Execute Strategy BUY Signals ---
-                buy_signals = day_recs.get('BUY', [])
-                occupied_slots = set(active_positions.keys())
-                free_slots = [s for s in range(self.max_holdings) if s not in occupied_slots]
-
-                if free_slots and buy_signals:
-                    for buy_sig in buy_signals:
-                        if not free_slots:
-                            break
-
-                        code = buy_sig['code']
-                        # Check if already holding code
-                        already_holding = any(p['stock_code'] == code for p in active_positions.values())
-                        if already_holding:
-                            continue
-
-                        slot_idx = free_slots.pop(0)
-                        budget = slot_cash[slot_idx]
-                        buy_price = buy_sig['price']
-
-                        if not buy_price or buy_price <= 0:
-                            # try fetch close price
-                            buy_price = price_map.get((code, d_str), 0.0)
-
-                        if buy_price <= 0:
-                            continue
-
-                        # Calculate shares/bonds based on lot constraints
-                        is_cb = is_convertible_bond(code)
-                        if is_cb:
-                            # 10 bonds per lot (100 CNY par value)
-                            # gross budget approx = budget
-                            fee_rate = 0.00005
-                            max_bonds = math.floor(budget / (buy_price * (1.0 + fee_rate)) / 10) * 10
-                            shares = int(max_bonds)
-                        else:
-                            # Stock: 100 shares per lot
-                            # Budget minus 5 CNY min fee guard
-                            fee_rate = 0.00025
-                            avail_budget = max(0.0, budget - 5.0)
-                            max_shares = math.floor(avail_budget / (buy_price * (1.0 + fee_rate)) / 100) * 100
-                            shares = int(max_shares)
-
-                        min_lot = 10 if is_cb else 100
-                        if shares < min_lot:
-                            # Insufficient budget for 1 hand
-                            continue
-
-                        fee, total_cost = calc_trade_cost_for_security(code, buy_price, shares, is_buy=True)
-                        slot_cash[slot_idx] -= total_cost
-
-                        stock_name = name_map.get(code, code)
-                        pos = {
-                            'strategy': self.strategy_id,
-                            'stock_code': code,
-                            'stock_name': stock_name,
-                            'buy_date': d_str,
-                            'buy_price': buy_price,
-                            'highest_price': buy_price,
-                            'slot_idx': slot_idx,
-                            'shares': shares,
-                            'cost_total': round(total_cost, 4),
-                            'current_price': buy_price,
-                            'market_value': round(shares * buy_price, 4),
-                            'pnl': 0.0,
-                            'pnl_pct': 0.0,
-                            'status': 'HOLDING',
-                            'sell_date': None,
-                            'sell_price': None,
-                            'extra_data': json.dumps({'buy_reason': buy_sig.get('reason', '策略买入建仓')})
-                        }
-                        active_positions[slot_idx] = pos
-
-                # --- Phase D: Save Daily Portfolio Snapshot ---
+                # Save Daily Portfolio Snapshot
                 total_market_val = sum(p['market_value'] for p in active_positions.values())
                 total_cash = sum(slot_cash)
                 total_equity = total_market_val + total_cash
                 daily_pnl = total_equity - prev_total_equity
-                cum_pnl = total_equity - self.initial_capital
-                cum_return = (cum_pnl / self.initial_capital) * 100.0
+                cum_pnl = total_equity - portfolio_strategy.initial_capital
+                cum_return = (cum_pnl / portfolio_strategy.initial_capital) * 100.0
                 prev_total_equity = total_equity
 
                 daily_history.append({

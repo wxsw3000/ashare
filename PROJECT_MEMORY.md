@@ -607,4 +607,23 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      - **Issue**: When a backtest crashed or timed out in GitHub Actions, `b_id > last_id` was never met, causing `/api/backtest/status` to return `status: 'running'` indefinitely and the frontend log modal to poll forever without showing error details.
      - **Fix**:
        - Updated `/api/backtest/status` in `server.py` to accept `dispatch_time`. If no new backtest result is written within 300s (5 mins), it returns `status: 'error', completed: True` with explicit diagnostic messages.
-       - Refactored `startBacktestExecution()` in `app.js` to handle `statusData.completed && statusData.status === 'error'` immediately, stopping polling, enabling controls, and printing clear red error messages in the console modal.
+   - Refactored `startBacktestExecution()` in `app.js` to handle `statusData.completed && statusData.status === 'error'` immediately, stopping polling, enabling controls, and printing clear red error messages in the console modal.
+
+---
+
+## 36. Session Summary & Memory (2026-08-18) - Modular Portfolio Strategy Architecture Refactoring (Option B)
+
+* **Architectural Refactoring & Decoupling**:
+  1. **Portfolio Strategy Base Interface ([`base.py`](file:///E:/ashare/MagicSTG/execution/portfolio_strategies/base.py))**:
+     - Defined abstract base class `BasePortfolioStrategy` establishing contracts for capital slot management, risk control evaluation, trade cost calculations, and T+1/T+0 execution timing.
+  2. **Parameterized Equal-Slot Portfolio Strategy ([`equal_slot.py`](file:///E:/ashare/MagicSTG/execution/portfolio_strategies/equal_slot.py))**:
+     - Extracted legacy hardcoded procedural logic into plugin strategy `EqualSlotPortfolioStrategy`.
+     - Supports parameterization for `initial_capital`, `max_holdings`, `allocation_mode` (`EQUAL_SLOT` vs `COMPOUNDING`), `stop_loss_pct`, `trailing_stop_pct`, `max_holding_days`, and `execution_timing` (`T+1_OPEN` with slippage vs `T_CLOSE`).
+  3. **Portfolio Strategy Registry Factory ([`registry.py`](file:///E:/ashare/MagicSTG/execution/portfolio_strategies/registry.py))**:
+     - Implemented `PortfolioStrategyRegistry` for looking up and instantiating portfolio strategy plugins dynamically from strategy names or `portfolio_config` JSON payloads.
+  4. **Portfolio Engine Refactoring ([`portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/portfolio_engine.py))**:
+     - Converted `PortfolioEngine` into an Orchestrator/Context: loads recommendations & market prices from TiDB Cloud, delegates daily evaluation to `PortfolioStrategyRegistry` plugins, and persists results back to `positions` and `portfolio_daily_history` tables.
+  5. **Automated Unit Testing & Validation**:
+     - Created unit test suite [`tests/test_portfolio_strategy.py`](file:///E:/ashare/tests/test_portfolio_strategy.py) (4/4 tests passed 100% OK).
+     - Verified live simulation & summary synchronization against TiDB Cloud database.
+
