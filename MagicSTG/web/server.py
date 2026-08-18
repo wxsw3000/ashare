@@ -226,7 +226,22 @@ def validate_and_sanitize_factors_config(category: str, config: dict) -> tuple[b
                 "primary_factor": sort_by,
                 "reverse": sort_by in ["roe", "growth"]
             }
-        }
+    # 持仓与资金风控策略 (portfolio_config) 统一清洗
+    p_cfg = config.get("portfolio_config", {})
+    if not isinstance(p_cfg, dict):
+        p_cfg = {}
+
+    sanitized["portfolio_config"] = {
+        "strategy_type": str(p_cfg.get("strategy_type", "equal_slot")),
+        "initial_capital": float(p_cfg.get("initial_capital", 100000.0)),
+        "max_holdings": int(p_cfg.get("max_holdings", 5)),
+        "allocation_mode": str(p_cfg.get("allocation_mode", "EQUAL_SLOT")),
+        "stop_loss_pct": float(p_cfg["stop_loss_pct"]) if p_cfg.get("stop_loss_pct") is not None and float(p_cfg["stop_loss_pct"]) < 0 else -8.0,
+        "trailing_stop_pct": float(p_cfg["trailing_stop_pct"]) if p_cfg.get("trailing_stop_pct") is not None and float(p_cfg["trailing_stop_pct"]) < 0 else -5.0,
+        "max_holding_days": int(p_cfg["max_holding_days"]) if p_cfg.get("max_holding_days") is not None and int(p_cfg["max_holding_days"]) > 0 else None,
+        "execution_timing": str(p_cfg.get("execution_timing", "T+1_OPEN")),
+        "slippage": float(p_cfg.get("slippage", 0.001 if p_cfg.get("execution_timing", "T+1_OPEN") == "T+1_OPEN" else 0.0))
+    }
 
     return True, "", sanitized
 

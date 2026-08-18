@@ -622,9 +622,55 @@
                     </div>
                 </div>
 
+                <!-- 3. 持仓与资金风控配置 (Portfolio & Risk Management Panel) -->
+                <div id="portfolioConfigPanel" style="border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: rgba(14, 28, 48, 0.5);">
+                    <h4 style="color: #38bdf8; font-size: 0.95rem; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+                        <i class="fa-solid fa-briefcase"></i> 持仓与资金风控策略配置
+                    </h4>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label>持仓资金模式</label>
+                            <select id="stg_portfolio_type" class="form-control" style="width: 100%;">
+                                <option value="equal_slot">固定等额分仓模式 (Equal Slot)</option>
+                                <option value="compounding">动态复利分仓模式 (Compounding)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>初始账户资金 (元)</label>
+                            <input type="number" id="stg_initial_capital" class="form-control" style="width: 100%;" value="100000" step="10000">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group">
+                            <label>持仓槽位 / 最大持仓只数</label>
+                            <input type="number" id="stg_max_holdings" class="form-control" style="width: 100%;" value="5" min="1" max="20">
+                        </div>
+                        <div class="form-group">
+                            <label>交易撮合执行时机</label>
+                            <select id="stg_execution_timing" class="form-control" style="width: 100%;">
+                                <option value="T+1_OPEN">T+1 日开盘价撮合 (+0.1% 滑点 - 严格无未来函数)</option>
+                                <option value="T_CLOSE">T 日盘后收盘价撮合 (兼容模式)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2" style="margin-top: 0.5rem;">
+                        <div class="form-group">
+                            <label>硬止损比例 % (输入负数，如 -8)</label>
+                            <input type="number" id="stg_stop_loss_pct" class="form-control" style="width: 100%;" value="-8.0" step="0.5" max="0">
+                        </div>
+                        <div class="form-group">
+                            <label>移动止盈回撤 % (输入负数，如 -5)</label>
+                            <input type="number" id="stg_trailing_stop_pct" class="form-control" style="width: 100%;" value="-5.0" step="0.5" max="0">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label>策略简述</label>
-                    <input type="text" id="stgFormDesc" class="form-control" style="width: 100%;" placeholder="简要阐述策略选股逻辑">
+                    <input type="text" id="stgFormDesc" class="form-control" style="width: 100%;" placeholder="简要阐述策略选股与持仓逻辑">
                 </div>
 
                 <div class="form-grid-2">

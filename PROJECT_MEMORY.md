@@ -627,3 +627,17 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      - Created unit test suite [`tests/test_portfolio_strategy.py`](file:///E:/ashare/tests/test_portfolio_strategy.py) (4/4 tests passed 100% OK).
      - Verified live simulation & summary synchronization against TiDB Cloud database.
 
+---
+
+## 37. Session Summary & Memory (2026-08-18) - Selection Strategy + Portfolio Strategy Dual-Module Full Pipeline Integration
+
+* **Full Dual-Module Architecture Implementation**:
+  1. **Web UI Modal UI Controls ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html))**:
+     - Embedded dedicated **"持仓与资金风控策略配置"** form section into the Strategy Creation & Editing modal (`#portfolioConfigPanel`).
+     - Exposed user UI controls for: Portfolio Mode (`equal_slot` vs `compounding`), Initial Capital, Max Slot Count (`max_holdings`), Execution Timing (`T+1_OPEN` with slippage vs `T_CLOSE`), Hard Stop-Loss %, and Trailing Stop-Profit %.
+  2. **Frontend State & JSON Serialization ([`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - Updated `buildConfigFromForm()` and `applyConfigToForm()` to serialize and deserialize `portfolio_config` alongside selection factor rules.
+  3. **Backend Schema Validation ([`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     - Updated `validate_and_sanitize_factors_config()` to sanitize and validate `portfolio_config` JSON payloads before writing to TiDB `custom_strategies` table.
+  4. **Post-Market Automated Pipeline Alignment ([`runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py))**:
+     - Confirmed post-market signal runner automatically invokes `PortfolioEngine(stg_code).sync_portfolio_history()`, generating exact target portfolio holding records and order execution logs in TiDB Cloud.

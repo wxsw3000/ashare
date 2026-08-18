@@ -860,10 +860,31 @@ function formatJsonTextareaInput() {
     }
 }
 
+function getPortfolioConfigFromForm() {
+    const portType = document.getElementById('stg_portfolio_type') ? document.getElementById('stg_portfolio_type').value : 'equal_slot';
+    const initCapital = document.getElementById('stg_initial_capital') ? parseFloat(document.getElementById('stg_initial_capital').value || 100000.0) : 100000.0;
+    const maxHoldings = document.getElementById('stg_max_holdings') ? parseInt(document.getElementById('stg_max_holdings').value || 5) : 5;
+    const execTiming = document.getElementById('stg_execution_timing') ? document.getElementById('stg_execution_timing').value : 'T+1_OPEN';
+    const stopLoss = document.getElementById('stg_stop_loss_pct') ? parseFloat(document.getElementById('stg_stop_loss_pct').value || -8.0) : -8.0;
+    const trailingStop = document.getElementById('stg_trailing_stop_pct') ? parseFloat(document.getElementById('stg_trailing_stop_pct').value || -5.0) : -5.0;
+
+    return {
+        strategy_type: portType,
+        initial_capital: initCapital,
+        max_holdings: maxHoldings,
+        allocation_mode: portType === 'compounding' ? 'COMPOUNDING' : 'EQUAL_SLOT',
+        stop_loss_pct: stopLoss,
+        trailing_stop_pct: trailingStop,
+        execution_timing: execTiming,
+        slippage: execTiming === 'T+1_OPEN' ? 0.001 : 0.0
+    };
+}
+
 // 从当前 HTML 表单控件读取构建 JSON 字典
 function buildConfigFromForm() {
     const category = document.getElementById('stgFormCategory').value;
     const topN = parseInt(document.getElementById('stgFormTopN').value || 10);
+    const portfolioConfig = getPortfolioConfigFromForm();
 
     if (category === 'convertible_bond') {
         const enablePureBond = document.getElementById('stg_cb_enable_pure_bond').checked;
@@ -878,6 +899,7 @@ function buildConfigFromForm() {
             sort_by: document.getElementById('stg_cb_primary_factor').value,
             stock_scope: document.getElementById('stg_cb_universe').value,
             top_n: topN,
+            portfolio_config: portfolioConfig,
             stock_linkage: {
                 enable_stock_roe: document.getElementById('stg_cb_enable_stock_roe').checked,
                 stock_roe_min: parseFloat(document.getElementById('stg_cb_stock_roe_min').value || 5.0) / 100.0,
@@ -895,6 +917,7 @@ function buildConfigFromForm() {
             top_n: topN,
             stock_scope: document.getElementById('stg_universe').value,
             sort_by: primaryFactor,
+            portfolio_config: portfolioConfig,
             tech: {
                 enable_golden_cross: document.getElementById('stg_enable_golden_cross').checked,
                 short_ma: parseInt(document.getElementById('stg_short_ma').value || 5),
@@ -942,6 +965,16 @@ function applyConfigToForm(cfg) {
     if (!cfg || typeof cfg !== 'object') return;
 
     if (cfg.top_n) document.getElementById('stgFormTopN').value = cfg.top_n;
+
+    if (cfg.portfolio_config) {
+        const p = cfg.portfolio_config;
+        if (document.getElementById('stg_portfolio_type')) document.getElementById('stg_portfolio_type').value = p.strategy_type || (p.allocation_mode === 'COMPOUNDING' ? 'compounding' : 'equal_slot');
+        if (document.getElementById('stg_initial_capital')) document.getElementById('stg_initial_capital').value = p.initial_capital || 100000;
+        if (document.getElementById('stg_max_holdings')) document.getElementById('stg_max_holdings').value = p.max_holdings || 5;
+        if (document.getElementById('stg_execution_timing')) document.getElementById('stg_execution_timing').value = p.execution_timing || 'T+1_OPEN';
+        if (document.getElementById('stg_stop_loss_pct')) document.getElementById('stg_stop_loss_pct').value = p.stop_loss_pct !== undefined ? p.stop_loss_pct : -8.0;
+        if (document.getElementById('stg_trailing_stop_pct')) document.getElementById('stg_trailing_stop_pct').value = p.trailing_stop_pct !== undefined ? p.trailing_stop_pct : -5.0;
+    }
 
     const category = document.getElementById('stgFormCategory').value;
     if (category === 'convertible_bond') {
