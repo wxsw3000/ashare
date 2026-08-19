@@ -36,7 +36,11 @@ E:\ashare\
 │   │   ├── registry.py     # 策略注册与工厂模式 (StrategyRegistry)
 │   │   └── runner.py       # 每日策略推荐执行器 (run_all_strategy_recommendations)
 │   ├── execution/          # 交易执行与模拟实盘
-│   │   ├── portfolio_engine.py # 模拟实盘持仓与资金曲线追踪引擎 (PortfolioEngine)
+│   │   ├── portfolio_strategies/ # 持仓与资金风控策略插件库
+│   │   │   ├── base.py     # 持仓策略抽象基类 (BasePortfolioStrategy)
+│   │   │   ├── equal_slot.py # 等额分仓与风控策略插件 (EqualSlotPortfolioStrategy)
+│   │   │   └── registry.py # 持仓策略注册工厂 (PortfolioStrategyRegistry)
+│   │   ├── portfolio_engine.py # 模拟实盘持仓与资金曲线调度引擎 (PortfolioEngine)
 │   │   ├── decisions.py    # 买卖交易决策器
 │   │   └── position_manager.py # 持仓状态管理器
 │   └── web/                # Web 展示与 API 服务 (Flask + Chart.js Dashboard)
@@ -92,7 +96,7 @@ E:\ashare\
 3. **`portfolio_daily_history`** (资金曲线历史表)
    - 字段: `strategy`, `date`, `total_equity` (总资产), `cash` (可用现金), `market_value` (持仓市值), `cum_return` (累计收益率).
 4. **`custom_strategies`** (策略配置表)
-   - 字段: `id`, `name`, `is_active` (是否开启每日自动化工作流 0/1), **`config` (JSON)**.
+   - 字段: `id` (自增主键), `strategy_id` (`stg_xxx`), `name` (策略名称), `category` (`stock` / `convertible_bond`), `is_active` (是否开启每日自动化工作流 1/0), **`factors_config` (JSON 包含选股因子与持仓 portfolio_config 的完整双模块配置)**.
 
 ---
 
@@ -177,6 +181,21 @@ $$ \text{完整交易策略} = \text{选股策略 (选什么标的/买卖信号)
   "max_convert_premium": 50.0,      // 最高转股溢价率 (%)
   "max_pure_bond_premium": 30.0,    // 纯债溢价率上限 (%, null 为不限制)
   "min_ytm": 0.0,                   // 到期收益率 YTM 下限 (%, null 为不限制)
+
+  // 1. 持仓与资金风控策略配置 (Portfolio & Risk Management Config)
+  "portfolio_config": {
+    "strategy_type": "equal_slot",     // 持仓策略插件: "equal_slot" (等额分仓)
+    "initial_capital": 100000.0,       // 初始资金 (元)
+    "max_holdings": 5,                 // 持仓槽位数 / 最大持仓只数 (5 仓)
+    "allocation_mode": "EQUAL_SLOT",   // 资金分配模式: "EQUAL_SLOT" (平仓重置) 或 "COMPOUNDING" (复利)
+    "stop_loss_pct": -8.0,             // 硬止损线 (%)，小于该值触发平仓，null 或 0 为关闭
+    "trailing_stop_pct": -5.0,         // 移动止盈回撤 (%)，最高价回撤达到该值触发平仓，null 或 0 为关闭
+    "max_holding_days": null,          // 最大持仓天数，到达天数强平，null 为不限制
+    "execution_timing": "T+1_OPEN",    // 撮合执行时机: "T+1_OPEN" (T+1日开盘价+0.1%滑点，严格无未来函数) 或 "T_CLOSE" (T日收盘价)
+    "slippage": 0.001                  // 撮合滑点 (0.1%)
+  },
+
+  // 2. 发行正股联动筛选条件 (Stock Linkage Factors)
   "stock_linkage": {
     "enable_stock_roe": true,       // 正股盈利 ROE 联动限制开关
     "stock_roe_min": 0.05,          // 发行正股最低 ROE (5%)
@@ -189,6 +208,34 @@ $$ \text{完整交易策略} = \text{选股策略 (选什么标的/买卖信号)
   }
 }
 ```
+
+---
+
+### 3.3 AI 策略生成与输出指南 (Guide for Other AI Strategy Generators)
+
+> **给外部 AI 的提示指令 (Prompt Rule)**：
+> 当用户要求你生成或设计一个策略 JSON 时，你必须**严格按以下规则输出 100% 格式合规的 JSON**，不得添加额外非法键，数值必须为纯数值型（禁止带 `%` 或 `元` 等单位字符串）：
+
+#### 规则 1：必须同时包含二元组配置
+JSON 根节点必须同时包含 **选股/信号参数** 和 **`portfolio_config` 持仓风控参数**。如果用户未提及风控参数，请默认使用 `initial_capital: 100000.0`, `max_holdings: 5`, `execution_timing: "T+1_OPEN"`, `stop_loss_pct: -8.0`, `trailing_stop_pct: -5.0` 的标准默认值。
+
+#### 规则 2：主因子排序规则 (`sort_by`) 可选项
+- **股票类 (stock)**:
+  - `"pe"`: 优先选择低 PE (TTM) 估值标的。
+  - `"pb"`: 优先选择低 PB (MRQ) 市净率标的。
+  - `"roe"`: 优先选择高 ROE 盈利标的。
+  - `"growth"`: 优先选择高净利润同比增长标的。
+  - `"price"`: 优先选择低股价标的。
+- **可转债类 (convertible_bond)**:
+  - `"db_low_value"`: 优先选择双低值 (现价 + 溢价率*100) 最低的转债。
+  - `"cb_price"`: 优先选择转债价格最低的标的。
+  - `"convert_premium_rate"`: 优先选择溢价率最低的标的。
+  - `"ytm"`: 优先选择到期收益率 (YTM) 最高的标的。
+
+#### 规则 3：严格强类型约束
+- 百分比数值采用小数或百分点数：`stop_loss_pct` 填写负数 `-8.0`（代表 -8%）；`roe_min` 填写 `0.05`（代表 5%）；`min_convert_premium` 填写 `-20.0`（代表 -20%）。
+- 开关字段必须为布尔值 (`true` / `false`)。
+- 不启用的限制字段写 `null` 或关闭对应 `enable_xxx: false`。
 
 ---
 
@@ -298,10 +345,15 @@ sell_cost = calc_sell_cost(price=12.0, shares=1000, asset_type='stock')
 from MagicSTG.core.limit import check_limit_up, check_limit_down
 is_limit_up = check_limit_up(code="sh.600000", current_price=11.0, prev_close=10.0)
 
-# 5. 模拟实盘与持仓引擎
+# 5. 模拟实盘与持仓调度引擎
 from MagicSTG.execution.portfolio_engine import PortfolioEngine
 engine = PortfolioEngine(strategy_name="dynamic_factor")
-engine.run_daily_rollover(target_date="2026-08-15") # 自动撮合买卖、扣除交易成本、更新持仓与资金曲线
+engine.sync_portfolio_history() # 自动拉取推荐信号并按该策略的 portfolio_config 推演与同步持仓
+
+# 6. 持仓策略插件工厂与实例化
+from MagicSTG.execution.portfolio_strategies import PortfolioStrategyRegistry, BasePortfolioStrategy
+portfolio_stg = PortfolioStrategyRegistry.get("equal_slot", config=portfolio_config_json)
+```,StartLine:348,TargetContent:
 ```
 
 ---
