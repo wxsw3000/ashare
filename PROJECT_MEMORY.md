@@ -641,3 +641,22 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      - Updated `validate_and_sanitize_factors_config()` to sanitize and validate `portfolio_config` JSON payloads before writing to TiDB `custom_strategies` table.
   4. **Post-Market Automated Pipeline Alignment ([`runner.py`](file:///E:/ashare/MagicSTG/strategies/runner.py))**:
      - Confirmed post-market signal runner automatically invokes `PortfolioEngine(stg_code).sync_portfolio_history()`, generating exact target portfolio holding records and order execution logs in TiDB Cloud.
+
+---
+
+## 38. Session Summary & Memory (2026-08-19) - Full AI Strategy Development & Dual-Module JSON Specification Alignment
+
+* **Key Achievements & Documentation Refinement**:
+  1. **AI Development Guide Audit & Directory Alignment ([`AI_DEVELOPMENT_GUIDE.md`](file:///E:/ashare/AI_DEVELOPMENT_GUIDE.md))**:
+     - Audited codebase and updated project directory structure in Section 1.1 to include `MagicSTG/execution/portfolio_strategies/` (`base.py`, `equal_slot.py`, `registry.py`).
+     - Corrected schema details for `custom_strategies` table in Section 2.4 (specifying `factors_config` JSON containing the dual-module strategy configuration).
+  2. **Convertible Bond Dual-Module Spec Completion (Section 3.1.2)**:
+     - Embedded complete `portfolio_config` JSON template into Section 3.1.2 for convertible bond strategies, achieving 100% specification parity with stock strategies.
+  3. **Dedicated AI Strategy Generation Guidelines (Section 3.3)**:
+     - Added new Section 3.3 ("AI 策略生成与输出指南") to instruct other AI assistants on generating 100% compliant, error-free strategy JSON files.
+     - Outlined mandatory rules: Dual-Module root structure (`top_n`, `stock_scope`, `sort_by`, `portfolio_config`), strict numeric types (no `%` string units), booleans, null handling, and complete sorting factor enums for both Stock (`pe`, `pb`, `roe`, `growth`, `price`) and Convertible Bond (`db_low_value`, `cb_price`, `convert_premium_rate`, `ytm`).
+  4. **Public Utilities Enhancement (Section 4)**:
+     - Updated utility references to include `PortfolioStrategyRegistry` factory instantiation and `PortfolioEngine.sync_portfolio_history()` examples.
+  5. **Git Synchronization**:
+     - Committed changes to Git repo (`docs: update AI_DEVELOPMENT_GUIDE.md with complete Dual-Module portfolio_config and AI strategy generator guidelines`).
+
