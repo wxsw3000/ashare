@@ -686,3 +686,24 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      - Creation Modal: `#createTaskModal` for choosing task name, strategy, and initial capital.
   6. **Automated Unit Testing Validation**:
      - Created test suite [`tests/test_portfolio_tasks.py`](file:///E:/ashare/tests/test_portfolio_tasks.py) (2/2 unit tests passed 100% OK). Verified task lifecycle, trade log generation, metrics math, and clean database wipe upon task deletion.
+
+---
+
+## 40. Session Summary & Memory (2026-08-20) - Independent Paper Trading Instance Architecture & Risk Config Inheritance/Override
+
+* **Independent Paper Trading Instance Refactoring & Paradigm Alignment**:
+  1. **Backend Engine & Database Schema Expansion ([`portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/portfolio_engine.py))**:
+     - Added `start_date` column to `portfolio_tasks` table.
+     - Refactored `PortfolioEngine.create_task()` to accept `start_date` (defaults to current date) and automatically inherit the strategy's default `portfolio_config` if no custom override is provided.
+     - Updated `PortfolioEngine.sync_task()` to filter recommendation signals `signal_date >= start_date`, ensuring paper trading instances execute forward-looking simulation from their build date onward.
+     - Updated `list_tasks()` and `get_task_detail()` to return `start_date` and merged `portfolio_config` snapshots.
+  2. **REST API Endpoint Enhancement ([`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     - Updated `POST /api/portfolio/tasks` to receive `start_date` and optional custom `portfolio_config` overrides.
+  3. **Web UI Master/Detail & Modal Interaction Redesign ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) & [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - Embedded **`🚀 创建持仓模拟实例`** button in Strategy Detail Center footer to link Strategy Management directly to Paper Trading Instance creation.
+     - Redesigned `#createTaskModal`: added Start Date picker, Strategy selection dropdown, Initial Capital input, and Risk Control Mode toggle (`[● 继承策略默认风控 (推荐)]` vs `[○ 自定义覆盖本实例风控]`).
+     - Integrated dynamic preview box (`#newTaskStrategyConfigPreview`) showing inherited portfolio rules (Equal Slot / Compounding, Max Holdings, Stop-Loss %, Trailing Stop-Profit %, Execution Timing) and custom risk panel (`#newTaskCustomRiskPanel`).
+     - Rendered `start_date` and initial capital on instance cards.
+  4. **Automated Unit Testing & Verification ([`tests/test_portfolio_tasks.py`](file:///E:/ashare/tests/test_portfolio_tasks.py))**:
+     - Added `test_03_instance_start_date_and_override_config` to test suite.
+     - Verified instance creation, `start_date` filtering, custom risk config override, and cascading deletion (3/3 unit tests passed 100% OK).

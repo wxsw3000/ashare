@@ -67,6 +67,12 @@ def init_portfolio_db():
                 )
             """)
 
+            # Add start_date column to portfolio_tasks if missing
+            cursor.execute("DESCRIBE portfolio_tasks")
+            pt_cols = [r[0] for r in cursor.fetchall()]
+            if 'start_date' not in pt_cols:
+                cursor.execute("ALTER TABLE portfolio_tasks ADD COLUMN start_date VARCHAR(20) DEFAULT NULL AFTER status")
+
             # 2. Check and add columns to positions table
             cursor.execute("DESCRIBE positions")
             cols = [r[0] for r in cursor.fetchall()]
@@ -223,25 +229,44 @@ class PortfolioEngine:
         init_portfolio_db()
 
     @staticmethod
-    def create_task(task_name: str, strategy_code: str, initial_capital: float = 100000.0, portfolio_config: Optional[dict] = None) -> dict:
+    def create_task(task_name: str, strategy_code: str, initial_capital: float = 100000.0, portfolio_config: Optional[dict] = None, start_date: Optional[str] = None) -> dict:
         """
-        Creates a new portfolio trading task and triggers initial paper trading synchronization.
+        Creates a new portfolio trading instance starting from start_date.
+        Inherits default portfolio_config from strategy if not provided.
         """
         init_portfolio_db()
+        if not start_date:
+            start_date = datetime.now().strftime('%Y-%m-%d')
+
         task_id = f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{strategy_code}"
         conn = get_connection_with_retry()
         try:
-            cfg_json = json.dumps(portfolio_config) if portfolio_config else None
+            # Inherit default portfolio_config from strategy if not explicitly passed
+            effective_cfg = portfolio_config or {}
+            with conn.cursor() as cur:
+                cur.execute("SELECT factors_config FROM custom_strategies WHERE strategy_id = %s", (strategy_code,))
+                row = cur.fetchone()
+                if row and row[0]:
+                    f_cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                    if isinstance(f_cfg, dict) and 'portfolio_config' in f_cfg:
+                        default_p_cfg = f_cfg['portfolio_config']
+                        if isinstance(default_p_cfg, dict):
+                            merged = default_p_cfg.copy()
+                            merged.update(effective_cfg)
+                            effective_cfg = merged
+
+            cfg_json = json.dumps(effective_cfg) if effective_cfg else None
+
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO portfolio_tasks
-                    (task_id, task_name, strategy_code, initial_capital, current_equity, cash, market_value, status, portfolio_config)
-                    VALUES (%s, %s, %s, %s, %s, %s, 0.0, 'ACTIVE', %s)
-                """, (task_id, task_name, strategy_code, initial_capital, initial_capital, initial_capital, cfg_json))
+                    (task_id, task_name, strategy_code, initial_capital, current_equity, cash, market_value, status, start_date, portfolio_config)
+                    VALUES (%s, %s, %s, %s, %s, %s, 0.0, 'ACTIVE', %s, %s)
+                """, (task_id, task_name, strategy_code, initial_capital, initial_capital, initial_capital, start_date, cfg_json))
             conn.commit()
-            
+
             # Sync initial run for task
-            engine = PortfolioEngine(strategy_id=strategy_code, config=portfolio_config)
+            engine = PortfolioEngine(strategy_id=strategy_code, config=effective_cfg)
             engine.sync_task(task_id)
 
             return PortfolioEngine.get_task_detail(task_id)
@@ -285,7 +310,7 @@ class PortfolioEngine:
                     SELECT t.id, t.task_id, t.task_name, t.strategy_code, COALESCE(s.name, t.strategy_code) AS strategy_name,
                            t.initial_capital, t.current_equity, t.cash, t.market_value, t.cum_pnl, t.cum_return,
                            t.annual_return, t.sharpe_ratio, t.max_drawdown, t.win_rate, t.holding_count, t.status,
-                           t.portfolio_config, t.created_at, t.updated_at
+                           t.portfolio_config, t.created_at, t.updated_at, t.start_date
                     FROM portfolio_tasks t
                     LEFT JOIN custom_strategies s ON (t.strategy_code = s.strategy_id OR t.strategy_code = CAST(s.id AS CHAR))
                     WHERE t.status != 'DELETED'
@@ -315,7 +340,7 @@ class PortfolioEngine:
                         SELECT t.id, t.task_id, t.task_name, t.strategy_code, COALESCE(s.name, t.strategy_code) AS strategy_name,
                                t.initial_capital, t.current_equity, t.cash, t.market_value, t.cum_pnl, t.cum_return,
                                t.annual_return, t.sharpe_ratio, t.max_drawdown, t.win_rate, t.holding_count, t.status,
-                               t.portfolio_config, t.created_at, t.updated_at
+                               t.portfolio_config, t.created_at, t.updated_at, t.start_date
                         FROM portfolio_tasks t
                         LEFT JOIN custom_strategies s ON (t.strategy_code = s.strategy_id OR t.strategy_code = CAST(s.id AS CHAR))
                         WHERE t.status != 'DELETED'
@@ -345,7 +370,8 @@ class PortfolioEngine:
                     'status': r[16],
                     'portfolio_config': json.loads(r[17]) if r[17] else {},
                     'created_at': r[18].strftime('%Y-%m-%d %H:%M') if hasattr(r[18], 'strftime') else str(r[18]),
-                    'updated_at': r[19].strftime('%Y-%m-%d %H:%M') if hasattr(r[19], 'strftime') else str(r[19])
+                    'updated_at': r[19].strftime('%Y-%m-%d %H:%M') if hasattr(r[19], 'strftime') else str(r[19]),
+                    'start_date': str(r[20]) if r[20] else None
                 })
             return tasks
         finally:
@@ -363,7 +389,7 @@ class PortfolioEngine:
                     SELECT t.task_id, t.task_name, t.strategy_code, COALESCE(s.name, t.strategy_code) AS strategy_name,
                            t.initial_capital, t.current_equity, t.cash, t.market_value, t.cum_pnl, t.cum_return,
                            t.annual_return, t.sharpe_ratio, t.max_drawdown, t.win_rate, t.holding_count, t.status,
-                           t.portfolio_config, t.created_at, t.updated_at
+                           t.portfolio_config, t.created_at, t.updated_at, t.start_date
                     FROM portfolio_tasks t
                     LEFT JOIN custom_strategies s ON (t.strategy_code = s.strategy_id OR t.strategy_code = CAST(s.id AS CHAR))
                     WHERE t.task_id = %s
@@ -392,7 +418,8 @@ class PortfolioEngine:
                     'status': row[15],
                     'portfolio_config': json.loads(row[16]) if row[16] else {},
                     'created_at': row[17].strftime('%Y-%m-%d %H:%M') if hasattr(row[17], 'strftime') else str(row[17]),
-                    'updated_at': row[18].strftime('%Y-%m-%d %H:%M') if hasattr(row[18], 'strftime') else str(row[18])
+                    'updated_at': row[18].strftime('%Y-%m-%d %H:%M') if hasattr(row[18], 'strftime') else str(row[18]),
+                    'start_date': str(row[19]) if row[19] else None
                 }
 
                 # Active positions
@@ -503,7 +530,7 @@ class PortfolioEngine:
             # 1. Fetch task configuration
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT task_id, task_name, strategy_code, initial_capital, portfolio_config
+                    SELECT task_id, task_name, strategy_code, initial_capital, portfolio_config, start_date
                     FROM portfolio_tasks WHERE task_id = %s
                 """, (task_id,))
                 t_row = cur.fetchone()
@@ -511,8 +538,9 @@ class PortfolioEngine:
             if not t_row:
                 raise ValueError(f"Task not found: {task_id}")
 
-            t_id, t_name, stg_code, initial_capital, p_cfg_raw = t_row
+            t_id, t_name, stg_code, initial_capital, p_cfg_raw, start_date = t_row
             initial_capital = float(initial_capital)
+            start_date_str = str(start_date) if start_date else None
             stg_cfg = json.loads(p_cfg_raw) if p_cfg_raw and isinstance(p_cfg_raw, str) else (p_cfg_raw or {})
 
             if not stg_cfg:
@@ -526,13 +554,30 @@ class PortfolioEngine:
 
             portfolio_strategy = PortfolioStrategyRegistry.get(stg_cfg)
 
-            # 2. Fetch all recommendation dates for strategy_code
+            # 2. Fetch recommendation dates for strategy_code starting from start_date
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT DISTINCT signal_date FROM recommendations WHERE strategy = %s ORDER BY signal_date ASC",
-                    (stg_code,)
-                )
+                if start_date_str:
+                    cur.execute(
+                        "SELECT DISTINCT signal_date FROM recommendations WHERE strategy = %s AND signal_date >= %s ORDER BY signal_date ASC",
+                        (stg_code, start_date_str)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT DISTINCT signal_date FROM recommendations WHERE strategy = %s ORDER BY signal_date ASC",
+                        (stg_code,)
+                    )
                 dates = [r[0].strftime('%Y-%m-%d') if hasattr(r[0], 'strftime') else str(r[0]) for r in cur.fetchall()]
+
+            if not dates and start_date_str:
+                # Fallback: if no signals exist >= start_date_str, fetch all signals and take latest available dates
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT DISTINCT signal_date FROM recommendations WHERE strategy = %s ORDER BY signal_date ASC",
+                        (stg_code,)
+                    )
+                    all_d = [r[0].strftime('%Y-%m-%d') if hasattr(r[0], 'strftime') else str(r[0]) for r in cur.fetchall()]
+                    if all_d:
+                        dates = [all_d[-1]]
 
             if not dates:
                 print(f"[PortfolioEngine] No recommendations found for strategy: {stg_code}")

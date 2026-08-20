@@ -2036,9 +2036,27 @@ function switchTaskDetailSubTab(subTabName) {
 async function openCreatePortfolioTaskModal() {
     const select = document.getElementById('newTaskStrategySelect');
     select.innerHTML = '<option value="">加载策略列表中...</option>';
-    document.getElementById('newTaskNameInput').value = '';
+    document.getElementById('newTaskNameInput').value = '';function triggerCreatePortfolioTaskFromDetail() {
+    const stg = allStrategiesList.find(s => s.id === activeDetailStgDbId);
+    const stgCode = stg ? stg.strategy_id : null;
+    closeStrategyDetailModal();
+    if (typeof switchNavSection === 'function') {
+        switchNavSection('sectionPortfolio');
+    }
+    openCreatePortfolioTaskModal(stgCode);
+}
 
-    document.getElementById('createTaskModal').classList.add('active');
+let cachedStrategiesMap = {};
+
+async function openCreatePortfolioTaskModal(preselectCode = null) {
+    const modal = document.getElementById('createTaskModal');
+    const select = document.getElementById('newTaskStrategySelect');
+    const startDateInput = document.getElementById('newTaskStartDateInput');
+    modal.classList.add('active');
+
+    // Default start date to today
+    const todayStr = new Date().toISOString().split('T')[0];
+    startDateInput.value = todayStr;
 
     try {
         const res = await fetch('/api/strategies?category=all');
@@ -2046,15 +2064,17 @@ async function openCreatePortfolioTaskModal() {
         const stgs = result.data || [];
 
         select.innerHTML = '';
-        
+        cachedStrategiesMap = {};
+
         // Add default strategies
         const defaults = [
-            { strategy_id: 'cb_double_low', name: '可转债双低策略 (预设)' },
-            { strategy_id: 'pe_strategy', name: '低PE策略 (预设)' },
-            { strategy_id: 'roe_strategy', name: '高ROE策略 (预设)' }
+            { strategy_id: 'cb_double_low', name: '可转债双低策略 (预设)', category: 'convertible_bond' },
+            { strategy_id: 'pe_strategy', name: '低PE策略 (预设)', category: 'stock' },
+            { strategy_id: 'roe_strategy', name: '高ROE策略 (预设)', category: 'stock' }
         ];
 
         defaults.forEach(d => {
+            cachedStrategiesMap[d.strategy_id] = d;
             const opt = document.createElement('option');
             opt.value = d.strategy_id;
             opt.textContent = `[预设] ${d.name}`;
@@ -2062,17 +2082,74 @@ async function openCreatePortfolioTaskModal() {
         });
 
         stgs.forEach(s => {
+            cachedStrategiesMap[s.strategy_id] = s;
             const opt = document.createElement('option');
             opt.value = s.strategy_id;
             opt.textContent = `[自定义] ${s.name} (${s.strategy_id})`;
             select.appendChild(opt);
         });
 
-        if (stgs.length > 0) {
-            document.getElementById('newTaskNameInput').value = stgs[0].name + ' 模拟实盘';
+        if (preselectCode && cachedStrategiesMap[preselectCode]) {
+            select.value = preselectCode;
         }
+
+        const selStg = cachedStrategiesMap[select.value];
+        if (selStg) {
+            document.getElementById('newTaskNameInput').value = `${selStg.name || select.value} 模拟盘`;
+        }
+
+        onTaskRiskModeChange();
+        onTaskStrategySelectChange();
     } catch (e) {
         select.innerHTML = '<option value="cb_double_low">可转债双低策略</option>';
+    }
+}
+
+function onTaskStrategySelectChange() {
+    const select = document.getElementById('newTaskStrategySelect');
+    const stgCode = select.value;
+    const stg = cachedStrategiesMap[stgCode];
+    
+    if (stg && stg.name && !document.getElementById('newTaskNameInput').value.includes('模拟盘')) {
+        document.getElementById('newTaskNameInput').value = `${stg.name} 模拟盘`;
+    }
+
+    // Extract portfolio config
+    let cfg = {};
+    if (stg) {
+        const rawCfg = typeof stg.factors_config === 'object' ? stg.factors_config : (JSON.parse(stg.factors_config || '{}'));
+        cfg = rawCfg.portfolio_config || rawCfg || {};
+    }
+
+    const pType = cfg.portfolio_type === 'compounding' ? '动态复利分仓' : '等额分仓 (Equal Slot)';
+    const maxH = cfg.max_holdings || 5;
+    const stopL = cfg.stop_loss_pct !== undefined ? `${cfg.stop_loss_pct}%` : '-8.0%';
+    const trailS = cfg.trailing_stop_pct !== undefined ? `${cfg.trailing_stop_pct}%` : '-5.0%';
+    const timing = cfg.execution_timing === 'T_CLOSE' ? 'T 日盘后收盘价' : 'T+1 日开盘价 (+0.1% 滑点)';
+
+    const contentDiv = document.getElementById('newTaskStrategyConfigContent');
+    if (contentDiv) {
+        contentDiv.innerHTML = `
+            <div>持仓资金: ${pType}</div>
+            <div>最大槽位: ${maxH} 标的</div>
+            <div>硬止损: <span class="down-val">${stopL}</span></div>
+            <div>移动止盈: <span class="down-val">${trailS}</span></div>
+            <div style="grid-column: 1 / -1;">成交时效: ${timing}</div>
+        `;
+    }
+}
+
+function onTaskRiskModeChange() {
+    const mode = document.getElementById('newTaskRiskModeSelect').value;
+    const previewBox = document.getElementById('newTaskStrategyConfigPreview');
+    const customPanel = document.getElementById('newTaskCustomRiskPanel');
+
+    if (mode === 'custom') {
+        previewBox.style.display = 'none';
+        customPanel.style.display = 'block';
+    } else {
+        previewBox.style.display = 'block';
+        customPanel.style.display = 'none';
     }
 }
 
@@ -2085,11 +2162,24 @@ async function submitCreatePortfolioTask(e) {
 
     const taskName = document.getElementById('newTaskNameInput').value.trim();
     const strategyCode = document.getElementById('newTaskStrategySelect').value;
+    const startDate = document.getElementById('newTaskStartDateInput').value;
     const initialCapital = parseFloat(document.getElementById('newTaskCapitalInput').value || 100000);
+    const riskMode = document.getElementById('newTaskRiskModeSelect').value;
 
     if (!taskName || !strategyCode) {
-        alert('请填写完整的任务名称和关联策略！');
+        alert('请填写完整的实例名称和关联策略！');
         return;
+    }
+
+    let portfolioConfig = null;
+    if (riskMode === 'custom') {
+        portfolioConfig = {
+            portfolio_type: document.getElementById('newTaskPortfolioType').value,
+            max_holdings: parseInt(document.getElementById('newTaskMaxHoldings').value || 5),
+            stop_loss_pct: parseFloat(document.getElementById('newTaskStopLossPct').value || -8.0),
+            trailing_stop_pct: parseFloat(document.getElementById('newTaskTrailingStopPct').value || -5.0),
+            execution_timing: document.getElementById('newTaskExecutionTiming').value
+        };
     }
 
     try {
@@ -2099,7 +2189,9 @@ async function submitCreatePortfolioTask(e) {
             body: JSON.stringify({
                 task_name: taskName,
                 strategy_code: strategyCode,
-                initial_capital: initialCapital
+                initial_capital: initialCapital,
+                start_date: startDate,
+                portfolio_config: portfolioConfig
             })
         });
 

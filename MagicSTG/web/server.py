@@ -868,24 +868,26 @@ def list_portfolio_tasks():
 
 @app.route('/api/portfolio/tasks', methods=['POST'])
 def create_portfolio_task():
-    """创建新的模拟持仓任务"""
+    """创建新的模拟持仓实例"""
     data = request.json or {}
     task_name = data.get('task_name', '').strip()
     strategy_code = data.get('strategy_code', '').strip()
     initial_capital = float(data.get('initial_capital', 100000.0))
     portfolio_config = data.get('portfolio_config', None)
+    start_date = data.get('start_date', None)
 
     if not task_name or not strategy_code:
-        return jsonify({'status': 'error', 'message': '任务名称与关联策略必须填写！'})
+        return jsonify({'status': 'error', 'message': '实例名称与关联策略必须填写！'})
 
     try:
         task_detail = PortfolioEngine.create_task(
             task_name=task_name,
             strategy_code=strategy_code,
             initial_capital=initial_capital,
-            portfolio_config=portfolio_config
+            portfolio_config=portfolio_config,
+            start_date=start_date
         )
-        return jsonify({'status': 'success', 'message': f'成功创建持仓任务『{task_name}』', 'data': sanitize_json(task_detail)})
+        return jsonify({'status': 'success', 'message': f'成功创建持仓实例『{task_name}』', 'data': sanitize_json(task_detail)})
     except Exception as e:
         print(f"[API] Error creating portfolio task: {e}")
         return jsonify({'status': 'error', 'message': str(e)})

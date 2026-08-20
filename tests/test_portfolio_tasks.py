@@ -97,6 +97,39 @@ class TestPortfolioTasks(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_03_instance_start_date_and_override_config(self):
+        """Tests instance creation with start_date and custom risk control config override."""
+        task_name = "自建建仓日持仓实例"
+        strategy_code = "cb_double_low"
+        start_date = "2026-08-01"
+        custom_cfg = {
+            'portfolio_type': 'compounding',
+            'max_holdings': 10,
+            'stop_loss_pct': -5.0,
+            'trailing_stop_pct': -3.0,
+            'execution_timing': 'T+1_OPEN'
+        }
+
+        # 1. Create task instance with custom config and start_date
+        task_detail = PortfolioEngine.create_task(
+            task_name=task_name,
+            strategy_code=strategy_code,
+            initial_capital=200000.0,
+            portfolio_config=custom_cfg,
+            start_date=start_date
+        )
+        task_id = task_detail.get('task_id')
+        self.assertIsNotNone(task_id)
+        self.assertEqual(task_detail.get('start_date'), start_date)
+
+        # 2. Check portfolio_config inherited/merged correctly
+        p_cfg = task_detail.get('portfolio_config', {})
+        self.assertEqual(p_cfg.get('max_holdings'), 10)
+        self.assertEqual(p_cfg.get('stop_loss_pct'), -5.0)
+
+        # 3. Clean up
+        PortfolioEngine.delete_task(task_id)
+
 
 if __name__ == '__main__':
     unittest.main()
