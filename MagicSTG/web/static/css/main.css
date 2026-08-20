@@ -451,6 +451,16 @@ body {
     filter: brightness(1.15);
     box-shadow: 0 0 15px rgba(0, 210, 196, 0.3);
 }
+.btn-success {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #ffffff;
+    font-weight: 700;
+    border: none;
+}
+.btn-success:hover {
+    filter: brightness(1.15);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+}
 .btn-secondary {
     background: rgba(255,255,255,0.08);
     color: #f0f3fa;

@@ -1708,7 +1708,15 @@ function renderPortfolioTaskCards() {
     });
 
     if (filtered.length === 0) {
-        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">暂无活跃持仓任务。点击上方【新建模拟实盘持仓任务】开始创建！</div>`;
+        grid.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 3rem 1.5rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; border: 1px dashed rgba(255, 255, 255, 0.15);">
+                <div style="font-size: 1.1rem; color: #f0f3fa; margin-bottom: 0.5rem; font-weight: 700;">暂无活跃的模拟实盘持仓实例</div>
+                <div style="font-size: 0.85rem; color: #8e95b2; margin-bottom: 1.25rem;">您可以根据已有的选股策略，随时创建一个独立的模拟持仓实例进行资金与收益追踪。</div>
+                <button class="btn btn-success" style="padding: 0.6rem 1.5rem; font-size: 0.95rem;" onclick="openCreatePortfolioTaskModal()">
+                    <i class="fa-solid fa-plus"></i> 立即创建首个模拟持仓实例
+                </button>
+            </div>
+        `;
         return;
     }
 
