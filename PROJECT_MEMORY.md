@@ -704,6 +704,13 @@ The codebase has been refactored into a highly modular, plugin-based architectur
      - Redesigned `#createTaskModal`: added Start Date picker, Strategy selection dropdown, Initial Capital input, and Risk Control Mode toggle (`[● 继承策略默认风控 (推荐)]` vs `[○ 自定义覆盖本实例风控]`).
      - Integrated dynamic preview box (`#newTaskStrategyConfigPreview`) showing inherited portfolio rules (Equal Slot / Compounding, Max Holdings, Stop-Loss %, Trailing Stop-Profit %, Execution Timing) and custom risk panel (`#newTaskCustomRiskPanel`).
      - Rendered `start_date` and initial capital on instance cards.
-  4. **Automated Unit Testing & Verification ([`tests/test_portfolio_tasks.py`](file:///E:/ashare/tests/test_portfolio_tasks.py))**:
+  4. **CSS & Button Visibility Enhancements ([`main.css`](file:///E:/ashare/MagicSTG/web/static/css/main.css), [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) & [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - Defined `.btn-success` CSS class in `main.css` (vibrant green `#10b981` gradient with hover glow effect).
+     - Embedded `+ 新建模拟实盘持仓实例` buttons in Master Board header, Detail View header, Strategy Detail modal footer, and Empty State placeholder box.
+     - Bumped static script version tag to `app.js?v=20260820_v3`.
+  5. **Automated Unit Testing & Verification ([`tests/test_portfolio_tasks.py`](file:///E:/ashare/tests/test_portfolio_tasks.py))**:
      - Added `test_03_instance_start_date_and_override_config` to test suite.
-     - Verified instance creation, `start_date` filtering, custom risk config override, and cascading deletion (3/3 unit tests passed 100% OK).
+     - Verified instance creation, `start_date` filtering, custom risk config override, and cascading deletion (10/10 unit tests passed 100% OK).
+  6. **Pending Investigation Item for Next Session**:
+     - User reported that on their deployed Render live URL environment, the green Create Instance button is still not visible on screen.
+     - **Next Session Goal**: Inspect live Render deployment asset serving / Flask static routing / browser DOM rendering to troubleshoot why the button is missing on the user's Render live deployment.
