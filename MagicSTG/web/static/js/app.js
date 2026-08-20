@@ -2033,10 +2033,7 @@ function switchTaskDetailSubTab(subTabName) {
     }
 }
 
-async function openCreatePortfolioTaskModal() {
-    const select = document.getElementById('newTaskStrategySelect');
-    select.innerHTML = '<option value="">加载策略列表中...</option>';
-    document.getElementById('newTaskNameInput').value = '';function triggerCreatePortfolioTaskFromDetail() {
+function triggerCreatePortfolioTaskFromDetail() {
     const stg = allStrategiesList.find(s => s.id === activeDetailStgDbId);
     const stgCode = stg ? stg.strategy_id : null;
     closeStrategyDetailModal();
