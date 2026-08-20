@@ -30,7 +30,7 @@ function switchMainTab(tabName) {
     } else if (tabName === 'portfolio') {
         document.getElementById('tabNavPortfolio').classList.add('active');
         document.getElementById('sectionPortfolio').style.display = 'block';
-        loadPortfolioStrategyOptions().then(() => loadPortfolioData());
+        backToPortfolioTaskMaster();
     } else if (tabName === 'backtests') {
         document.getElementById('tabNavBacktests').classList.add('active');
         document.getElementById('sectionBacktests').style.display = 'block';
@@ -2037,9 +2037,7 @@ function triggerCreatePortfolioTaskFromDetail() {
     const stg = allStrategiesList.find(s => s.id === activeDetailStgDbId);
     const stgCode = stg ? stg.strategy_id : null;
     closeStrategyDetailModal();
-    if (typeof switchNavSection === 'function') {
-        switchNavSection('sectionPortfolio');
-    }
+    switchMainTab('portfolio');
     openCreatePortfolioTaskModal(stgCode);
 }
 
