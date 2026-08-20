@@ -850,74 +850,105 @@ def delete_recommendations():
 
 
 
+from MagicSTG.execution.portfolio_engine import PortfolioEngine
+
+
+# ==================== 模拟实盘持仓任务 API (Portfolio Tasks) ====================
+
+@app.route('/api/portfolio/tasks', methods=['GET'])
+def list_portfolio_tasks():
+    """获取所有模拟实盘持仓任务及其汇总性能指标"""
+    try:
+        tasks = PortfolioEngine.list_tasks()
+        return jsonify({'status': 'success', 'data': sanitize_json(tasks)})
+    except Exception as e:
+        print(f"[API] Error listing portfolio tasks: {e}")
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/api/portfolio/tasks', methods=['POST'])
+def create_portfolio_task():
+    """创建新的模拟持仓任务"""
+    data = request.json or {}
+    task_name = data.get('task_name', '').strip()
+    strategy_code = data.get('strategy_code', '').strip()
+    initial_capital = float(data.get('initial_capital', 100000.0))
+    portfolio_config = data.get('portfolio_config', None)
+
+    if not task_name or not strategy_code:
+        return jsonify({'status': 'error', 'message': '任务名称与关联策略必须填写！'})
+
+    try:
+        task_detail = PortfolioEngine.create_task(
+            task_name=task_name,
+            strategy_code=strategy_code,
+            initial_capital=initial_capital,
+            portfolio_config=portfolio_config
+        )
+        return jsonify({'status': 'success', 'message': f'成功创建持仓任务『{task_name}』', 'data': sanitize_json(task_detail)})
+    except Exception as e:
+        print(f"[API] Error creating portfolio task: {e}")
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/api/portfolio/tasks/<task_id>', methods=['GET'])
+def get_portfolio_task_detail(task_id):
+    """获取特定持仓任务的详细持仓、交易明细、权益曲线及核心指标"""
+    try:
+        detail = PortfolioEngine.get_task_detail(task_id)
+        return jsonify({'status': 'success', 'data': sanitize_json(detail)})
+    except Exception as e:
+        print(f"[API] Error getting portfolio task detail {task_id}: {e}")
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/api/portfolio/tasks/<task_id>/sync', methods=['POST'])
+def sync_portfolio_task(task_id):
+    """重新推演/同步特定持仓任务的持仓明细与收益曲线"""
+    try:
+        engine = PortfolioEngine()
+        res = engine.sync_task(task_id)
+        detail = PortfolioEngine.get_task_detail(task_id)
+        return jsonify({'status': 'success', 'message': '同步推演完成', 'data': sanitize_json(detail)})
+    except Exception as e:
+        print(f"[API] Error syncing portfolio task {task_id}: {e}")
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/api/portfolio/tasks/<task_id>', methods=['DELETE'])
+def delete_portfolio_task(task_id):
+    """彻底级联删除持仓任务及其关联的所有持仓明细、成交流水与历史权益"""
+    try:
+        PortfolioEngine.delete_task(task_id)
+        return jsonify({'status': 'success', 'message': f'持仓任务 (ID: {task_id}) 及其对应的所有持仓明细与成交流水已彻底删除！'})
+    except Exception as e:
+        print(f"[API] Error deleting portfolio task {task_id}: {e}")
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
 @app.route('/api/positions')
 def get_positions():
-    """获取当前持仓数据"""
-    strategy = request.args.get('strategy', 'price')
-    
-    conn = get_db_connection()
+    """兼容原接口：获取当前持仓数据"""
+    strategy = request.args.get('strategy', 'cb_double_low')
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT stock_code, buy_date, buy_price, shares, cost_total, 
-                   current_price, market_value, pnl, pnl_pct, status
-            FROM positions
-            WHERE strategy = %s AND status = 'HOLDING'
-            ORDER BY stock_code
-        """, (strategy,))
-        rows = cursor.fetchall()
-        
-        positions = []
-        total_market_value = 0
-        total_pnl = 0
-        
-        for row in rows:
-            pos = {
-                'code': row[0],
-                'buy_date': row[1].strftime('%Y-%m-%d') if row[1] else None,
-                'buy_price': float(row[2]) if row[2] else 0,
-                'shares': int(row[3]) if row[3] else 0,
-                'cost_total': float(row[4]) if row[4] else 0,
-                'current_price': float(row[5]) if row[5] else 0,
-                'market_value': float(row[6]) if row[6] else 0,
-                'pnl': float(row[7]) if row[7] else 0,
-                'pnl_pct': float(row[8]) if row[8] else 0,
-                'status': row[9]
-            }
-            positions.append(pos)
-            total_market_value += pos['market_value']
-            total_pnl += pos['pnl']
-        
-        cursor.execute("""
-            SELECT SUM(cost_total) FROM positions WHERE strategy = %s AND status = 'HOLDING'
-        """, (strategy,))
-        row = cursor.fetchone()
-        initial_capital = 40000
-        
-        return jsonify({
-            'status': 'success',
-            'strategy': strategy,
-            'data': {
-                'positions': positions,
-                'summary': {
-                    'initial_capital': initial_capital,
-                    'current_equity': initial_capital + total_pnl,
-                    'total_market_value': total_market_value,
-                    'holding_count': len(positions),
-                    'max_holdings': 4,
-                    'total_pnl': total_pnl,
-                    'total_pnl_pct': (total_pnl / initial_capital * 100) if initial_capital > 0 else 0
-                },
-                'cash_details': {
-                    'total_cash': initial_capital - total_market_value
+        tasks = PortfolioEngine.list_tasks()
+        matched = [t for t in tasks if t['strategy_code'] == strategy]
+        task_id = matched[0]['task_id'] if matched else (tasks[0]['task_id'] if tasks else None)
+        if task_id:
+            detail = PortfolioEngine.get_task_detail(task_id)
+            return jsonify({
+                'status': 'success',
+                'strategy': strategy,
+                'data': {
+                    'positions': detail.get('active_positions', []),
+                    'summary': detail,
+                    'cash_details': {'total_cash': detail.get('cash', 0.0)}
                 }
-            }
-        })
-        
+            })
+        return jsonify({'status': 'success', 'data': {'positions': [], 'summary': {}}})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
-    finally:
-        conn.close()
+
 
 
 @app.route('/api/backtests')

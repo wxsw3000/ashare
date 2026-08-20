@@ -1659,97 +1659,197 @@ function renderRecDetailTable() {
     }
 }
 
-// 模拟实盘持仓与组合收益引擎
+// ==================== 模拟实盘持仓任务看板 JS 引擎 ====================
+let allPortfolioTasks = [];
+let currentPortfolioTaskId = null;
+let taskPortfolioChartInstance = null;
+
 async function loadPortfolioStrategyOptions() {
-    try {
-        const res = await fetch('/api/portfolio/strategies');
-        const result = await res.json();
-        if (result.status === 'success' && result.data && result.data.length > 0) {
-            const select = document.getElementById('portfolioStrategySelect');
-            const currVal = select.value;
-            select.innerHTML = '';
-            result.data.forEach(stg => {
-                const opt = document.createElement('option');
-                opt.value = stg.strategy_id;
-                opt.textContent = stg.name || stg.strategy_id;
-                select.appendChild(opt);
-            });
-            if (currVal && result.data.some(s => s.strategy_id === currVal)) {
-                select.value = currVal;
-            }
-        }
-    } catch (err) {
-        console.error("加载持仓策略下拉失败:", err);
-    }
+    // Placeholder for navbar switch
+    return loadPortfolioTasks();
 }
 
 async function loadPortfolioData() {
-    const stgId = document.getElementById('portfolioStrategySelect').value || 'cb_double_low';
+    return loadPortfolioTasks();
+}
+
+async function loadPortfolioTasks() {
+    const grid = document.getElementById('portfolioTaskCardGrid');
+    if (!grid) return;
+
+    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;"><i class="fa-solid fa-spinner fa-spin"></i> 加载模拟实盘任务中...</div>`;
+
     try {
-        const res = await fetch(`/api/portfolio?strategy_id=${stgId}`);
+        const res = await fetch('/api/portfolio/tasks');
         const result = await res.json();
-        if (result.status === 'success' && result.data) {
-            renderPortfolioDashboard(result.data);
+
+        if (result.status !== 'success') {
+            grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #df4b5e; padding: 2rem;">加载失败: ${result.message}</div>`;
+            return;
         }
+
+        allPortfolioTasks = result.data || [];
+        renderPortfolioTaskCards();
     } catch (err) {
-        console.error("加载模拟持仓失败:", err);
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #df4b5e; padding: 2rem;">网络异常: ${err.message}</div>`;
     }
 }
 
-async function syncPortfolioData() {
-    const stgId = document.getElementById('portfolioStrategySelect').value || 'cb_double_low';
-    const btn = document.getElementById('btnSyncPortfolio');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在推演中...';
+function renderPortfolioTaskCards() {
+    const search = (document.getElementById('searchTaskInput')?.value || '').toLowerCase();
+    const grid = document.getElementById('portfolioTaskCardGrid');
+    if (!grid) return;
+
+    const filtered = allPortfolioTasks.filter(t => {
+        const name = (t.task_name || '').toLowerCase();
+        const stgName = (t.strategy_name || '').toLowerCase();
+        const stgCode = (t.strategy_code || '').toLowerCase();
+        return name.includes(search) || stgName.includes(search) || stgCode.includes(search);
+    });
+
+    if (filtered.length === 0) {
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">暂无活跃持仓任务。点击上方【新建模拟实盘持仓任务】开始创建！</div>`;
+        return;
+    }
+
+    grid.innerHTML = filtered.map(t => {
+        const cumRet = t.cum_return || 0;
+        const annRet = t.annual_return || 0;
+        const cumSign = cumRet >= 0 ? '+' : '';
+        const annSign = annRet >= 0 ? '+' : '';
+        const cumClass = cumRet >= 0 ? 'up-val' : 'down-val';
+        const annClass = annRet >= 0 ? 'up-val' : 'down-val';
+
+        const sharpeVal = (t.sharpe_ratio !== undefined && t.sharpe_ratio !== null) ? t.sharpe_ratio.toFixed(2) : '0.00';
+        const maxDdVal = (t.max_drawdown !== undefined && t.max_drawdown !== null) ? t.max_drawdown.toFixed(2) : '0.00';
+        const winRateVal = (t.win_rate !== undefined && t.win_rate !== null) ? t.win_rate.toFixed(1) : '0.0';
+
+        return `
+            <div class="stg-card" style="border: 1px solid rgba(0, 210, 196, 0.35); background: rgba(15, 23, 42, 0.75);">
+                <div>
+                    <div class="stg-card-header">
+                        <span class="badge-tag badge-cb" style="background: rgba(0, 210, 196, 0.15); color: #00d2c4; border: 1px solid rgba(0, 210, 196, 0.3);">
+                            <i class="fa-solid fa-layer-group"></i> ${t.strategy_name || t.strategy_code}
+                        </span>
+                        <span class="badge-tag badge-active"><i class="fa-solid fa-circle-play"></i> 自动调仓中</span>
+                    </div>
+
+                    <div style="font-size: 1.1rem; font-weight: 800; color: #f0f3fa; margin: 0.4rem 0;">${t.task_name}</div>
+                    <div style="font-size: 0.78rem; color: #8e95b2; margin-bottom: 0.75rem;">
+                        <i class="fa-regular fa-clock"></i> 创建时间: ${t.created_at || '-'}
+                    </div>
+
+                    <!-- 6 核心量化指标 Grid -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; background: rgba(15, 17, 32, 0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.85rem;">
+                        <div>
+                            <div style="font-size: 0.72rem; color: #8e95b2;">累计回报率</div>
+                            <div style="font-size: 1.05rem; font-weight: 800;" class="${cumClass}">${cumSign}${cumRet.toFixed(2)}%</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: #8e95b2;">年化收益率</div>
+                            <div style="font-size: 1.05rem; font-weight: 800;" class="${annClass}">${annSign}${annRet.toFixed(2)}%</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: #8e95b2;">夏普比率 (Sharpe)</div>
+                            <div style="font-size: 0.95rem; font-weight: 700; color: #f59e0b;">${sharpeVal}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: #8e95b2;">最大回撤 / 胜率</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;">
+                                <span class="down-val">-${maxDdVal}%</span> / <span style="color:#10b981;">${winRateVal}%</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: #8e95b2;">当前总资产</div>
+                            <div style="font-size: 0.88rem; font-weight: 700; color: #f0f3fa;">¥ ${t.current_equity.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: #8e95b2;">持仓只数</div>
+                            <div style="font-size: 0.88rem; font-weight: 700; color: #a855f7;">${t.holding_count} 只</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stg-card-footer" style="display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.8rem;" onclick="openPortfolioTaskDetail('${t.task_id}')">
+                        <i class="fa-solid fa-file-lines"></i> 持仓与交易明细
+                    </button>
+                    <button class="btn btn-outline" style="padding: 0.25rem 0.55rem; font-size: 0.78rem;" onclick="syncPortfolioTaskAction('${t.task_id}')">
+                        <i class="fa-solid fa-arrows-rotate"></i> 推演
+                    </button>
+                    <button class="btn btn-danger" style="padding: 0.25rem 0.55rem; font-size: 0.78rem;" onclick="deletePortfolioTaskAction('${t.task_id}')">
+                        <i class="fa-solid fa-trash"></i> 删除
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function openPortfolioTaskDetail(taskId) {
+    currentPortfolioTaskId = taskId;
+
+    document.getElementById('portfolioMasterContainer').style.display = 'none';
+    document.getElementById('portfolioDetailContainer').style.display = 'block';
 
     try {
-        const res = await fetch('/api/portfolio/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ strategy_id: stgId })
-        });
+        const res = await fetch(`/api/portfolio/tasks/${taskId}`);
         const result = await res.json();
-        if (result.status === 'success' && result.data) {
-            renderPortfolioDashboard(result.data);
-            alert(`✅ 模拟实盘盘后推演成功！推演 ${result.sync_result?.days_count || 0} 个交易日。`);
-        } else {
-            alert(`⚠️ 同步失败: ${result.message || '未知错误'}`);
+
+        if (result.status !== 'success' || !result.data) {
+            alert('获取持仓任务详情失败: ' + (result.message || '未知错误'));
+            backToPortfolioTaskMaster();
+            return;
         }
+
+        renderPortfolioTaskDetail(result.data);
     } catch (err) {
-        alert(`❌ 同步失败: ${err.message}`);
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> 重新同步/推演模拟盘';
+        alert('网络通信异常: ' + err.message);
+        backToPortfolioTaskMaster();
     }
 }
 
-function renderPortfolioDashboard(data) {
-    document.getElementById('portTotalEquity').textContent = '¥ ' + (data.total_equity || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    document.getElementById('portCash').textContent = '¥ ' + (data.cash || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    document.getElementById('portMarketValue').textContent = '¥ ' + (data.market_value || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    document.getElementById('portHoldingCount').textContent = data.holding_count || 0;
-    document.getElementById('portLatestDate').textContent = data.latest_date || '--';
+function backToPortfolioTaskMaster() {
+    currentPortfolioTaskId = null;
+    document.getElementById('portfolioDetailContainer').style.display = 'none';
+    document.getElementById('portfolioMasterContainer').style.display = 'block';
+    loadPortfolioTasks();
+}
 
-    const cumPnl = data.cum_pnl || 0;
+function renderPortfolioTaskDetail(data) {
+    document.getElementById('taskDetailTitleHeader').textContent = data.task_name;
+    document.getElementById('taskDetailSubHeader').textContent = `绑定策略: ${data.strategy_name} (${data.strategy_code}) | 任务 ID: ${data.task_id}`;
+
+    // Stats
+    document.getElementById('taskPortTotalEquity').textContent = '¥ ' + (data.current_equity || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    document.getElementById('taskPortCash').textContent = '¥ ' + (data.cash || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    document.getElementById('taskPortInitCapital').textContent = '¥ ' + (data.initial_capital || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
     const cumRet = data.cum_return || 0;
-    const dailyPnl = data.daily_pnl || 0;
+    const annRet = data.annual_return || 0;
+    const cumPnl = data.cum_pnl || 0;
 
-    const elCumPnl = document.getElementById('portCumPnl');
-    const elCumRet = document.getElementById('portCumReturn');
-    const elDailyPnl = document.getElementById('portDailyPnl');
+    const elCumRet = document.getElementById('taskPortCumReturn');
+    const elCumPnl = document.getElementById('taskPortCumPnl');
+    const elAnnRet = document.getElementById('taskPortAnnualReturn');
 
-    elCumPnl.textContent = (cumPnl >= 0 ? '+¥ ' : '-¥ ') + Math.abs(cumPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    elCumPnl.className = cumPnl >= 0 ? 'up-val' : 'down-val';
     elCumRet.textContent = (cumRet >= 0 ? '+' : '') + cumRet.toFixed(2) + '%';
     elCumRet.className = cumRet >= 0 ? 'up-val' : 'down-val';
 
-    elDailyPnl.textContent = (dailyPnl >= 0 ? '+¥ ' : '-¥ ') + Math.abs(dailyPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    elDailyPnl.className = dailyPnl >= 0 ? 'up-val' : 'down-val';
+    elCumPnl.textContent = (cumPnl >= 0 ? '+¥ ' : '-¥ ') + Math.abs(cumPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    elCumPnl.className = cumPnl >= 0 ? 'up-val' : 'down-val';
 
-    const activeTable = document.getElementById('tableActivePositions');
+    elAnnRet.textContent = (annRet >= 0 ? '+' : '') + annRet.toFixed(2) + '%';
+    elAnnRet.className = annRet >= 0 ? 'up-val' : 'down-val';
+
+    document.getElementById('taskPortSharpe').textContent = (data.sharpe_ratio !== undefined && data.sharpe_ratio !== null) ? data.sharpe_ratio.toFixed(2) : '0.00';
+    document.getElementById('taskPortMaxDrawdown').textContent = '-' + (data.max_drawdown !== undefined ? data.max_drawdown.toFixed(2) : '0.00') + '%';
+    document.getElementById('taskPortWinRate').textContent = (data.win_rate !== undefined ? data.win_rate.toFixed(1) : '0.0') + '%';
+
+    // Tables
     const activePositions = data.active_positions || [];
-    document.getElementById('countActivePositions').textContent = activePositions.length;
-
+    document.getElementById('taskCountActive').textContent = activePositions.length;
+    const activeTable = document.getElementById('tableTaskActivePositions');
     if (activePositions.length === 0) {
         activeTable.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">当前无活跃持仓</td></tr>`;
     } else {
@@ -1774,17 +1874,48 @@ function renderPortfolioDashboard(data) {
         }).join('');
     }
 
-    const closedTable = document.getElementById('tableClosedTrades');
-    const closedTrades = data.closed_trades || [];
-    document.getElementById('countClosedTrades').textContent = closedTrades.length;
+    // Trade logs
+    const tradeLogs = data.trade_logs || [];
+    document.getElementById('taskCountLogs').textContent = tradeLogs.length;
+    const logsTable = document.getElementById('tableTaskTradeLogs');
+    if (tradeLogs.length === 0) {
+        logsTable.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#8e95b2; padding:2rem;">暂无调仓成交流水</td></tr>`;
+    } else {
+        logsTable.innerHTML = tradeLogs.map(l => {
+            const actionBadge = l.action === 'BUY' 
+                ? `<span class="badge-tag badge-buy">买入 (BUY)</span>`
+                : `<span class="badge-tag badge-sell">卖出 (SELL)</span>`;
+            const pnlStr = l.action === 'SELL' ? `¥ ${l.pnl.toFixed(2)}` : '--';
+            const pnlPctStr = l.action === 'SELL' ? `${l.pnl_pct >= 0 ? '+' : ''}${l.pnl_pct.toFixed(2)}%` : '--';
+            const pnlClass = l.action === 'SELL' ? (l.pnl >= 0 ? 'up-val' : 'down-val') : '';
 
+            return `
+                <tr>
+                    <td>${l.trade_date}</td>
+                    <td>${actionBadge}</td>
+                    <td><code>${l.stock_code}</code></td>
+                    <td style="font-weight: 700;">${l.stock_name}</td>
+                    <td>¥ ${l.price.toFixed(2)}</td>
+                    <td>${l.shares.toLocaleString()}</td>
+                    <td>¥ ${l.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="${pnlClass}">${pnlStr}</td>
+                    <td class="${pnlClass}">${pnlPctStr}</td>
+                    <td style="font-size: 0.8rem; color: #8e95b2;">${l.reason || '-'}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Closed trades
+    const closedTrades = data.closed_trades || [];
+    document.getElementById('taskCountClosed').textContent = closedTrades.length;
+    const closedTable = document.getElementById('tableTaskClosedTrades');
     if (closedTrades.length === 0) {
-        closedTable.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无离场成交记录</td></tr>`;
+        closedTable.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#8e95b2; padding:2rem;">暂无平仓离场记录</td></tr>`;
     } else {
         closedTable.innerHTML = closedTrades.map(tr => {
             const pnlClass = tr.pnl >= 0 ? 'up-val' : 'down-val';
             const pnlSign = tr.pnl >= 0 ? '+' : '';
-            const reason = tr.extra_data?.exit_reason || '策略卖出平仓';
             return `
                 <tr>
                     <td><strong style="color: #a855f7;">${tr.stock_code}</strong></td>
@@ -1797,14 +1928,251 @@ function renderPortfolioDashboard(data) {
                     <td>¥ ${tr.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                     <td class="${pnlClass}">${pnlSign}¥ ${tr.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                     <td class="${pnlClass}">${pnlSign}${tr.pnl_pct.toFixed(2)}%</td>
-                    <td style="font-size: 0.85rem; color: #94a3b8;">${reason}</td>
                 </tr>
             `;
         }).join('');
     }
 
-    renderPortfolioChart(data.equity_curve || []);
+    renderTaskPortfolioChart(data.equity_curve || []);
 }
+
+function renderTaskPortfolioChart(equityCurve) {
+    const ctx = document.getElementById('taskPortfolioEquityChart').getContext('2d');
+    if (taskPortfolioChartInstance) {
+        taskPortfolioChartInstance.destroy();
+    }
+
+    const labels = equityCurve.map(item => item.date);
+    const returns = equityCurve.map(item => item.cum_return);
+    const equities = equityCurve.map(item => (item.total_equity / 10000).toFixed(2));
+
+    taskPortfolioChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '累计收益率 (%)',
+                    data: returns,
+                    borderColor: '#00d2c4',
+                    backgroundColor: 'rgba(0, 210, 196, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: equityCurve.length > 50 ? 0 : 3,
+                    pointHoverRadius: 6,
+                    yAxisID: 'y'
+                },
+                {
+                    label: '总资产 (万元)',
+                    data: equities,
+                    borderColor: '#a855f7',
+                    borderWidth: 1.5,
+                    borderDash: [4, 4],
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: { color: '#8e95b2', font: { size: 11 } }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: { color: '#00d2c4', font: { size: 11 }, callback: v => v + '%' }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: { color: '#a855f7', font: { size: 11 }, callback: v => v + '万' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: { color: '#f0f3fa', font: { size: 12 } }
+                }
+            }
+        }
+    });
+}
+
+function switchTaskDetailSubTab(subTabName) {
+    document.getElementById('taskSubTabActive').classList.remove('active');
+    document.getElementById('taskSubTabLogs').classList.remove('active');
+    document.getElementById('taskSubTabClosed').classList.remove('active');
+
+    document.getElementById('taskSubSectionActive').style.display = 'none';
+    document.getElementById('taskSubSectionLogs').style.display = 'none';
+    document.getElementById('taskSubSectionClosed').style.display = 'none';
+
+    if (subTabName === 'active') {
+        document.getElementById('taskSubTabActive').classList.add('active');
+        document.getElementById('taskSubSectionActive').style.display = 'block';
+    } else if (subTabName === 'logs') {
+        document.getElementById('taskSubTabLogs').classList.add('active');
+        document.getElementById('taskSubSectionLogs').style.display = 'block';
+    } else if (subTabName === 'closed') {
+        document.getElementById('taskSubTabClosed').classList.add('active');
+        document.getElementById('taskSubSectionClosed').style.display = 'block';
+    }
+}
+
+async function openCreatePortfolioTaskModal() {
+    const select = document.getElementById('newTaskStrategySelect');
+    select.innerHTML = '<option value="">加载策略列表中...</option>';
+    document.getElementById('newTaskNameInput').value = '';
+
+    document.getElementById('createTaskModal').classList.add('active');
+
+    try {
+        const res = await fetch('/api/strategies?category=all');
+        const result = await res.json();
+        const stgs = result.data || [];
+
+        select.innerHTML = '';
+        
+        // Add default strategies
+        const defaults = [
+            { strategy_id: 'cb_double_low', name: '可转债双低策略 (预设)' },
+            { strategy_id: 'pe_strategy', name: '低PE策略 (预设)' },
+            { strategy_id: 'roe_strategy', name: '高ROE策略 (预设)' }
+        ];
+
+        defaults.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.strategy_id;
+            opt.textContent = `[预设] ${d.name}`;
+            select.appendChild(opt);
+        });
+
+        stgs.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.strategy_id;
+            opt.textContent = `[自定义] ${s.name} (${s.strategy_id})`;
+            select.appendChild(opt);
+        });
+
+        if (stgs.length > 0) {
+            document.getElementById('newTaskNameInput').value = stgs[0].name + ' 模拟实盘';
+        }
+    } catch (e) {
+        select.innerHTML = '<option value="cb_double_low">可转债双低策略</option>';
+    }
+}
+
+function closeCreatePortfolioTaskModal() {
+    document.getElementById('createTaskModal').classList.remove('active');
+}
+
+async function submitCreatePortfolioTask(e) {
+    e.preventDefault();
+
+    const taskName = document.getElementById('newTaskNameInput').value.trim();
+    const strategyCode = document.getElementById('newTaskStrategySelect').value;
+    const initialCapital = parseFloat(document.getElementById('newTaskCapitalInput').value || 100000);
+
+    if (!taskName || !strategyCode) {
+        alert('请填写完整的任务名称和关联策略！');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/portfolio/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                task_name: taskName,
+                strategy_code: strategyCode,
+                initial_capital: initialCapital
+            })
+        });
+
+        const result = await res.json();
+        if (result.status === 'success') {
+            alert(`🎉 ${result.message}`);
+            closeCreatePortfolioTaskModal();
+            loadPortfolioTasks();
+        } else {
+            alert(`⚠️ 创建失败: ${result.message}`);
+        }
+    } catch (err) {
+        alert(`❌ 创建通信失败: ${err.message}`);
+    }
+}
+
+async function syncPortfolioTaskAction(taskId) {
+    try {
+        const res = await fetch(`/api/portfolio/tasks/${taskId}/sync`, { method: 'POST' });
+        const result = await res.json();
+        if (result.status === 'success') {
+            alert(`✅ 持仓任务推演成功！`);
+            if (currentPortfolioTaskId === taskId) {
+                renderPortfolioTaskDetail(result.data);
+            } else {
+                loadPortfolioTasks();
+            }
+        } else {
+            alert(`⚠️ 推演失败: ${result.message}`);
+        }
+    } catch (e) {
+        alert(`❌ 推演通信失败: ${e.message}`);
+    }
+}
+
+async function syncCurrentPortfolioTask() {
+    if (currentPortfolioTaskId) {
+        syncPortfolioTaskAction(currentPortfolioTaskId);
+    }
+}
+
+async function deletePortfolioTaskAction(taskId) {
+    const t = allPortfolioTasks.find(item => item.task_id === taskId);
+    const tName = t ? t.task_name : taskId;
+
+    if (!confirm(`⚠️ 警告: 确定要彻底删除持仓任务『${tName}』吗？\n\n删除该任务将级联清理数据库中对应的所有【持仓明细】、【成交流水】及【每日收益曲线】，此操作无法撤销！`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/portfolio/tasks/${taskId}`, { method: 'DELETE' });
+        const result = await res.json();
+        if (result.status === 'success') {
+            alert(`✅ ${result.message}`);
+            if (currentPortfolioTaskId === taskId) {
+                backToPortfolioTaskMaster();
+            } else {
+                loadPortfolioTasks();
+            }
+        } else {
+            alert(`⚠️ 删除失败: ${result.message}`);
+        }
+    } catch (e) {
+        alert(`❌ 删除通信失败: ${e.message}`);
+    }
+}
+
+async function deleteCurrentPortfolioTask() {
+    if (currentPortfolioTaskId) {
+        deletePortfolioTaskAction(currentPortfolioTaskId);
+    }
+}
+
 
 function renderPortfolioChart(equityCurve) {
     const ctx = document.getElementById('portfolioEquityChart').getContext('2d');

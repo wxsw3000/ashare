@@ -88,14 +88,19 @@ E:\ashare\
    - 字段: `date` (`YYYY-MM-DD`), `north_net_inflow` (北向资金净流入/万元), `margin_balance` (沪深两融余额/元), `margin_buy` (融资买入额/元).
 
 ### 2.4 系统推荐与模拟实盘表
-1. **`recommendations`** (每日策略生成的买卖信号)
+1. **`portfolio_tasks`** (模拟实盘持仓任务主表 - 基于任务的持仓引擎)
+   - 主键: `task_id` (唯一任务编号, 如 `task_20260820_102029_cb_double_low`).
+   - 字段: `task_name` (任务名称), `strategy_code` (关联策略 ID), `initial_capital` (初始资金), `current_equity` (当前总资产), `cash` (可用现金), `market_value` (持仓市值), `cum_pnl` (累计盈亏), `cum_return` (累计回报率 %), `annual_return` (年化收益率 %), `sharpe_ratio` (夏普比率), `max_drawdown` (最大回撤 %), `win_rate` (胜率 %), `holding_count` (当前持仓只数), `status` (`ACTIVE`/`DELETED`), `portfolio_config` (JSON 风控参数).
+2. **`recommendations`** (每日策略生成的买卖信号)
    - 字段: `strategy` (策略名), `stock_code`, `action` (`BUY`/`SELL`), `price`, `reason`, `signal_date`, **`factor_data` (JSON)**.
    - *注：`factor_data` 为 JSON 格式，可灵活存储任何股票/可转债/新因子的快照，无需加列！*
-2. **`positions`** (模拟持仓明细)
-   - 字段: `strategy`, `stock_code`, `buy_date`, `buy_price`, `shares`, `cost_total`, `current_price`, `market_value`, `pnl`, `pnl_pct`, `status` (`HOLDING`/`SOLD`).
-3. **`portfolio_daily_history`** (资金曲线历史表)
-   - 字段: `strategy`, `date`, `total_equity` (总资产), `cash` (可用现金), `market_value` (持仓市值), `cum_return` (累计收益率).
-4. **`custom_strategies`** (策略配置表)
+3. **`positions`** (模拟持仓明细)
+   - 字段: `task_id` (关联持仓任务 ID), `strategy`, `stock_code`, `buy_date`, `buy_price`, `highest_price`, `slot_idx`, `shares`, `cost_total`, `current_price`, `market_value`, `pnl`, `pnl_pct`, `status` (`HOLDING`/`SOLD`).
+4. **`portfolio_daily_history`** (资金曲线历史表)
+   - 字段: `task_id` (关联持仓任务 ID), `strategy`, `date`, `total_equity` (总资产), `cash` (可用现金), `market_value` (持仓市值), `cum_pnl` (累计盈亏), `cum_return` (累计收益率 %).
+5. **`portfolio_trade_logs`** (调仓与成交明细流水表)
+   - 字段: `task_id` (关联持仓任务 ID), `strategy`, `trade_date`, `action` (`BUY`/`SELL`), `stock_code`, `stock_name`, `price`, `shares`, `cost_total`, `pnl`, `pnl_pct`, `reason` (触发离场或买入原因).
+6. **`custom_strategies`** (策略配置表)
    - 字段: `id` (自增主键), `strategy_id` (`stg_xxx`), `name` (策略名称), `category` (`stock` / `convertible_bond`), `is_active` (是否开启每日自动化工作流 1/0), **`factors_config` (JSON 包含选股因子与持仓 portfolio_config 的完整双模块配置)**.
 
 ---
@@ -345,10 +350,25 @@ sell_cost = calc_sell_cost(price=12.0, shares=1000, asset_type='stock')
 from MagicSTG.core.limit import check_limit_up, check_limit_down
 is_limit_up = check_limit_up(code="sh.600000", current_price=11.0, prev_close=10.0)
 
-# 5. 模拟实盘与持仓调度引擎
-from MagicSTG.execution.portfolio_engine import PortfolioEngine
-engine = PortfolioEngine(strategy_name="dynamic_factor")
-engine.sync_portfolio_history() # 自动拉取推荐信号并按该策略的 portfolio_config 推演与同步持仓
+# 5. 基于任务的模拟实盘持仓引擎与级联删除 (Portfolio Tasks Engine)
+from MagicSTG.execution.portfolio_engine import PortfolioEngine, run_portfolio_sync_all_active
+
+# 创建新的实盘持仓任务 (自动初始化调仓并计算累计回报、年化、夏普、最大回撤与胜率)
+task_detail = PortfolioEngine.create_task(
+    task_name="双低可转债模拟实盘#1",
+    strategy_code="cb_double_low",
+    initial_capital=100000.0
+)
+
+# 查询任务列表或特定任务详情
+tasks = PortfolioEngine.list_tasks()
+detail = PortfolioEngine.get_task_detail(task_id=task_detail['task_id'])
+
+# 级联删除任务及其包含的所有持仓明细、调仓成交流水与每日权益曲线
+PortfolioEngine.delete_task(task_id=task_detail['task_id'])
+
+# 盘后推演同步所有活跃任务
+run_portfolio_sync_all_active()
 
 # 6. 持仓策略插件工厂与实例化
 from MagicSTG.execution.portfolio_strategies import PortfolioStrategyRegistry, BasePortfolioStrategy

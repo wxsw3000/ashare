@@ -660,3 +660,29 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   5. **Git Synchronization**:
      - Committed changes to Git repo (`docs: update AI_DEVELOPMENT_GUIDE.md with complete Dual-Module portfolio_config and AI strategy generator guidelines`).
 
+---
+
+## 39. Session Summary & Memory (2026-08-20) - Task-Oriented Paper Trading Architecture Refactoring & Cascading Deletion
+
+* **Task-Oriented Paper Trading Engine Implementation**:
+  1. **TiDB Cloud Schema Expansion ([`portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/portfolio_engine.py))**:
+     - Added `portfolio_tasks` table (`task_id`, `task_name`, `strategy_code`, `initial_capital`, `current_equity`, `cum_return`, `annual_return`, `sharpe_ratio`, `max_drawdown`, `win_rate`, `status`, `portfolio_config`).
+     - Added `task_id` column to `positions` and `portfolio_daily_history` tables with `uk_task_date` unique key.
+     - Added `portfolio_trade_logs` table for detailed per-task buy/sell execution history.
+  2. **Quantitative Performance Metrics Engine**:
+     - Integrated `calculate_performance_metrics()`: calculates Cumulative Return, Annualized Return (time-weighted), Sharpe Ratio (annualized vs 1.5% risk-free rate), Max Drawdown (peak-to-trough decline), and Win Rate (% profitable closed trades).
+  3. **Cascading Task Deletion & Multi-Task Management**:
+     - Implemented `PortfolioEngine.delete_task(task_id)`: cascading wipes all `positions`, `portfolio_daily_history`, `portfolio_trade_logs`, and `portfolio_tasks` records matching `task_id`.
+     - Implemented `create_task()`, `list_tasks()`, `get_task_detail()`, `sync_task()`, and `run_portfolio_sync_all_active()`.
+  4. **REST API Endpoints ([`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     - Added `GET /api/portfolio/tasks`: lists tasks with performance summary.
+     - Added `POST /api/portfolio/tasks`: creates paper trading task and runs initial sync.
+     - Added `GET /api/portfolio/tasks/<task_id>`: returns task details (positions, trade logs, equity curve, metrics).
+     - Added `POST /api/portfolio/tasks/<task_id>/sync`: manual task re-sync.
+     - Added `DELETE /api/portfolio/tasks/<task_id>`: cascading delete task & associated records.
+  5. **Web UI Master/Detail Redesign ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) & [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - Master View: Task Card Grid displaying 6 key metrics per task card, action buttons for details, sync, and deletion.
+     - Detail View: Task performance header, 6 metric cards, equity curve chart, and 3 sub-tabs (Current Positions, Trade Execution Logs, Closed Trades).
+     - Creation Modal: `#createTaskModal` for choosing task name, strategy, and initial capital.
+  6. **Automated Unit Testing Validation**:
+     - Created test suite [`tests/test_portfolio_tasks.py`](file:///E:/ashare/tests/test_portfolio_tasks.py) (2/2 unit tests passed 100% OK). Verified task lifecycle, trade log generation, metrics math, and clean database wipe upon task deletion.

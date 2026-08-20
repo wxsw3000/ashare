@@ -70,79 +70,122 @@
             </div>
         </div>
 
-        <!-- ==================== 模块 2: 模拟实盘持仓与组合收益看板 (Simulated Portfolio Dashboard) ==================== -->
+        <!-- ==================== 模块 2: 模拟实盘持仓任务看板 (Portfolio Tasks Dashboard) ==================== -->
         <div id="sectionPortfolio" class="tab-section" style="display: none;">
-            <div class="section-card" style="border: 1px solid rgba(0, 210, 196, 0.3); background: rgba(15, 23, 42, 0.7);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem;">
+
+            <!-- 视图 1: 模拟实盘任务列表 (Master Task Grid) -->
+            <div id="portfolioMasterContainer" class="section-card">
+                <div class="section-title">
                     <div>
-                        <h2 style="font-size: 1.3rem; font-weight: 800; color: #00d2c4; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="fa-solid fa-chart-line"></i> 模拟实盘持仓与组合收益跟踪
-                        </h2>
-                        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;">
-                            自动将每日盘后推荐信号撮合为模拟持仓，实时追踪收益率曲线、持仓浮盈与历史成交流水（扣除券商佣金与印花税）。
+                        <span style="font-size: 1.2rem; font-weight: 800; color: #00d2c4;">
+                            <i class="fa-solid fa-chart-line"></i> 模拟实盘持仓任务看板
+                        </span>
+                        <div style="font-size: 0.82rem; color: #8e95b2; margin-top: 0.2rem;">
+                            每一个持仓均为独立创建的任务，自动撮合调仓并实时计算累计回报率、年化收益率、夏普比率、最大回撤与胜率。
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-                        <label style="font-size: 0.85rem; color: #8e95b2;">选择查看策略：</label>
-                        <select id="portfolioStrategySelect" class="form-control" style="width: auto; min-width: 180px;" onchange="loadPortfolioData()">
-                            <option value="cb_double_low">可转债双低策略</option>
-                        </select>
-                        <button class="btn btn-primary" onclick="syncPortfolioData()" id="btnSyncPortfolio">
-                            <i class="fa-solid fa-arrows-rotate"></i> 重新同步/推演模拟盘
+                        <button class="btn btn-primary" onclick="openCreatePortfolioTaskModal()">
+                            <i class="fa-solid fa-plus"></i> 新建模拟实盘持仓任务
                         </button>
                     </div>
                 </div>
 
-                <!-- 4 Summary Stats Cards Grid -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
-                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-wallet"></i> 账户总资产 / 可用现金</div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: #f0f3fa;" id="portTotalEquity">¥ --</div>
-                        <div style="font-size: 0.82rem; color: #38bdf8; margin-top: 0.4rem;">可用现金: <span id="portCash">¥ --</span></div>
+                <!-- 任务列表检索 -->
+                <div class="filter-bar">
+                    <input type="text" id="searchTaskInput" class="form-control" placeholder="搜索持仓任务名称 / 绑定策略..." oninput="renderPortfolioTaskCards()">
+                </div>
+
+                <!-- 任务卡片网格 -->
+                <div class="stg-card-grid" id="portfolioTaskCardGrid">
+                    <div style="grid-column: 1/-1; text-align: center; color: #8e95b2; padding: 2.5rem;">
+                        <i class="fa-solid fa-spinner fa-spin"></i> 加载模拟实盘任务中...
                     </div>
-                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
-                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-chart-pie"></i> 持仓市值 / 持仓只数</div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: #f0f3fa;" id="portMarketValue">¥ --</div>
-                        <div style="font-size: 0.82rem; color: #a855f7; margin-top: 0.4rem;">当前持仓: <span id="portHoldingCount">0</span> 只</div>
+                </div>
+            </div>
+
+            <!-- 视图 2: 任务详情与交易明细 (Detail View) -->
+            <div id="portfolioDetailContainer" class="section-card" style="display: none;">
+                <div class="section-title" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem; margin-bottom: 1.25rem;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="backToPortfolioTaskMaster()">
+                            <i class="fa-solid fa-arrow-left"></i> 返回任务列表
+                        </button>
+                        <div>
+                            <h2 id="taskDetailTitleHeader" style="font-size: 1.2rem; font-weight: 800; color: #00d2c4; margin: 0;">--</h2>
+                            <div id="taskDetailSubHeader" style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">--</div>
+                        </div>
                     </div>
-                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
-                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-arrow-trend-up"></i> 累计盈亏 / 累计收益率</div>
-                        <div style="font-size: 1.5rem; font-weight: 800;" id="portCumPnl">¥ --</div>
-                        <div style="font-size: 0.82rem; margin-top: 0.4rem;">累计收益率: <span id="portCumReturn">0.00%</span></div>
-                    </div>
-                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem;">
-                        <div style="font-size: 0.8rem; color: #8e95b2; margin-bottom: 0.4rem;"><i class="fa-solid fa-calendar-day"></i> 当日变动 / 结算日期</div>
-                        <div style="font-size: 1.5rem; font-weight: 800;" id="portDailyPnl">¥ --</div>
-                        <div style="font-size: 0.82rem; color: #94a3b8; margin-top: 0.4rem;">行情日期: <span id="portLatestDate">--</span></div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn btn-outline" style="padding: 0.3rem 0.75rem; font-size: 0.82rem;" onclick="syncCurrentPortfolioTask()">
+                            <i class="fa-solid fa-arrows-rotate"></i> 重新推演同步该任务
+                        </button>
+                        <button class="btn btn-danger" style="padding: 0.3rem 0.75rem; font-size: 0.82rem;" onclick="deleteCurrentPortfolioTask()">
+                            <i class="fa-solid fa-trash"></i> 删除该持仓任务
+                        </button>
                     </div>
                 </div>
 
-                <!-- Chart Section: 收益率曲线图 -->
+                <!-- 关键绩效指标 6 大卡片 Grid -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.85rem; margin-bottom: 1.5rem;">
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-wallet"></i> 当前总资产 / 现金</div>
+                        <div style="font-size: 1.3rem; font-weight: 800; color: #f0f3fa;" id="taskPortTotalEquity">¥ --</div>
+                        <div style="font-size: 0.78rem; color: #38bdf8; margin-top: 0.3rem;">可用现金: <span id="taskPortCash">¥ --</span></div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-arrow-trend-up"></i> 累计回报率 / 营收</div>
+                        <div style="font-size: 1.3rem; font-weight: 800;" id="taskPortCumReturn">0.00%</div>
+                        <div style="font-size: 0.78rem; color: #8e95b2; margin-top: 0.3rem;">累计盈亏: <span id="taskPortCumPnl">¥ --</span></div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-chart-line"></i> 年化收益率</div>
+                        <div style="font-size: 1.3rem; font-weight: 800; color: #38bdf8;" id="taskPortAnnualReturn">0.00%</div>
+                        <div style="font-size: 0.78rem; color: #8e95b2; margin-top: 0.3rem;">初始资金: <span id="taskPortInitCapital">¥ --</span></div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-shield-halved"></i> 夏普比率 (Sharpe)</div>
+                        <div style="font-size: 1.3rem; font-weight: 800; color: #f59e0b;" id="taskPortSharpe">0.00</div>
+                        <div style="font-size: 0.78rem; color: #8e95b2; margin-top: 0.3rem;">无风险利率: 1.5%/年</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-arrow-down-long"></i> 最大回撤 (Max DD)</div>
+                        <div style="font-size: 1.3rem; font-weight: 800; color: #ef4444;" id="taskPortMaxDrawdown">0.00%</div>
+                        <div style="font-size: 0.78rem; color: #8e95b2; margin-top: 0.3rem;">历史峰值回撤率</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-trophy"></i> 胜率 (Win Rate)</div>
+                        <div style="font-size: 1.3rem; font-weight: 800; color: #10b981;" id="taskPortWinRate">0.00%</div>
+                        <div style="font-size: 0.78rem; color: #8e95b2; margin-top: 0.3rem;">平仓盈利笔数占比</div>
+                    </div>
+                </div>
+
+                <!-- 收益曲线 Chart -->
                 <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h3 style="font-size: 1rem; font-weight: 700; color: #f0f3fa; display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="fa-solid fa-chart-area" style="color: #00d2c4;"></i> 模拟实盘累计收益率走势图 (%)
-                        </h3>
-                    </div>
-                    <div class="chart-box" style="height: 340px;">
-                        <canvas id="portfolioEquityChart"></canvas>
+                    <h3 style="font-size: 0.95rem; font-weight: 700; color: #f0f3fa; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-chart-area" style="color: #00d2c4;"></i> 任务累计收益率走势图 (%)
+                    </h3>
+                    <div class="chart-box" style="height: 320px;">
+                        <canvas id="taskPortfolioEquityChart"></canvas>
                     </div>
                 </div>
 
-                <!-- Tables Section: 持仓明细与成交流水 Sub-Tabs -->
+                <!-- 子 Tab: 当前持仓明细 / 交易调仓流水 -->
                 <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.25rem;">
-                    <!-- Sub Nav Buttons -->
                     <div style="display: flex; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
-                        <button class="nav-btn active" id="subTabNavActiveHoldings" style="padding: 0.4rem 1rem; font-size: 0.9rem;" onclick="switchPortfolioSubTab('active')">
-                            <i class="fa-solid fa-briefcase"></i> 当前持仓明细 (<span id="countActivePositions">0</span>)
+                        <button class="nav-btn active" id="taskSubTabActive" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('active')">
+                            <i class="fa-solid fa-briefcase"></i> 当前持仓明细 (<span id="taskCountActive">0</span>)
                         </button>
-                        <button class="nav-btn" id="subTabNavClosedTrades" style="padding: 0.4rem 1rem; font-size: 0.9rem;" onclick="switchPortfolioSubTab('closed')">
-                            <i class="fa-solid fa-receipt"></i> 成交与离场流水 (<span id="countClosedTrades">0</span>)
+                        <button class="nav-btn" id="taskSubTabLogs" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('logs')">
+                            <i class="fa-solid fa-receipt"></i> 交易明细与调仓流水 (<span id="taskCountLogs">0</span>)
+                        </button>
+                        <button class="nav-btn" id="taskSubTabClosed" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('closed')">
+                            <i class="fa-solid fa-clock-rotate-left"></i> 已平仓历史明细 (<span id="taskCountClosed">0</span>)
                         </button>
                     </div>
 
-                    <!-- Active Holdings Table -->
-                    <div id="subSectionActiveHoldings">
+                    <!-- 1. 当前持仓 -->
+                    <div id="taskSubSectionActive">
                         <div class="table-responsive">
                             <table class="data-table">
                                 <thead>
@@ -160,15 +203,40 @@
                                         <th>槽位</th>
                                     </tr>
                                 </thead>
-                                <tbody id="tableActivePositions">
+                                <tbody id="tableTaskActivePositions">
                                     <tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无活跃持仓</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
-                    <!-- Closed Trades Table -->
-                    <div id="subSectionClosedTrades" style="display: none;">
+                    <!-- 2. 交易调仓明细流水 -->
+                    <div id="taskSubSectionLogs" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>交易日期</th>
+                                        <th>动作方向</th>
+                                        <th>标的代码</th>
+                                        <th>名称</th>
+                                        <th>成交单价 (元)</th>
+                                        <th>成交数量</th>
+                                        <th>交易总额 (元)</th>
+                                        <th>已实现盈亏</th>
+                                        <th>盈亏比例</th>
+                                        <th>触发原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableTaskTradeLogs">
+                                    <tr><td colspan="10" style="text-align:center; color:#8e95b2; padding:2rem;">暂无调仓成交流水</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 3. 已平仓记录 -->
+                    <div id="taskSubSectionClosed" style="display: none;">
                         <div class="table-responsive">
                             <table class="data-table">
                                 <thead>
@@ -183,11 +251,10 @@
                                         <th>建仓成本 (元)</th>
                                         <th>实现净盈亏 (元)</th>
                                         <th>盈亏比例 (%)</th>
-                                        <th>离场原因</th>
                                     </tr>
                                 </thead>
-                                <tbody id="tableClosedTrades">
-                                    <tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无离场成交记录</td></tr>
+                                <tbody id="tableTaskClosedTrades">
+                                    <tr><td colspan="10" style="text-align:center; color:#8e95b2; padding:2rem;">暂无平仓交易</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -195,6 +262,7 @@
                 </div>
 
             </div>
+
         </div>
 
         <!-- ==================== 模块 2: 回测记录 (Backtest Records) ==================== -->
@@ -842,9 +910,40 @@
         </div>
     </div>
 
+    <!-- ==================== 模态框 4: 新建模拟实盘持仓任务 (Create Portfolio Task Modal) ==================== -->
+    <div class="modal-overlay" id="createTaskModal">
+        <div class="modal-container" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-plus"></i> 新建模拟实盘持仓任务</h3>
+                <button class="modal-close" onclick="closeCreatePortfolioTaskModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="createTaskForm" onsubmit="submitCreatePortfolioTask(event)">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.85rem; font-weight: 600; color: #f0f3fa;">任务名称 (如: 高股息实盘#1 / 激进双低模拟)</label>
+                    <input type="text" id="newTaskNameInput" class="form-control" required placeholder="请输入持仓任务名称">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.85rem; font-weight: 600; color: #f0f3fa;">选择关联策略</label>
+                    <select id="newTaskStrategySelect" class="form-control" required>
+                        <option value="">加载可选策略中...</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label style="font-size: 0.85rem; font-weight: 600; color: #f0f3fa;">初始模拟资金 (元)</label>
+                    <input type="number" id="newTaskCapitalInput" class="form-control" value="100000" step="10000" min="10000" required>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeCreatePortfolioTaskModal()">取消</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> 创建任务并自动调仓</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- External Modular JavaScript Engine -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-</body>
-</html>
 </body>
 </html>

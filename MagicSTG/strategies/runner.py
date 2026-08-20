@@ -186,9 +186,10 @@ def run_single_strategy_recommendation(strategy_id: str, target_date: str, force
 
         if success:
             try:
-                from MagicSTG.execution.portfolio_engine import PortfolioEngine
+                from MagicSTG.execution.portfolio_engine import PortfolioEngine, run_portfolio_sync_all_active
                 engine = PortfolioEngine(stg_code, config={'strategy': parsed_cfg})
                 engine.sync_portfolio_history()
+                run_portfolio_sync_all_active()
             except Exception as pe_err:
                 print(f"  [Portfolio ⚠️] 策略 {stg_code} 模拟持仓更新失败: {pe_err}", flush=True)
 
