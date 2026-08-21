@@ -190,20 +190,20 @@
                     <!-- 1. 当前持仓 -->
                     <div id="taskSubSectionActive">
                         <div class="table-responsive">
-                            <table class="data-table">
+                            <table class="custom-table data-table">
                                 <thead>
                                     <tr>
-                                        <th>标的代码</th>
-                                        <th>名称</th>
-                                        <th>建仓日期</th>
-                                        <th>买入成本价</th>
-                                        <th>最新价格</th>
-                                        <th>持仓数量</th>
-                                        <th>投入成本 (元)</th>
-                                        <th>最新市值 (元)</th>
-                                        <th>浮动盈亏 (元)</th>
-                                        <th>盈亏比例 (%)</th>
-                                        <th>槽位</th>
+                                        <th class="text-left">标的代码</th>
+                                        <th class="text-left">名称</th>
+                                        <th class="text-center">建仓日期</th>
+                                        <th class="text-right">买入成本价</th>
+                                        <th class="text-right">最新价格</th>
+                                        <th class="text-right">持仓数量</th>
+                                        <th class="text-right">投入成本 (元)</th>
+                                        <th class="text-right">最新市值 (元)</th>
+                                        <th class="text-right">浮动盈亏 (元)</th>
+                                        <th class="text-right">盈亏比例 (%)</th>
+                                        <th class="text-center">槽位</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tableTaskActivePositions">
@@ -216,19 +216,19 @@
                     <!-- 2. 交易调仓明细流水 -->
                     <div id="taskSubSectionLogs" style="display: none;">
                         <div class="table-responsive">
-                            <table class="data-table">
+                            <table class="custom-table data-table">
                                 <thead>
                                     <tr>
-                                        <th>交易日期</th>
-                                        <th>动作方向</th>
-                                        <th>标的代码</th>
-                                        <th>名称</th>
-                                        <th>成交单价 (元)</th>
-                                        <th>成交数量</th>
-                                        <th>交易总额 (元)</th>
-                                        <th>已实现盈亏</th>
-                                        <th>盈亏比例</th>
-                                        <th>触发原因</th>
+                                        <th class="text-center">交易日期</th>
+                                        <th class="text-center">动作方向</th>
+                                        <th class="text-left">标的代码</th>
+                                        <th class="text-left">名称</th>
+                                        <th class="text-right">成交单价 (元)</th>
+                                        <th class="text-right">成交数量</th>
+                                        <th class="text-right">交易总额 (元)</th>
+                                        <th class="text-right">已实现盈亏</th>
+                                        <th class="text-right">盈亏比例</th>
+                                        <th class="text-left">触发原因</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tableTaskTradeLogs">
@@ -241,19 +241,19 @@
                     <!-- 3. 已平仓记录 -->
                     <div id="taskSubSectionClosed" style="display: none;">
                         <div class="table-responsive">
-                            <table class="data-table">
+                            <table class="custom-table data-table">
                                 <thead>
                                     <tr>
-                                        <th>标的代码</th>
-                                        <th>名称</th>
-                                        <th>建仓日期</th>
-                                        <th>买入价</th>
-                                        <th>平仓日期</th>
-                                        <th>卖出平仓价</th>
-                                        <th>数量</th>
-                                        <th>建仓成本 (元)</th>
-                                        <th>实现净盈亏 (元)</th>
-                                        <th>盈亏比例 (%)</th>
+                                        <th class="text-left">标的代码</th>
+                                        <th class="text-left">名称</th>
+                                        <th class="text-center">建仓日期</th>
+                                        <th class="text-right">买入价</th>
+                                        <th class="text-center">平仓日期</th>
+                                        <th class="text-right">卖出平仓价</th>
+                                        <th class="text-right">数量</th>
+                                        <th class="text-right">建仓成本 (元)</th>
+                                        <th class="text-right">实现净盈亏 (元)</th>
+                                        <th class="text-right">盈亏比例 (%)</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tableTaskClosedTrades">
@@ -1013,6 +1013,6 @@
     </div>
 
     <!-- External Modular JavaScript Engine -->
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=20260821_v1"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=20260821_v2"></script>
 </body>
 </html>

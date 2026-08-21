@@ -334,31 +334,45 @@ body {
     width: 100%;
     overflow-x: auto;
     border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(15, 17, 32, 0.65);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
 }
-.custom-table {
+.custom-table, .data-table {
     width: 100%;
-    border-collapse: collapse;
-    font-size: 0.88rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.86rem;
     text-align: left;
 }
-.custom-table th {
-    background: rgba(15, 17, 32, 0.8);
-    color: #8e95b2;
-    font-weight: 600;
-    padding: 0.85rem 1rem;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+.custom-table th, .data-table th {
+    background: rgba(20, 24, 45, 0.95);
+    color: #94a3b8;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.02em;
+    padding: 0.85rem 1.1rem;
+    border-bottom: 2px solid rgba(0, 210, 196, 0.3);
     white-space: nowrap;
 }
-.custom-table td {
-    padding: 0.85rem 1rem;
+.custom-table td, .data-table td {
+    padding: 0.8rem 1.1rem;
     border-bottom: 1px solid rgba(255,255,255,0.04);
-    color: #f0f3fa;
+    color: #f1f5f9;
     white-space: nowrap;
+    vertical-align: middle;
 }
-.custom-table tr:hover td {
-    background: rgba(255,255,255,0.03);
+.custom-table tbody tr:nth-child(even), .data-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.015);
 }
+.custom-table tbody tr:hover td, .data-table tbody tr:hover td {
+    background: rgba(0, 210, 196, 0.06);
+}
+
+/* 对齐辅助类 */
+.text-left { text-align: left !important; }
+.text-center { text-align: center !important; }
+.text-right { text-align: right !important; }
 
 /* 移动设备响应式卡片化改造 */
 @media (max-width: 767px) {

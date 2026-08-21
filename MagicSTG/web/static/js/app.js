@@ -1866,17 +1866,17 @@ function renderPortfolioTaskDetail(data) {
             const pnlSign = pos.pnl >= 0 ? '+' : '';
             return `
                 <tr>
-                    <td><strong style="color: #00d2c4;">${pos.stock_code}</strong></td>
-                    <td style="font-weight: 700;">${pos.stock_name}</td>
-                    <td>${pos.buy_date}</td>
-                    <td>¥ ${pos.buy_price.toFixed(2)}</td>
-                    <td>¥ ${pos.current_price.toFixed(2)}</td>
-                    <td>${pos.shares.toLocaleString()}</td>
-                    <td>¥ ${pos.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td>¥ ${pos.market_value.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="${pnlClass}">${pnlSign}¥ ${pos.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="${pnlClass}">${pnlSign}${pos.pnl_pct.toFixed(2)}%</td>
-                    <td><span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">槽位 #${pos.slot_idx + 1}</span></td>
+                    <td class="text-left"><strong style="color: #00d2c4;">${pos.stock_code}</strong></td>
+                    <td class="text-left" style="font-weight: 700;">${pos.stock_name}</td>
+                    <td class="text-center">${pos.buy_date}</td>
+                    <td class="text-right">¥ ${pos.buy_price.toFixed(2)}</td>
+                    <td class="text-right">¥ ${pos.current_price.toFixed(2)}</td>
+                    <td class="text-right">${pos.shares.toLocaleString()}</td>
+                    <td class="text-right">¥ ${pos.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right">¥ ${pos.market_value.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}">${pnlSign}¥ ${pos.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}">${pnlSign}${pos.pnl_pct.toFixed(2)}%</td>
+                    <td class="text-center"><span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">槽位 #${pos.slot_idx + 1}</span></td>
                 </tr>
             `;
         }).join('');
@@ -1899,16 +1899,16 @@ function renderPortfolioTaskDetail(data) {
 
             return `
                 <tr>
-                    <td>${l.trade_date}</td>
-                    <td>${actionBadge}</td>
-                    <td><code>${l.stock_code}</code></td>
-                    <td style="font-weight: 700;">${l.stock_name}</td>
-                    <td>¥ ${l.price.toFixed(2)}</td>
-                    <td>${l.shares.toLocaleString()}</td>
-                    <td>¥ ${l.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="${pnlClass}">${pnlStr}</td>
-                    <td class="${pnlClass}">${pnlPctStr}</td>
-                    <td style="font-size: 0.8rem; color: #8e95b2;">${l.reason || '-'}</td>
+                    <td class="text-center">${l.trade_date}</td>
+                    <td class="text-center">${actionBadge}</td>
+                    <td class="text-left"><code>${l.stock_code}</code></td>
+                    <td class="text-left" style="font-weight: 700;">${l.stock_name}</td>
+                    <td class="text-right">¥ ${l.price.toFixed(2)}</td>
+                    <td class="text-right">${l.shares.toLocaleString()}</td>
+                    <td class="text-right">¥ ${l.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}">${pnlStr}</td>
+                    <td class="text-right ${pnlClass}">${pnlPctStr}</td>
+                    <td class="text-left" style="font-size: 0.8rem; color: #8e95b2;">${l.reason || '-'}</td>
                 </tr>
             `;
         }).join('');
@@ -1926,16 +1926,16 @@ function renderPortfolioTaskDetail(data) {
             const pnlSign = tr.pnl >= 0 ? '+' : '';
             return `
                 <tr>
-                    <td><strong style="color: #a855f7;">${tr.stock_code}</strong></td>
-                    <td style="font-weight: 700;">${tr.stock_name}</td>
-                    <td>${tr.buy_date}</td>
-                    <td>¥ ${tr.buy_price.toFixed(2)}</td>
-                    <td>${tr.sell_date}</td>
-                    <td>¥ ${tr.sell_price.toFixed(2)}</td>
-                    <td>${tr.shares.toLocaleString()}</td>
-                    <td>¥ ${tr.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="${pnlClass}">${pnlSign}¥ ${tr.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="${pnlClass}">${pnlSign}${tr.pnl_pct.toFixed(2)}%</td>
+                    <td class="text-left"><strong style="color: #a855f7;">${tr.stock_code}</strong></td>
+                    <td class="text-left" style="font-weight: 700;">${tr.stock_name}</td>
+                    <td class="text-center">${tr.buy_date}</td>
+                    <td class="text-right">¥ ${tr.buy_price.toFixed(2)}</td>
+                    <td class="text-center">${tr.sell_date}</td>
+                    <td class="text-right">¥ ${tr.sell_price.toFixed(2)}</td>
+                    <td class="text-right">${tr.shares.toLocaleString()}</td>
+                    <td class="text-right">¥ ${tr.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}">${pnlSign}¥ ${tr.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}">${pnlSign}${tr.pnl_pct.toFixed(2)}%</td>
                 </tr>
             `;
         }).join('');
