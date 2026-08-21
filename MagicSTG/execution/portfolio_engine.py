@@ -163,7 +163,8 @@ def calculate_performance_metrics(daily_history: List[dict], closed_trades: List
             d0 = datetime.strptime(d0_str, '%Y-%m-%d')
             d1 = datetime.strptime(d1_str, '%Y-%m-%d')
             cal_days = (d1 - d0).days
-            if cal_days > 0 and latest_equity > 0:
+            # Only compute compound annualized return if running duration >= 7 calendar days to prevent short-term noise distortion
+            if cal_days >= 7 and latest_equity > 0:
                 annual_return = (((latest_equity / initial_capital) ** (365.0 / cal_days)) - 1.0) * 100.0
             else:
                 annual_return = cum_return
@@ -201,18 +202,18 @@ def calculate_performance_metrics(daily_history: List[dict], closed_trades: List
         if std_ret > 1e-7:
             sharpe_ratio = (mean_ret - rf_daily) / std_ret * math.sqrt(252.0)
 
-    # 4. Win Rate
-    win_rate = 0.0
+    # 4. Win Rate (returns None when no trades have been closed yet)
+    win_rate = None
     if closed_trades:
         win_count = sum(1 for t in closed_trades if (t.get('pnl') or 0) > 0)
-        win_rate = (win_count / len(closed_trades)) * 100.0
+        win_rate = round((win_count / len(closed_trades)) * 100.0, 4)
 
     return {
         'cum_return': round(cum_return, 4),
         'annual_return': round(annual_return, 4),
         'sharpe_ratio': round(sharpe_ratio, 4),
         'max_drawdown': round(max_dd, 4),
-        'win_rate': round(win_rate, 4)
+        'win_rate': win_rate
     }
 
 
@@ -512,6 +513,9 @@ class PortfolioEngine:
                         'cum_return': float(r[6]),
                         'holding_count': int(r[7])
                     })
+
+                if len(closed_trades) == 0:
+                    task_summary['win_rate'] = None
 
                 task_summary['active_positions'] = active_positions
                 task_summary['closed_trades'] = closed_trades
@@ -817,7 +821,7 @@ class PortfolioEngine:
                 """, (
                     latest_equity, latest_cash, latest_mv, cum_pnl,
                     metrics['cum_return'], metrics['annual_return'], metrics['sharpe_ratio'],
-                    metrics['max_drawdown'], metrics['win_rate'], holding_count, task_id
+                    metrics['max_drawdown'], (metrics['win_rate'] if metrics['win_rate'] is not None else 0.0), holding_count, task_id
                 ))
 
             conn.commit()

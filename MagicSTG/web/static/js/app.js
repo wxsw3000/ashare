@@ -1730,7 +1730,7 @@ function renderPortfolioTaskCards() {
 
         const sharpeVal = (t.sharpe_ratio !== undefined && t.sharpe_ratio !== null) ? t.sharpe_ratio.toFixed(2) : '0.00';
         const maxDdVal = (t.max_drawdown !== undefined && t.max_drawdown !== null) ? t.max_drawdown.toFixed(2) : '0.00';
-        const winRateVal = (t.win_rate !== undefined && t.win_rate !== null) ? t.win_rate.toFixed(1) : '0.0';
+        const winRateVal = (t.win_rate !== undefined && t.win_rate !== null) ? `${t.win_rate.toFixed(1)}%` : '-';
 
         return `
             <div class="stg-card" style="border: 1px solid rgba(0, 210, 196, 0.35); background: rgba(15, 23, 42, 0.75);">
@@ -1764,7 +1764,7 @@ function renderPortfolioTaskCards() {
                         <div>
                             <div style="font-size: 0.72rem; color: #8e95b2;">最大回撤 / 胜率</div>
                             <div style="font-size: 0.85rem; font-weight: 600;">
-                                <span class="down-val">-${maxDdVal}%</span> / <span style="color:#10b981;">${winRateVal}%</span>
+                                <span class="down-val">-${maxDdVal}%</span> / <span style="color:#10b981;">${winRateVal}</span>
                             </div>
                         </div>
                         <div>
@@ -1851,8 +1851,8 @@ function renderPortfolioTaskDetail(data) {
     elAnnRet.className = annRet >= 0 ? 'up-val' : 'down-val';
 
     document.getElementById('taskPortSharpe').textContent = (data.sharpe_ratio !== undefined && data.sharpe_ratio !== null) ? data.sharpe_ratio.toFixed(2) : '0.00';
-    document.getElementById('taskPortMaxDrawdown').textContent = '-' + (data.max_drawdown !== undefined ? data.max_drawdown.toFixed(2) : '0.00') + '%';
-    document.getElementById('taskPortWinRate').textContent = (data.win_rate !== undefined ? data.win_rate.toFixed(1) : '0.0') + '%';
+    document.getElementById('taskPortMaxDrawdown').textContent = '-' + (data.max_drawdown !== undefined && data.max_drawdown !== null ? data.max_drawdown.toFixed(2) : '0.00') + '%';
+    document.getElementById('taskPortWinRate').textContent = (data.win_rate !== undefined && data.win_rate !== null) ? `${data.win_rate.toFixed(1)}%` : '-';
 
     // Tables
     const activePositions = data.active_positions || [];
