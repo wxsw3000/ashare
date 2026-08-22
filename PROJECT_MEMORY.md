@@ -689,28 +689,31 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 ---
 
-## 40. Session Summary & Memory (2026-08-20) - Independent Paper Trading Instance Architecture & Risk Config Inheritance/Override
+---
 
-* **Independent Paper Trading Instance Refactoring & Paradigm Alignment**:
-  1. **Backend Engine & Database Schema Expansion ([`portfolio_engine.py`](file:///E:/ashare/MagicSTG/execution/portfolio_engine.py))**:
-     - Added `start_date` column to `portfolio_tasks` table.
-     - Refactored `PortfolioEngine.create_task()` to accept `start_date` (defaults to current date) and automatically inherit the strategy's default `portfolio_config` if no custom override is provided.
-     - Updated `PortfolioEngine.sync_task()` to filter recommendation signals `signal_date >= start_date`, ensuring paper trading instances execute forward-looking simulation from their build date onward.
-     - Updated `list_tasks()` and `get_task_detail()` to return `start_date` and merged `portfolio_config` snapshots.
-  2. **REST API Endpoint Enhancement ([`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
-     - Updated `POST /api/portfolio/tasks` to receive `start_date` and optional custom `portfolio_config` overrides.
-  3. **Web UI Master/Detail & Modal Interaction Redesign ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) & [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
-     - Embedded **`🚀 创建持仓模拟实例`** button in Strategy Detail Center footer to link Strategy Management directly to Paper Trading Instance creation.
-     - Redesigned `#createTaskModal`: added Start Date picker, Strategy selection dropdown, Initial Capital input, and Risk Control Mode toggle (`[● 继承策略默认风控 (推荐)]` vs `[○ 自定义覆盖本实例风控]`).
-     - Integrated dynamic preview box (`#newTaskStrategyConfigPreview`) showing inherited portfolio rules (Equal Slot / Compounding, Max Holdings, Stop-Loss %, Trailing Stop-Profit %, Execution Timing) and custom risk panel (`#newTaskCustomRiskPanel`).
-     - Rendered `start_date` and initial capital on instance cards.
-  4. **CSS & Button Visibility Enhancements ([`main.css`](file:///E:/ashare/MagicSTG/web/static/css/main.css), [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) & [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
-     - Defined `.btn-success` CSS class in `main.css` (vibrant green `#10b981` gradient with hover glow effect).
-     - Embedded `+ 新建模拟实盘持仓实例` buttons in Master Board header, Detail View header, Strategy Detail modal footer, and Empty State placeholder box.
-     - Bumped static script version tag to `app.js?v=20260820_v3`.
-  5. **Automated Unit Testing & Verification ([`tests/test_portfolio_tasks.py`](file:///E:/ashare/tests/test_portfolio_tasks.py))**:
-     - Added `test_03_instance_start_date_and_override_config` to test suite.
-     - Verified instance creation, `start_date` filtering, custom risk config override, and cascading deletion (10/10 unit tests passed 100% OK).
-  6. **Pending Investigation Item for Next Session**:
-     - User reported that on their deployed Render live URL environment, the green Create Instance button is still not visible on screen.
-     - **Next Session Goal**: Inspect live Render deployment asset serving / Flask static routing / browser DOM rendering to troubleshoot why the button is missing on the user's Render live deployment.
+## 41. Session Summary & Memory (2026-08-21) - Table Layout Styling & Win Rate Math Distortion Guard
+
+* **Table Layout & Metric Refinement**:
+  * Added custom-table styling, right-aligned monetary and percentage values, and refined responsive padding across `#sectionPortfolio` and `#sectionBacktests`.
+  * Guarded `win_rate` and `annual_return` against short-duration mathematical distortion when closed trades count is 0 (`win_rate = None`).
+
+---
+
+## 42. Session Summary & Memory (2026-08-22) - Unified Backtest Engine, Ledger Balance & Strict Integrity Refactoring
+
+* **Key Architectural Upgrades & Bug Elimination**:
+  1. **Unified Backtest Execution Core with PortfolioStrategyRegistry (`e2e241b`)**:
+     - Refactored `MagicSTG/backtests/engine.py` to completely replace legacy procedural loops with `EqualSlotPortfolioStrategy` plugin, achieving 100% execution and risk control parity between historical backtesting and paper trading.
+  2. **Equal-Slot Cash Ledger Conservation (`da2e7a6`)**:
+     - Replaced legacy cash reset on sell with proper proceeds accumulation (`slot_cash[slot_idx] += net_proceeds`), enforcing slot budget capping on buy (`min(slot_cash, per_slot_initial_cash)`).
+  3. **Web UI Timeout Elimination (`f2a1a63`)**:
+     - Removed hardcoded 300s timeout abortion in `server.py` and `app.js`, allowing patient polling for multi-year full-market backtests.
+  4. **Dynamic Risk Control Disabling & Parameter Fidelity Fix (`e2f0e20`)**:
+     - Fixed backend sanitizer ternary operator that was forcing `0`/`null` back to `-5.0%` for `trailing_stop_pct` and `-8.0%` for `stop_loss_pct`. Users can now genuinely disable risk guards by setting `null` or `0`.
+  5. **Win Rate Formatting & DB Persistence Reliability (`d03089e`)**:
+     - Fixed `TypeError: unsupported format string` in `run_cb_backtest.py` and `factor_optimizer.py` when `win_rate` is `None`.
+     - Hardened `save_backtest_result` in `db_writer.py` with `get_connection_with_retry`, `ensure_connection_alive`, and `executemany` chunked batching.
+  6. **Automated Comprehensive Regression Test Suite (`tests/test_codebase_integrity.py`)**:
+     - Created new automated test suite testing: (1) Parameter fidelity, (2) Zero-pointer cross-stock price isolation, (3) Strict ledger conservation ($ \text{Total Equity} \equiv \sum \text{Slot Cash} + \sum \text{Market Value} $).
+     - Verified 13/13 unit tests pass 100% OK.
+
