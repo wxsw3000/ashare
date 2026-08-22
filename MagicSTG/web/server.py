@@ -233,13 +233,40 @@ def validate_and_sanitize_factors_config(category: str, config: dict) -> tuple[b
     if not isinstance(p_cfg, dict):
         p_cfg = {}
 
+    # 资金与风控配置（支持传入 null/0 彻底关闭移动止盈或硬止损）
+    p_sl = p_cfg.get("stop_loss_pct")
+    if "stop_loss_pct" in p_cfg:
+        if p_sl is None or str(p_sl).strip() in ("", "0", "0.0", "null", "None"):
+            sl_final = None
+        else:
+            try:
+                fv = float(p_sl)
+                sl_final = fv if fv < 0 else None
+            except (ValueError, TypeError):
+                sl_final = None
+    else:
+        sl_final = -8.0
+
+    p_tp = p_cfg.get("trailing_stop_pct")
+    if "trailing_stop_pct" in p_cfg:
+        if p_tp is None or str(p_tp).strip() in ("", "0", "0.0", "null", "None"):
+            tp_final = None
+        else:
+            try:
+                fv = float(p_tp)
+                tp_final = fv if fv < 0 else None
+            except (ValueError, TypeError):
+                tp_final = None
+    else:
+        tp_final = -5.0
+
     sanitized["portfolio_config"] = {
         "strategy_type": str(p_cfg.get("strategy_type", "equal_slot")),
         "initial_capital": float(p_cfg.get("initial_capital", 100000.0)),
         "max_holdings": int(p_cfg.get("max_holdings", 5)),
         "allocation_mode": str(p_cfg.get("allocation_mode", "EQUAL_SLOT")),
-        "stop_loss_pct": float(p_cfg["stop_loss_pct"]) if p_cfg.get("stop_loss_pct") is not None and float(p_cfg["stop_loss_pct"]) < 0 else -8.0,
-        "trailing_stop_pct": float(p_cfg["trailing_stop_pct"]) if p_cfg.get("trailing_stop_pct") is not None and float(p_cfg["trailing_stop_pct"]) < 0 else -5.0,
+        "stop_loss_pct": sl_final,
+        "trailing_stop_pct": tp_final,
         "max_holding_days": int(p_cfg["max_holding_days"]) if p_cfg.get("max_holding_days") is not None and int(p_cfg["max_holding_days"]) > 0 else None,
         "execution_timing": str(p_cfg.get("execution_timing", "T+1_OPEN")),
         "slippage": float(p_cfg.get("slippage", 0.001 if p_cfg.get("execution_timing", "T+1_OPEN") == "T+1_OPEN" else 0.0))

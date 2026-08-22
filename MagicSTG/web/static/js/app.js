@@ -852,9 +852,29 @@ function getPortfolioConfigFromForm() {
     const portType = document.getElementById('stg_portfolio_type') ? document.getElementById('stg_portfolio_type').value : 'equal_slot';
     const initCapital = document.getElementById('stg_initial_capital') ? parseFloat(document.getElementById('stg_initial_capital').value || 100000.0) : 100000.0;
     const maxHoldings = document.getElementById('stg_max_holdings') ? parseInt(document.getElementById('stg_max_holdings').value || 5) : 5;
-    const execTiming = document.getElementById('stg_execution_timing') ? document.getElementById('stg_execution_timing').value : 'T+1_OPEN';
-    const stopLoss = document.getElementById('stg_stop_loss_pct') ? parseFloat(document.getElementById('stg_stop_loss_pct').value || -8.0) : -8.0;
-    const trailingStop = document.getElementById('stg_trailing_stop_pct') ? parseFloat(document.getElementById('stg_trailing_stop_pct').value || -5.0) : -5.0;
+    let stopLoss = -8.0;
+    const slEl = document.getElementById('stg_stop_loss_pct');
+    if (slEl) {
+        const val = slEl.value.trim();
+        if (val === '' || val === '0' || val === '0.0') {
+            stopLoss = null;
+        } else {
+            const num = parseFloat(val);
+            stopLoss = (!isNaN(num) && num < 0) ? num : null;
+        }
+    }
+
+    let trailingStop = -5.0;
+    const tsEl = document.getElementById('stg_trailing_stop_pct');
+    if (tsEl) {
+        const val = tsEl.value.trim();
+        if (val === '' || val === '0' || val === '0.0') {
+            trailingStop = null;
+        } else {
+            const num = parseFloat(val);
+            trailingStop = (!isNaN(num) && num < 0) ? num : null;
+        }
+    }
 
     return {
         strategy_type: portType,
@@ -960,8 +980,8 @@ function applyConfigToForm(cfg) {
         if (document.getElementById('stg_initial_capital')) document.getElementById('stg_initial_capital').value = p.initial_capital || 100000;
         if (document.getElementById('stg_max_holdings')) document.getElementById('stg_max_holdings').value = p.max_holdings || 5;
         if (document.getElementById('stg_execution_timing')) document.getElementById('stg_execution_timing').value = p.execution_timing || 'T+1_OPEN';
-        if (document.getElementById('stg_stop_loss_pct')) document.getElementById('stg_stop_loss_pct').value = p.stop_loss_pct !== undefined ? p.stop_loss_pct : -8.0;
-        if (document.getElementById('stg_trailing_stop_pct')) document.getElementById('stg_trailing_stop_pct').value = p.trailing_stop_pct !== undefined ? p.trailing_stop_pct : -5.0;
+        if (document.getElementById('stg_stop_loss_pct')) document.getElementById('stg_stop_loss_pct').value = (p.stop_loss_pct !== undefined && p.stop_loss_pct !== null) ? p.stop_loss_pct : '';
+        if (document.getElementById('stg_trailing_stop_pct')) document.getElementById('stg_trailing_stop_pct').value = (p.trailing_stop_pct !== undefined && p.trailing_stop_pct !== null) ? p.trailing_stop_pct : '';
     }
 
     const category = document.getElementById('stgFormCategory').value;
