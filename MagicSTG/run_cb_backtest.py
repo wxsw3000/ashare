@@ -81,23 +81,33 @@ def run_cb_backtest(
     if not trade_df.empty and 'trade_date' in trade_df.columns:
         trade_df.rename(columns={'trade_date': 'date', 'stock_code': 'code'}, inplace=True)
 
+    tot_ret = res.get('total_return') if res.get('total_return') is not None else 0.0
+    ann_ret = res.get('annual_return') if res.get('annual_return') is not None else 0.0
+    max_dd = res.get('max_drawdown') if res.get('max_drawdown') is not None else 0.0
+    sharpe = res.get('sharpe_ratio') if res.get('sharpe_ratio') is not None else 0.0
+    win_rate = res.get('win_rate')
+    fin_eq = res.get('final_equity') if res.get('final_equity') is not None else 0.0
+    tot_sells = res.get('total_sells', 0)
+
+    win_rate_str = f"{win_rate:.1f}%" if win_rate is not None else "- (0 笔平仓)"
+
     print("\n" + "=" * 70)
     print("📊 可转债双低策略 - 回测性能报告 (统一 Portfolio Engine 核心)")
     print("=" * 70)
-    print(f"  累计收益率 (Total Return)   : {res.get('total_return', 0.0):+.2f}%")
-    print(f"  年化收益率 (Annual Return)  : {res.get('annual_return', 0.0):+.2f}%")
-    print(f"  最大回撤 (Max Drawdown)    : {res.get('max_drawdown', 0.0):.2f}%")
-    print(f"  夏普比率 (Sharpe Ratio)    : {res.get('sharpe_ratio', 0.0):.2f}")
-    print(f"  胜率 (Win Rate)            : {res.get('win_rate', 0.0):.1f}% ({res.get('total_sells', 0)} 笔卖出平仓)")
-    print(f"  期末总资产 (Final Value)    : {res.get('final_equity', 0.0):,.2f} 元")
+    print(f"  累计收益率 (Total Return)   : {tot_ret:+.2f}%")
+    print(f"  年化收益率 (Annual Return)  : {ann_ret:+.2f}%")
+    print(f"  最大回撤 (Max Drawdown)    : {max_dd:.2f}%")
+    print(f"  夏普比率 (Sharpe Ratio)    : {sharpe:.2f}")
+    print(f"  胜率 (Win Rate)            : {win_rate_str} ({tot_sells} 笔卖出平仓)")
+    print(f"  期末总资产 (Final Value)    : {fin_eq:,.2f} 元")
     print("=" * 70)
 
     return {
-        'total_return': res.get('total_return', 0.0) / 100.0,
-        'annual_return': res.get('annual_return', 0.0) / 100.0,
-        'max_drawdown': res.get('max_drawdown', 0.0) / 100.0,
-        'sharpe_ratio': res.get('sharpe_ratio', 0.0),
-        'win_rate': res.get('win_rate', 0.0),
+        'total_return': tot_ret / 100.0,
+        'annual_return': ann_ret / 100.0,
+        'max_drawdown': max_dd / 100.0,
+        'sharpe_ratio': sharpe,
+        'win_rate': win_rate,
         'perf_df': perf_df,
         'trade_df': trade_df
     }

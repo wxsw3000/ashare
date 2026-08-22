@@ -143,16 +143,15 @@ def save_positions(strategy_name: str, positions_list: List[Any]):
 def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
     """
     Saves backtest result summary into backtest_results and backtest_trades tables.
+    Uses resilient connection retry and chunked executemany batching.
     """
+    from MagicSTG.db import get_connection_with_retry, ensure_connection_alive
+
     conn = None
     try:
-        conn = get_connection()
+        conn = get_connection_with_retry()
+        conn = ensure_connection_alive(conn)
         cursor = conn.cursor()
-
-        try:
-            cursor.execute("ALTER TABLE backtest_results ADD COLUMN sharpe_ratio decimal(12, 6) DEFAULT 0.00;")
-        except Exception:
-            pass
 
         sharpe = result_data.get('sharpe_ratio', 0.0)
         try:
@@ -190,23 +189,31 @@ def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
         backtest_id = cursor.lastrowid
 
         trades = result_data.get('trades', [])
-        for trade in trades:
-            cursor.execute("""
-                INSERT INTO backtest_trades 
-                (backtest_id, trade_date, stock_code, action, price, shares, fee, pnl, pnl_pct, reason)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                backtest_id,
-                trade.get('trade_date'),
-                trade.get('stock_code'),
-                trade.get('action'),
-                trade.get('price'),
-                trade.get('shares'),
-                trade.get('fee', 0),
-                trade.get('pnl'),
-                trade.get('pnl_pct'),
-                trade.get('reason')
-            ))
+        if trades:
+            trade_rows = [
+                (
+                    backtest_id,
+                    trade.get('trade_date'),
+                    trade.get('stock_code'),
+                    trade.get('action'),
+                    trade.get('price'),
+                    trade.get('shares'),
+                    trade.get('fee', 0),
+                    trade.get('pnl'),
+                    trade.get('pnl_pct'),
+                    trade.get('reason')
+                )
+                for trade in trades
+            ]
+            batch_size = 500
+            for i in range(0, len(trade_rows), batch_size):
+                conn = ensure_connection_alive(conn)
+                cursor = conn.cursor()
+                cursor.executemany("""
+                    INSERT INTO backtest_trades 
+                    (backtest_id, trade_date, stock_code, action, price, shares, fee, pnl, pnl_pct, reason)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, trade_rows[i:i+batch_size])
 
         conn.commit()
         print(f"  [DB] ✅ 保存回测结果到数据库 (策略: {strategy_name}, ID: {backtest_id})")
@@ -214,8 +221,14 @@ def save_backtest_result(strategy_name: str, result_data: Dict[str, Any]):
     except Exception as e:
         print(f"  [DB] ❌ 保存回测结果失败: {e}")
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         raise
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass

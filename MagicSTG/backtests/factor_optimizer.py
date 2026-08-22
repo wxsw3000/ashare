@@ -116,7 +116,8 @@ def optimize_factors(
                 'trades': res['total_buys'] + res['total_sells']
             })
 
-            print(f"  [Progress {idx:>2}/{len(combos)}] 收益: {tot_ret:>6.1f}% | 回撤: {max_dd:>5.1f}% | 胜率: {win_rate:>5.1f}% | 排序: {combo['primary_factor']}", flush=True)
+            wr_show = f"{win_rate:>5.1f}%" if win_rate is not None else "    -%"
+            print(f"  [Progress {idx:>2}/{len(combos)}] 收益: {tot_ret:>6.1f}% | 回撤: {max_dd:>5.1f}% | 胜率: {wr_show} | 排序: {combo['primary_factor']}", flush=True)
 
     res_df = pd.DataFrame(results)
     if not res_df.empty:
