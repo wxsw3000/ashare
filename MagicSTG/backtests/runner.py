@@ -78,7 +78,11 @@ def main(args_list: Optional[list] = None):
     print(f"  累计收益率:   {res['total_return']:>14.2f} %")
     print(f"  年化收益率:   {res['annual_return']:>14.2f} %")
     print(f"  最大回撤:     {res['max_drawdown']:>14.2f} %")
-    print(f"  胜率:         {res['win_rate']:>14.2f} % ({res['win_rate']*res['total_sells']/100:.0f}胜 / {res['total_sells']}笔平仓)")
+    if res.get('win_rate') is not None:
+        win_rate_str = f"{res['win_rate']:>14.2f} % ({(res['win_rate'] or 0.0)*res['total_sells']/100:.0f}胜 / {res['total_sells']}笔平仓)"
+    else:
+        win_rate_str = "             - (0笔平仓)"
+    print(f"  胜率:         {win_rate_str}")
     print(f"  总交易笔数:   {res['total_buys'] + res['total_sells']:>14} 笔 (买入:{res['total_buys']}, 卖出:{res['total_sells']})")
     print(f"  手续费总计:   {res['total_fees']:>14,.2f} 元")
     print("=" * 70)
