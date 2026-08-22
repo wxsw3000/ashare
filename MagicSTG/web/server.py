@@ -1205,15 +1205,6 @@ def get_backtest_status():
                 }
             })
 
-        # 超时检查：若已被触发且超过 300 秒未得到新 ID 结果，判定为计算异常/超时中断
-        import time
-        if dispatch_time > 0 and (int(time.time()) - dispatch_time) > 300:
-            return jsonify({
-                'status': 'error',
-                'completed': True,
-                'message': '算力节点在 5 分钟内未写入最新回测报告。离线任务可能发生程序报错（如变量未定义等）或被系统中断，请检查 GitHub Actions 执行日志。'
-            })
-
         return jsonify({'status': 'running', 'completed': False, 'message': '算力节点全速计算中...'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})

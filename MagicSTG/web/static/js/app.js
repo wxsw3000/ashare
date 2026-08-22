@@ -715,28 +715,16 @@ async function startBacktestExecution() {
                             if (goToBtn) goToBtn.style.display = 'none';
                         }
                     } else {
-                        if (elapsedSec >= 300) {
-                            clearInterval(pollTimer);
-                            globalTaskRunning = false;
-                            if (runBtn) {
-                                runBtn.disabled = false;
-                                runBtn.innerHTML = `<i class="fa-solid fa-play"></i> 重新运行`;
-                            }
-                            consoleBox.textContent += `\n================== ⚠️ 回测超时中断 ==================\n` +
-                                                     `❌ [TIMEOUT] 轮询超过 5 分钟上限。离线算力任务可能遭遇报错或中断，请检查 GitHub Actions 执行日志！\n` +
-                                                     `=======================================================\n`;
-                            if (goToBtn) goToBtn.style.display = 'none';
+                        // 正在计算中，持续更新倒计时日志，保持耐心等待
+                        const currentText = consoleBox.textContent;
+                        const lines = currentText.split('\n');
+                        const lastLine = lines[lines.length - 1] || '';
+                        const waitMsg = `[Polling ⏳] 正在实时监听算力节点进度... (已等待 ${elapsedSec} 秒)`;
+                        if (lastLine.includes('[Polling ⏳]')) {
+                            lines[lines.length - 1] = waitMsg;
+                            consoleBox.textContent = lines.join('\n');
                         } else {
-                            // 正在计算中，追加更新倒计时日志
-                            const currentText = consoleBox.textContent;
-                            const lines = currentText.split('\n');
-                            const lastLine = lines[lines.length - 1] || '';
-                            if (lastLine.includes('[Polling ⏳]')) {
-                                lines[lines.length - 1] = `[Polling ⏳] 正在实时监听算力节点进度... (已等待 ${elapsedSec} 秒)`;
-                                consoleBox.textContent = lines.join('\n');
-                            } else {
-                                consoleBox.textContent += `[Polling ⏳] 正在实时监听算力节点进度... (已等待 ${elapsedSec} 秒)\n`;
-                            }
+                            consoleBox.textContent += `${waitMsg}\n`;
                         }
                     }
                 } catch (pollErr) {
