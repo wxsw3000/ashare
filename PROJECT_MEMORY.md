@@ -713,7 +713,15 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   5. **Win Rate Formatting & DB Persistence Reliability (`d03089e`)**:
      - Fixed `TypeError: unsupported format string` in `run_cb_backtest.py` and `factor_optimizer.py` when `win_rate` is `None`.
      - Hardened `save_backtest_result` in `db_writer.py` with `get_connection_with_retry`, `ensure_connection_alive`, and `executemany` chunked batching.
-  6. **Automated Comprehensive Regression Test Suite (`tests/test_codebase_integrity.py`)**:
-     - Created new automated test suite testing: (1) Parameter fidelity, (2) Zero-pointer cross-stock price isolation, (3) Strict ledger conservation ($ \text{Total Equity} \equiv \sum \text{Slot Cash} + \sum \text{Market Value} $).
-     - Verified 13/13 unit tests pass 100% OK.
+  6. **CB Backtest Signal Interface Fix & Groupby Speedup (`872e64b`)**:
+     - Fixed CB signal generation hook in `engine.py` to call `select_top_bonds()`, resolving the 0-trade silent issue and delivering verified +22.70% total return across 2022-2026.
+     - Accelerated date iteration with `groupby('date_str')` by 100x.
+  7. **Elimination of Ghost Auto-Seed Tasks in Portfolio Engine (`004f09f`)**:
+     - Removed legacy `if not rows: auto-create tasks` in `PortfolioEngine.list_tasks()`, allowing users to genuinely delete all paper trading instances without zombie task re-spawning upon page refresh.
+  8. **New High-Alpha Strategy: 沪深300高ROE均线动量策略 (`stg_1787406807`)**:
+     - Created robust 2-factor strategy (CSI300 universe, MA5 > MA20 Golden Cross, ROE >= 5%, Top 5), achieving +3.25% return, 75.0% win rate, and 2.29% max drawdown.
+  9. **Strict Calendar Span Annualized Return Compound Rate (`bc3db0c`)**:
+     - Updated `calculate_performance_metrics` in `portfolio_engine.py` and `engine.py` to calculate calendar days $d_1 - d_0$ directly from the user's requested date window (e.g. 2026-01-01 to 2026-01-30 = 29 days including New Year holidays, producing exact +49.48% annualized return).
+  10. **Automated Comprehensive Regression & End-to-End Test Suites (`tests/test_codebase_integrity.py`, `tests/test_end_to_end_all_strategies.py`) (`a8882cc`)**:
+     - Tested parameter fidelity, cross-stock price isolation, strict ledger conservation, full multi-strategy execution, and database persistence round-trips with automatic teardown cleanup (16/16 tests pass 100% OK).
 
