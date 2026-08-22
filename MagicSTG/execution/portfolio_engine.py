@@ -305,7 +305,6 @@ class PortfolioEngine:
     def list_tasks() -> List[dict]:
         """
         Lists all active portfolio tasks with strategy names and performance summary.
-        Auto-populates a default task if portfolio_tasks is empty.
         """
         init_portfolio_db()
         conn = get_connection_with_retry()
@@ -323,59 +322,38 @@ class PortfolioEngine:
                 """)
                 rows = cur.fetchall()
 
-            if not rows:
-                # Auto-create default tasks if database has recommendations
-                with conn.cursor() as cur:
-                    cur.execute("SELECT DISTINCT strategy FROM recommendations")
-                    stgs = [r[0] for r in cur.fetchall()]
-                if not stgs:
-                    stgs = ['cb_double_low']
-
-                for stg in stgs:
-                    name_map = {'cb_double_low': '可转债双低策略模拟实盘', 'pe_strategy': '低PE策略模拟实盘', 'roe_strategy': '高ROE策略模拟实盘'}
-                    t_name = name_map.get(stg, f"{stg} 策略模拟实盘任务")
-                    try:
-                        PortfolioEngine.create_task(task_name=t_name, strategy_code=stg, initial_capital=100000.0)
-                    except Exception as ex:
-                        print(f"[PortfolioEngine] Notice auto-creating default task: {ex}")
-
-                # Re-query
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT t.id, t.task_id, t.task_name, t.strategy_code, COALESCE(s.name, t.strategy_code) AS strategy_name,
-                               t.initial_capital, t.current_equity, t.cash, t.market_value, t.cum_pnl, t.cum_return,
-                               t.annual_return, t.sharpe_ratio, t.max_drawdown, t.win_rate, t.holding_count, t.status,
-                               t.portfolio_config, t.created_at, t.updated_at, t.start_date
-                        FROM portfolio_tasks t
-                        LEFT JOIN custom_strategies s ON (t.strategy_code = s.strategy_id OR t.strategy_code = CAST(s.id AS CHAR))
-                        WHERE t.status != 'DELETED'
-                        ORDER BY t.id DESC
-                    """)
-                    rows = cur.fetchall()
-
             tasks = []
             for r in rows:
+                p_cfg = r[17]
+                if isinstance(p_cfg, str):
+                    try:
+                        p_cfg = json.loads(p_cfg) if p_cfg else {}
+                    except Exception:
+                        p_cfg = {}
+                elif not isinstance(p_cfg, dict):
+                    p_cfg = {}
+
                 tasks.append({
                     'id': r[0],
                     'task_id': r[1],
                     'task_name': r[2],
                     'strategy_code': r[3],
                     'strategy_name': r[4],
-                    'initial_capital': float(r[5]),
-                    'current_equity': float(r[6]),
-                    'cash': float(r[7]),
-                    'market_value': float(r[8]),
-                    'cum_pnl': float(r[9]),
-                    'cum_return': float(r[10]),
-                    'annual_return': float(r[11]),
-                    'sharpe_ratio': float(r[12]),
-                    'max_drawdown': float(r[13]),
-                    'win_rate': float(r[14]),
-                    'holding_count': int(r[15]),
+                    'initial_capital': float(r[5]) if r[5] is not None else 0.0,
+                    'current_equity': float(r[6]) if r[6] is not None else 0.0,
+                    'cash': float(r[7]) if r[7] is not None else 0.0,
+                    'market_value': float(r[8]) if r[8] is not None else 0.0,
+                    'cum_pnl': float(r[9]) if r[9] is not None else 0.0,
+                    'cum_return': float(r[10]) if r[10] is not None else 0.0,
+                    'annual_return': float(r[11]) if r[11] is not None else 0.0,
+                    'sharpe_ratio': float(r[12]) if r[12] is not None else 0.0,
+                    'max_drawdown': float(r[13]) if r[13] is not None else 0.0,
+                    'win_rate': float(r[14]) if r[14] is not None else None,
+                    'holding_count': int(r[15]) if r[15] is not None else 0,
                     'status': r[16],
-                    'portfolio_config': json.loads(r[17]) if r[17] else {},
-                    'created_at': r[18].strftime('%Y-%m-%d %H:%M') if hasattr(r[18], 'strftime') else str(r[18]),
-                    'updated_at': r[19].strftime('%Y-%m-%d %H:%M') if hasattr(r[19], 'strftime') else str(r[19]),
+                    'portfolio_config': p_cfg,
+                    'created_at': r[18].strftime('%Y-%m-%d %H:%M') if hasattr(r[18], 'strftime') else str(r[18] or ''),
+                    'updated_at': r[19].strftime('%Y-%m-%d %H:%M') if hasattr(r[19], 'strftime') else str(r[19] or ''),
                     'start_date': str(r[20]) if r[20] else None
                 })
             return tasks
