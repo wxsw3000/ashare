@@ -100,15 +100,26 @@ def run_backtest_engine(
         selection_strategy = StrategyRegistry.get(strategy_name, cb_stg_cfg)
 
         # Generate CB signals and populate price_map for each trading date
-        for d_str in backtest_dates:
-            sub_df = indicator_df[indicator_df['date_str'] == d_str]
+        for d_str, sub_df in indicator_df.groupby('date_str', sort=True):
             for _, r in sub_df.iterrows():
                 c_code = str(r['code'])
                 c_price = float(r['cb_price']) if pd.notna(r['cb_price']) else 0.0
                 if c_price > 0:
                     price_map[(c_code, d_str)] = {'open': c_price, 'close': c_price, 'high': c_price, 'low': c_price}
 
-            if hasattr(selection_strategy, 'get_signals'):
+            if hasattr(selection_strategy, 'select_top_bonds'):
+                top_bonds = selection_strategy.select_top_bonds(sub_df)
+                buy_list = [
+                    {
+                        'code': str(r['code']),
+                        'price': float(r['cb_price']),
+                        'reason': f"双低入选 (价格:{float(r['cb_price']):.2f}, 双低值:{float(r.get('db_low_value', 0)):.2f})"
+                    }
+                    for _, r in top_bonds.iterrows()
+                    if pd.notna(r.get('cb_price')) and float(r.get('cb_price')) > 0
+                ]
+                day_recs[d_str] = {'BUY': buy_list, 'SELL': []}
+            elif hasattr(selection_strategy, 'get_signals'):
                 buys, sells = selection_strategy.get_signals(sub_df, d_str)
                 buy_list = [{'code': str(b[0]), 'price': float(b[1]), 'reason': f"双低轮动 (低值:{b[2]:.2f})"} for b in buys]
                 sell_list = [{'code': str(s[0]), 'price': float(s[1]), 'reason': '离场轮动'} for s in sells]
