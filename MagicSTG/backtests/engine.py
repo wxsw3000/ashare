@@ -294,7 +294,10 @@ def run_backtest_engine(
     # =========================================================================
     # Step 3: Performance Metrics & Result Sanitization Phase
     # =========================================================================
-    metrics = calculate_performance_metrics(equity_history, closed_trades, initial_capital)
+    metrics = calculate_performance_metrics(
+        equity_history, closed_trades, initial_capital,
+        start_date_str=start_date_str, end_date_str=end_date_str
+    )
 
     final_equity = equity_history[-1]['equity'] if equity_history else initial_capital
     tot_buys = len([t for t in trade_log if t['action'] == 'BUY'])

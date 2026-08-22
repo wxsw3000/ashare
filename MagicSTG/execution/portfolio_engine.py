@@ -132,11 +132,17 @@ def init_portfolio_db():
         conn.close()
 
 
-def calculate_performance_metrics(daily_history: List[dict], closed_trades: List[dict], initial_capital: float) -> dict:
+def calculate_performance_metrics(
+    daily_history: List[dict],
+    closed_trades: List[dict],
+    initial_capital: float = 100000.0,
+    start_date_str: Optional[str] = None,
+    end_date_str: Optional[str] = None
+) -> dict:
     """
     Calculates quantitative performance indicators:
     - Cumulative Return (%)
-    - Annualized Return (%)
+    - Annualized Return (%) (Using full calendar duration including non-trading days/holidays)
     - Sharpe Ratio
     - Max Drawdown (%)
     - Win Rate (%)
@@ -154,14 +160,14 @@ def calculate_performance_metrics(daily_history: List[dict], closed_trades: List
     cum_pnl = latest_equity - initial_capital
     cum_return = (cum_pnl / initial_capital) * 100.0 if initial_capital > 0 else 0.0
 
-    # 1. Annualized Return
+    # 1. Annualized Return (Strict 365 calendar days compound rate)
     n_days = len(daily_history)
     if n_days > 1:
         try:
-            d0_str = daily_history[0]['date']
-            d1_str = daily_history[-1]['date']
-            d0 = datetime.strptime(d0_str, '%Y-%m-%d')
-            d1 = datetime.strptime(d1_str, '%Y-%m-%d')
+            d0_str = start_date_str or daily_history[0]['date']
+            d1_str = end_date_str or daily_history[-1]['date']
+            d0 = datetime.strptime(str(d0_str)[:10], '%Y-%m-%d')
+            d1 = datetime.strptime(str(d1_str)[:10], '%Y-%m-%d')
             cal_days = (d1 - d0).days
             # Only compute compound annualized return if running duration >= 7 calendar days to prevent short-term noise distortion
             if cal_days >= 7 and latest_equity > 0:
@@ -744,7 +750,12 @@ class PortfolioEngine:
                 all_positions.append(pos)
 
             # 7. Calculate Quantitative Performance Metrics
-            metrics = calculate_performance_metrics(daily_history, [p for p in all_positions if p.get('status') == 'SOLD'], initial_capital)
+            metrics = calculate_performance_metrics(
+                daily_history,
+                [p for p in all_positions if p.get('status') == 'SOLD'],
+                initial_capital,
+                start_date_str=start_date_str
+            )
 
             latest_equity = daily_history[-1]['total_equity'] if daily_history else initial_capital
             latest_cash = daily_history[-1]['cash'] if daily_history else initial_capital
