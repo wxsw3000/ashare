@@ -23,8 +23,6 @@ class DynamicFactorStrategy(BaseStrategy):
         super().__init__(name, config)
 
         self.tech_config = self.config.get('tech', {})
-        has_tech_keys = 'tech' in self.config or any(k in self.config for k in ['enable_golden_cross', 'enable_volume_surge', 'enable_di_ratio', 'buy_di_threshold'])
-        default_tech_enable = True if has_tech_keys else False
 
         self.buy_di_threshold = float(self.config.get('buy_di_threshold', self.tech_config.get('buy_di_threshold', 0.70)))
         self.sell_di_threshold = float(self.config.get('sell_di_threshold', self.tech_config.get('sell_di_threshold', 0.70)))
@@ -32,9 +30,9 @@ class DynamicFactorStrategy(BaseStrategy):
         self.long_ma = int(self.config.get('long_ma', self.tech_config.get('long_ma', 20)))
         self.volume_surge_factor = float(self.config.get('volume_surge_factor', self.tech_config.get('volume_surge_factor', 1.2)))
 
-        self.enable_golden_cross = self.config.get('enable_golden_cross', self.tech_config.get('enable_golden_cross', default_tech_enable))
-        self.enable_volume_surge = self.config.get('enable_volume_surge', self.tech_config.get('enable_volume_surge', default_tech_enable))
-        self.enable_di_ratio = self.config.get('enable_di_ratio', self.tech_config.get('enable_di_ratio', default_tech_enable))
+        self.enable_golden_cross = self.config.get('enable_golden_cross', self.tech_config.get('enable_golden_cross', False))
+        self.enable_volume_surge = self.config.get('enable_volume_surge', self.tech_config.get('enable_volume_surge', False))
+        self.enable_di_ratio = self.config.get('enable_di_ratio', self.tech_config.get('enable_di_ratio', False))
 
         # 新增扩展技术指标: RSI, MACD, BOLL, KDJ, Turn (换手率)
         self.enable_turnover = self.config.get('enable_turnover', self.tech_config.get('enable_turnover', False))
@@ -314,7 +312,8 @@ class DynamicFactorStrategy(BaseStrategy):
         if code and self.financial_data and code in self.financial_data:
             pub_dates, records = self.financial_data[code]
             if len(pub_dates) > 0:
-                dt_indices = np.searchsorted(pub_dates, df.index.values, side='right') - 1
+                dt_values = pd.to_datetime(df.index).values
+                dt_indices = np.searchsorted(pub_dates, dt_values, side='right') - 1
                 for idx_df, idx_rec in enumerate(dt_indices):
                     if idx_rec >= 0:
                         rec = records[idx_rec]
