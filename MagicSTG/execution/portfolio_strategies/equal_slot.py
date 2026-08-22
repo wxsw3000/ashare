@@ -91,10 +91,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                         fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
                         realized_pnl = net_proceeds - pos['cost_total']
 
-                        if self.allocation_mode == 'COMPOUNDING':
-                            slot_cash[target_slot] += net_proceeds
-                        else:
-                            slot_cash[target_slot] = per_slot_initial_cash
+                        slot_cash[target_slot] += net_proceeds
 
                         pos['status'] = 'SOLD'
                         pos['sell_date'] = d_str
@@ -114,7 +111,10 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                     already_holding = any(p['stock_code'] == code for p in active_positions.values())
                     if free_slots and not already_holding:
                         slot_idx = free_slots[0]
-                        budget = slot_cash[slot_idx]
+                        if self.allocation_mode == 'COMPOUNDING':
+                            budget = slot_cash[slot_idx]
+                        else:
+                            budget = min(slot_cash[slot_idx], per_slot_initial_cash)
                         buy_price = round(open_p * (1.0 + self.slippage), 4)
 
                         is_cb = is_convertible_bond(code)
@@ -179,10 +179,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                 fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
                 realized_pnl = net_proceeds - pos['cost_total']
 
-                if self.allocation_mode == 'COMPOUNDING':
-                    slot_cash[slot_idx] += net_proceeds
-                else:
-                    slot_cash[slot_idx] = per_slot_initial_cash
+                slot_cash[slot_idx] += net_proceeds
 
                 pos['status'] = 'SOLD'
                 pos['sell_date'] = d_str
@@ -203,10 +200,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                     fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
                     realized_pnl = net_proceeds - pos['cost_total']
 
-                    if self.allocation_mode == 'COMPOUNDING':
-                        slot_cash[slot_idx] += net_proceeds
-                    else:
-                        slot_cash[slot_idx] = per_slot_initial_cash
+                    slot_cash[slot_idx] += net_proceeds
 
                     pos['status'] = 'SOLD'
                     pos['sell_date'] = d_str
@@ -225,10 +219,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                 fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
                 realized_pnl = net_proceeds - pos['cost_total']
 
-                if self.allocation_mode == 'COMPOUNDING':
-                    slot_cash[slot_idx] += net_proceeds
-                else:
-                    slot_cash[slot_idx] = per_slot_initial_cash
+                slot_cash[slot_idx] += net_proceeds
 
                 pos['status'] = 'SOLD'
                 pos['sell_date'] = d_str
@@ -269,10 +260,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                     fee, net_proceeds = calc_trade_cost_for_security(code, sell_price, pos['shares'], is_buy=False)
                     realized_pnl = net_proceeds - pos['cost_total']
 
-                    if self.allocation_mode == 'COMPOUNDING':
-                        slot_cash[target_slot] += net_proceeds
-                    else:
-                        slot_cash[target_slot] = per_slot_initial_cash
+                    slot_cash[target_slot] += net_proceeds
 
                     pos['status'] = 'SOLD'
                     pos['sell_date'] = d_str
@@ -298,7 +286,10 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                         continue
 
                     slot_idx = free_slots.pop(0)
-                    budget = slot_cash[slot_idx]
+                    if self.allocation_mode == 'COMPOUNDING':
+                        budget = slot_cash[slot_idx]
+                    else:
+                        budget = min(slot_cash[slot_idx], per_slot_initial_cash)
                     p_dict = get_prices(code)
                     buy_price = buy_sig['price'] if buy_sig['price'] > 0 else p_dict.get('close', 0.0)
 
