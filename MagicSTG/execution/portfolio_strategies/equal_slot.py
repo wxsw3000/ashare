@@ -99,6 +99,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                         pos['status'] = 'SOLD'
                         pos['sell_date'] = d_str
                         pos['sell_price'] = sell_price
+                        pos['fee'] = round(fee, 4)
                         pos['pnl'] = round(realized_pnl, 4)
                         pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
                         pos['extra_data'] = json.dumps({'exit_reason': p_order.get('reason', 'T+1开盘价卖出')})
@@ -143,6 +144,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                                 'slot_idx': slot_idx,
                                 'shares': shares,
                                 'cost_total': round(total_cost, 4),
+                                'fee': round(fee, 4),
                                 'current_price': buy_price,
                                 'market_value': round(shares * buy_price, 4),
                                 'pnl': 0.0,
@@ -185,6 +187,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                 pos['status'] = 'SOLD'
                 pos['sell_date'] = d_str
                 pos['sell_price'] = sell_price
+                pos['fee'] = round(fee, 4)
                 pos['pnl'] = round(realized_pnl, 4)
                 pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
                 pos['extra_data'] = json.dumps({'exit_reason': f"触发止损线 ({pos['pnl_pct']:.2f}% <= {self.stop_loss_pct:.2f}%)"}, ensure_ascii=False)
@@ -208,6 +211,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                     pos['status'] = 'SOLD'
                     pos['sell_date'] = d_str
                     pos['sell_price'] = sell_price
+                    pos['fee'] = round(fee, 4)
                     pos['pnl'] = round(realized_pnl, 4)
                     pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
                     pos['extra_data'] = json.dumps({'exit_reason': f"触发移动止盈 ({drawdown:.2f}% <= {self.trailing_stop_pct:.2f}%)"}, ensure_ascii=False)
@@ -229,6 +233,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                 pos['status'] = 'SOLD'
                 pos['sell_date'] = d_str
                 pos['sell_price'] = sell_price
+                pos['fee'] = round(fee, 4)
                 pos['pnl'] = round(realized_pnl, 4)
                 pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
                 pos['extra_data'] = json.dumps({'exit_reason': f"到达最大持仓天数 ({pos['holding_days']}天 >= {self.max_holding_days}天)"}, ensure_ascii=False)
@@ -272,6 +277,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                     pos['status'] = 'SOLD'
                     pos['sell_date'] = d_str
                     pos['sell_price'] = sell_price
+                    pos['fee'] = round(fee, 4)
                     pos['pnl'] = round(realized_pnl, 4)
                     pos['pnl_pct'] = round((realized_pnl / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
                     pos['extra_data'] = json.dumps({'exit_reason': sell_sig.get('reason', '策略卖出信号')}, ensure_ascii=False)
@@ -326,6 +332,7 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                             'slot_idx': slot_idx,
                             'shares': shares,
                             'cost_total': round(total_cost, 4),
+                            'fee': round(fee, 4),
                             'current_price': buy_price,
                             'market_value': round(shares * buy_price, 4),
                             'pnl': 0.0,

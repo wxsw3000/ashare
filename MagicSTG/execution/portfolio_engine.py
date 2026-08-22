@@ -150,7 +150,7 @@ def calculate_performance_metrics(daily_history: List[dict], closed_trades: List
             'win_rate': 0.0
         }
 
-    latest_equity = daily_history[-1]['total_equity']
+    latest_equity = float(daily_history[-1].get('total_equity') if daily_history[-1].get('total_equity') is not None else daily_history[-1].get('equity', 0.0))
     cum_pnl = latest_equity - initial_capital
     cum_return = (cum_pnl / initial_capital) * 100.0 if initial_capital > 0 else 0.0
 
@@ -174,10 +174,14 @@ def calculate_performance_metrics(daily_history: List[dict], closed_trades: List
         annual_return = cum_return
 
     # 2. Max Drawdown
+    def _get_eq(item_dict):
+        v = item_dict.get('total_equity')
+        return float(v) if v is not None else float(item_dict.get('equity', 0.0))
+
     peak = initial_capital
     max_dd = 0.0
     for h in daily_history:
-        eq = h['total_equity']
+        eq = _get_eq(h)
         if eq > peak:
             peak = eq
         if peak > 0:
@@ -189,8 +193,8 @@ def calculate_performance_metrics(daily_history: List[dict], closed_trades: List
     sharpe_ratio = 0.0
     daily_returns = []
     for i in range(1, len(daily_history)):
-        prev_eq = daily_history[i-1]['total_equity']
-        curr_eq = daily_history[i]['total_equity']
+        prev_eq = _get_eq(daily_history[i-1])
+        curr_eq = _get_eq(daily_history[i])
         if prev_eq > 0:
             daily_returns.append((curr_eq - prev_eq) / prev_eq)
 

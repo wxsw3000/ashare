@@ -2,15 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 MagicSTG Convertible Bond Strategy Backtest Engine
-可转债双低策略专用回测驱动引擎
-模拟历史持仓定期轮动，计算年化收益、最大回撤、夏普比率等核心指标。
+可转债双低策略专用回测驱动引擎 (Delegates directly to Unified Backtest Engine)
 """
 
 import sys
 import os
 import argparse
 import pandas as pd
-import numpy as np
 from datetime import datetime
 
 # 自动定位项目根目录
@@ -29,9 +27,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from MagicSTG.core.db import load_cb_data_db
-from MagicSTG.core.db_writer import save_backtest_result
-from MagicSTG.strategies.registry import StrategyRegistry
+from MagicSTG.backtests.engine import run_backtest_engine
 
 
 def run_cb_backtest(
@@ -43,256 +39,65 @@ def run_cb_backtest(
     rebalance_days: int = 5
 ) -> dict:
     print("=" * 70)
-    print("🚀 开始可转债双低策略历史回测引擎...")
+    print("🚀 开始可转债双低策略历史回测引擎 (统一引擎核心)...")
     print(f"  [回测区间]: {start_date} ~ {end_date}")
     print(f"  [初始资金]: {initial_capital:,.2f} 元 | [持仓数量]: {top_n} 只 | [轮动周期]: {rebalance_days} 天")
     print(f"  [价格上限]: {max_price:.1f} 元")
     print("=" * 70)
 
-    # 1. 从 TiDB 加载可转债衍生指标数据
-    data = load_cb_data_db(start_date=start_date, end_date=end_date)
-    indicator_df = data.get('cb_daily_indicator')
-    if indicator_df is None or indicator_df.empty:
-        print("❌ 未获取到可转债衍生指标数据，请先确认 cb_daily_indicator 表已装载数据。")
-        return {}
-
-    # 日期转换
-    indicator_df['date'] = pd.to_datetime(indicator_df['date'])
-    trading_dates = sorted(indicator_df['date'].unique())
-
-    if not trading_dates:
-        print("❌ 没有找到有效的交易日期。")
-        return {}
-
-    print(f"  ✅ 成功获取 {len(trading_dates)} 个交易日的数据，开始进行逐日回测模拟...", flush=True)
-
-    # 2. 实例化策略
-    strategy_config = {
+    config = {
+        'category': 'convertible_bond',
         'top_n': top_n,
         'max_price': max_price,
-        'rebalance_days': rebalance_days
+        'rebalance_days': rebalance_days,
+        'portfolio_config': {
+            'initial_capital': initial_capital,
+            'max_holdings': top_n
+        }
     }
-    strategy = StrategyRegistry.get('cb_double_low', strategy_config)
 
-    # 3. 模拟盘口与资产组合状态
-    current_cash = initial_capital
-    holdings = {}  # {code: {'shares': int, 'cost_price': float, 'curr_price': float}}
-    portfolio_history = []
-    trade_logs = []
+    res = run_backtest_engine(
+        config=config,
+        start_date_str=start_date,
+        end_date_str=end_date,
+        strategy_name='cb_double_low',
+        save_to_db=True
+    )
 
-    day_counter = 0
-    pending_cb_sells = []
-    pending_cb_buys = []
-
-    for current_date in trading_dates:
-        date_str = current_date.strftime('%Y-%m-%d')
-        today_df = indicator_df[indicator_df['date'] == current_date]
-
-        if today_df.empty:
-            continue
-
-        price_map = {}
-        for _, row in today_df.iterrows():
-            code = str(row['code'])
-            price = float(row['cb_price']) if pd.notna(row['cb_price']) else None
-            if price and price > 0:
-                price_map[code] = price
-
-        # =========================================================================
-        # 1. 严格在 T+1 日【开盘/当日行情】执行上一轮动日产生的卖出与买入指令
-        # =========================================================================
-        # 1.1 执行卖出离场
-        for code, reason in pending_cb_sells:
-            if code in holdings:
-                shares = holdings[code]['shares']
-                sell_price = price_map.get(code, holdings[code]['curr_price'])
-                if sell_price > 0:
-                    fee = round(shares * sell_price * 0.00005, 2)
-                    income = shares * sell_price - fee
-                    current_cash += income
-                    pnl = (sell_price - holdings[code]['cost_price']) * shares
-                    pnl_pct = round((sell_price / holdings[code]['cost_price'] - 1) * 100, 2)
-                    trade_logs.append({
-                        'date': date_str,
-                        'action': 'SELL',
-                        'code': code,
-                        'price': sell_price,
-                        'shares': shares,
-                        'amount': round(income, 2),
-                        'fee': fee,
-                        'pnl': round(pnl, 2),
-                        'pnl_pct': pnl_pct,
-                        'reason': f"[T+1执行] {reason}"
-                    })
-                    del holdings[code]
-
-        pending_cb_sells = []
-
-        # 1.2 执行买入建仓
-        if pending_cb_buys:
-            # 重新计算卖出后的组合资产并均分
-            cur_holdings_val = sum(h['shares'] * price_map.get(c, h['curr_price']) for c, h in holdings.items())
-            total_asset_now = current_cash + cur_holdings_val
-            target_allocation = total_asset_now / top_n
-
-            for code, reason in pending_cb_buys:
-                if code in holdings:
-                    continue
-                price = price_map.get(code, 0.0)
-                if price <= 0:
-                    continue
-                available_buy_cash = min(current_cash, target_allocation)
-                if available_buy_cash >= price * 10:  # 至少买10张 (手)
-                    shares = int(available_buy_cash // (price * (1 + 0.00005)))
-                    if shares > 0:
-                        fee = round(shares * price * 0.00005, 2)
-                        cost = shares * price + fee
-                        current_cash -= cost
-                        holdings[code] = {
-                            'shares': shares,
-                            'cost_price': price,
-                            'curr_price': price
-                        }
-                        trade_logs.append({
-                            'date': date_str,
-                            'action': 'BUY',
-                            'code': code,
-                            'price': price,
-                            'shares': shares,
-                            'amount': round(cost, 2),
-                            'fee': fee,
-                            'pnl': None,
-                            'pnl_pct': None,
-                            'reason': f"[T+1执行] {reason}"
-                        })
-
-        pending_cb_buys = []
-
-        # =========================================================================
-        # 2. 更新当前持仓资产市值与轮动判断 (T日盘后)
-        # =========================================================================
-        current_holdings_value = 0.0
-        active_codes = list(holdings.keys())
-        for code in active_codes:
-            if code in price_map:
-                holdings[code]['curr_price'] = price_map[code]
-            curr_price = holdings[code]['curr_price']
-            current_holdings_value += holdings[code]['shares'] * curr_price
-
-        total_asset = current_cash + current_holdings_value
-
-        # 判断是否到达轮动调仓日，生成供 T+1 日执行的信号
-        is_rebalance_day = (day_counter % rebalance_days == 0) or (len(holdings) == 0)
-
-        if is_rebalance_day:
-            current_holding_codes = list(holdings.keys())
-            buy_signals, sell_signals = strategy.generate_signals(
-                date=current_date,
-                data={'cb_daily_indicator': today_df},
-                current_holdings=current_holding_codes
-            )
-
-            for code, price, reason in sell_signals:
-                pending_cb_sells.append((code, reason))
-
-            for code, price, reason in buy_signals:
-                pending_cb_buys.append((code, reason))
-
-        portfolio_history.append({
-            'date': current_date,
-            'cash': current_cash,
-            'holdings_val': current_holdings_value,
-            'total_asset': total_asset,
-            'num_holdings': len(holdings)
-        })
-
-        day_counter += 1
-
-    # 4. 汇总计算分析回测指标
-    perf_df = pd.DataFrame(portfolio_history)
-    if perf_df.empty:
-        print("❌ 回测过程未生成有效权益曲线。")
+    if not res or res.get('status') == 'error':
+        print(f"❌ 可转债回测失败: {res.get('message') if res else '未知错误'}")
         return {}
 
-    perf_df['daily_return'] = perf_df['total_asset'].pct_change().fillna(0.0)
-    perf_df['cum_return'] = perf_df['total_asset'] / initial_capital - 1.0
+    equity_hist = res.get('equity_history', [])
+    trades_list = res.get('trades', [])
 
-    # 动态最大回撤计算
-    perf_df['peak'] = perf_df['total_asset'].cummax()
-    perf_df['drawdown'] = (perf_df['total_asset'] - perf_df['peak']) / perf_df['peak']
+    perf_df = pd.DataFrame(equity_hist)
+    if not perf_df.empty:
+        perf_df.rename(columns={'equity': 'total_asset', 'positions_count': 'num_holdings'}, inplace=True)
+        if 'date' in perf_df.columns:
+            perf_df['date'] = pd.to_datetime(perf_df['date'])
 
-    total_return = perf_df['cum_return'].iloc[-1]
-    num_years = max((trading_dates[-1] - trading_dates[0]).days / 365.25, 0.1)
-    annual_return = (1 + total_return) ** (1 / num_years) - 1.0
-    max_drawdown = perf_df['drawdown'].min()
-
-    # 夏普比率计算 (假设无风险利率 2.0%)
-    daily_rf = 0.02 / 252
-    excess_returns = perf_df['daily_return'] - daily_rf
-    sharpe_ratio = (excess_returns.mean() / excess_returns.std() * np.sqrt(252)) if excess_returns.std() > 0 else 0.0
-
-    # 交易统计
-    trade_df = pd.DataFrame(trade_logs)
-    sell_trades = trade_df[trade_df['action'] == 'SELL'] if not trade_df.empty else pd.DataFrame()
-    win_trades = sell_trades[sell_trades['pnl'] > 0] if not sell_trades.empty else pd.DataFrame()
-    win_rate = (len(win_trades) / len(sell_trades) * 100) if not sell_trades.empty else 0.0
+    trade_df = pd.DataFrame(trades_list)
+    if not trade_df.empty and 'trade_date' in trade_df.columns:
+        trade_df.rename(columns={'trade_date': 'date', 'stock_code': 'code'}, inplace=True)
 
     print("\n" + "=" * 70)
-    print("📊 可转债双低策略 - 回测性能报告")
+    print("📊 可转债双低策略 - 回测性能报告 (统一 Portfolio Engine 核心)")
     print("=" * 70)
-    print(f"  累计收益率 (Total Return)   : {total_return * 100:+.2f}%")
-    print(f"  年化收益率 (Annual Return)  : {annual_return * 100:+.2f}%")
-    print(f"  最大回撤 (Max Drawdown)    : {max_drawdown * 100:.2f}%")
-    print(f"  夏普比率 (Sharpe Ratio)    : {sharpe_ratio:.2f}")
-    print(f"  胜率 (Win Rate)            : {win_rate:.1f}% ({len(win_trades)}胜 / {len(sell_trades)}平卖)")
-    print(f"  期末总资产 (Final Value)    : {perf_df['total_asset'].iloc[-1]:,.2f} 元")
+    print(f"  累计收益率 (Total Return)   : {res.get('total_return', 0.0):+.2f}%")
+    print(f"  年化收益率 (Annual Return)  : {res.get('annual_return', 0.0):+.2f}%")
+    print(f"  最大回撤 (Max Drawdown)    : {res.get('max_drawdown', 0.0):.2f}%")
+    print(f"  夏普比率 (Sharpe Ratio)    : {res.get('sharpe_ratio', 0.0):.2f}")
+    print(f"  胜率 (Win Rate)            : {res.get('win_rate', 0.0):.1f}% ({res.get('total_sells', 0)} 笔卖出平仓)")
+    print(f"  期末总资产 (Final Value)    : {res.get('final_equity', 0.0):,.2f} 元")
     print("=" * 70)
-
-    buy_count = len([t for t in trade_logs if t['action'] == 'BUY'])
-    sell_count = len([t for t in trade_logs if t['action'] == 'SELL'])
-    total_fees = sum(t.get('fee', 0.0) for t in trade_logs)
-
-    db_data = {
-        'run_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'date_range_start': trading_dates[0].strftime('%Y-%m-%d'),
-        'date_range_end': trading_dates[-1].strftime('%Y-%m-%d'),
-        'initial_equity': initial_capital,
-        'final_equity': float(perf_df['total_asset'].iloc[-1]),
-        'total_return': float(total_return * 100),
-        'annual_return': float(annual_return * 100),
-        'max_drawdown': float(abs(max_drawdown) * 100),
-        'win_rate': float(win_rate),
-        'total_buys': buy_count,
-        'total_sells': sell_count,
-        'total_fees': float(total_fees),
-        'sharpe_ratio': float(sharpe_ratio),
-        'trades': [
-            {
-                'trade_date': t['date'],
-                'stock_code': t['code'],
-                'action': t['action'],
-                'price': float(t['price']),
-                'shares': int(t['shares']),
-                'fee': float(t.get('fee', 0.0)),
-                'pnl': float(t['pnl']) if t.get('pnl') is not None else None,
-                'pnl_pct': float(t['pnl_pct']) if t.get('pnl_pct') is not None else None,
-                'reason': t.get('reason')
-            }
-            for t in trade_logs
-        ]
-    }
-
-    try:
-        save_backtest_result('cb_double_low', db_data)
-    except Exception as db_err:
-        print(f"  [DB Warning] 保存可转债回测到数据库失败: {db_err}")
 
     return {
-        'total_return': total_return,
-        'annual_return': annual_return,
-        'max_drawdown': max_drawdown,
-        'sharpe_ratio': sharpe_ratio,
-        'win_rate': win_rate,
+        'total_return': res.get('total_return', 0.0) / 100.0,
+        'annual_return': res.get('annual_return', 0.0) / 100.0,
+        'max_drawdown': res.get('max_drawdown', 0.0) / 100.0,
+        'sharpe_ratio': res.get('sharpe_ratio', 0.0),
+        'win_rate': res.get('win_rate', 0.0),
         'perf_df': perf_df,
         'trade_df': trade_df
     }
