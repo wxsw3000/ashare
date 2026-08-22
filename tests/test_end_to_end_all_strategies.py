@@ -104,7 +104,7 @@ class TestEndToEndAllStrategies(unittest.TestCase):
         self.assertFalse(math.isnan(res['total_return']))
 
     def test_03_db_persistence_roundtrip(self):
-        """Verifies that backtest results saved into TiDB can be retrieved with identical values."""
+        """Verifies that backtest results saved into TiDB can be retrieved with identical values and cleaned up."""
         config = {
             'top_n': 3,
             'max_price': 130.0,
@@ -138,6 +138,27 @@ class TestEndToEndAllStrategies(unittest.TestCase):
                 self.assertEqual(b_stg, 'cb_double_low')
                 self.assertAlmostEqual(float(init_eq), 50000.0, places=2)
                 self.assertAlmostEqual(float(tot_ret), res['total_return'], places=2)
+
+                # Clean up unit test records immediately
+                cur.execute("DELETE FROM backtest_trades WHERE backtest_id = %s", (b_id,))
+                cur.execute("DELETE FROM backtest_results WHERE id = %s", (b_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        """Wipes any leftover unit test backtests."""
+        conn = get_connection_with_retry()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM backtest_results WHERE run_date = CURDATE() AND date_range_start = '2026-01-01' AND date_range_end IN ('2026-01-30', '2026-01-15')")
+                ids = [r[0] for r in cur.fetchall()]
+                if ids:
+                    format_strings = ','.join(['%s'] * len(ids))
+                    cur.execute(f"DELETE FROM backtest_trades WHERE backtest_id IN ({format_strings})", tuple(ids))
+                    cur.execute(f"DELETE FROM backtest_results WHERE id IN ({format_strings})", tuple(ids))
+                    conn.commit()
         finally:
             conn.close()
 
