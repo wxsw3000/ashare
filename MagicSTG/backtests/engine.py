@@ -118,10 +118,12 @@ def run_backtest_engine(
         # Stock Strategy Signal Generation
         limit_to_csi300 = (universe == 'csi300')
         all_stock_codes = load_all_stock_codes_db(limit_to_csi300=limit_to_csi300)
-        backtest_dates = get_trading_dates_db(start_date_str, end_date_str)
+        trading_dates = get_trading_dates_db(start_date_str, end_date_str)
+        backtest_dates = [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)[:10] for d in trading_dates]
 
         if not backtest_dates:
-            return {'status': 'error', 'message': '所选时间段内没有股票交易日期'}
+            print("  [WARN] No trading dates found in database for range.")
+            return {'status': 'error', 'message': 'No trading dates found'}
 
         selection_strategy = StrategyRegistry.get(strategy_name, config)
         batch_size = 400
@@ -149,8 +151,9 @@ def run_backtest_engine(
             for code, df in b_processed.items():
                 c_code = str(code)
                 # Store full K-lines into price_map
-                for dt, r in df.iterrows():
-                    dt_s = dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)
+                for idx_row, r in df.iterrows():
+                    row_dt = r['date'] if 'date' in r else idx_row
+                    dt_s = row_dt.strftime('%Y-%m-%d') if hasattr(row_dt, 'strftime') else str(row_dt)[:10]
                     c_open = float(r['open']) if 'open' in r and not pd.isna(r['open']) else float(r['close'])
                     c_close = float(r['close'])
                     c_high = float(r['high']) if 'high' in r and not pd.isna(r['high']) else c_close
@@ -159,19 +162,21 @@ def run_backtest_engine(
 
                 if 'buy_signal' in df.columns:
                     b_rows = df[df['buy_signal']]
-                    for dt, row in b_rows.iterrows():
-                        dt_s = dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)
+                    for idx_row, row in b_rows.iterrows():
+                        row_dt = row['date'] if 'date' in row else idx_row
+                        dt_s = row_dt.strftime('%Y-%m-%d') if hasattr(row_dt, 'strftime') else str(row_dt)[:10]
                         if dt_s in daily_buy_cands:
                             c_price = float(row['close'])
-                            if check_limit_up(df, dt, c_price):
+                            if check_limit_up(df, idx_row, c_price):
                                 continue
                             rank_val = float(row['rank_val']) if 'rank_val' in row and not pd.isna(row['rank_val']) else c_price
                             daily_buy_cands[dt_s].append((c_code, c_price, rank_val))
 
                 if 'sell_signal' in df.columns:
                     s_rows = df[df['sell_signal']]
-                    for dt, row in s_rows.iterrows():
-                        dt_s = dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)
+                    for idx_row, row in s_rows.iterrows():
+                        row_dt = row['date'] if 'date' in row else idx_row
+                        dt_s = row_dt.strftime('%Y-%m-%d') if hasattr(row_dt, 'strftime') else str(row_dt)[:10]
                         if dt_s in daily_sell_sigs:
                             s_price = float(row['close'])
                             daily_sell_sigs[dt_s].append((c_code, s_price))

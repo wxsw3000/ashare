@@ -126,37 +126,39 @@ class DynamicFactorStrategy(BaseStrategy):
             if not target_codes or all(c in self._financial_data_cached for c in target_codes):
                 return self._financial_data_cached
 
-        from MagicSTG.core.db import safe_read_sql_with_retry
+        from MagicSTG.core.db import safe_read_sql_with_retry, load_all_stock_codes_db
         conn = get_connection()
         try:
-            print("  [DynamicStrategy] Loading merged quarterly financial reports...", flush=True)
-            where_clause = ""
-            params = None
+            print("  [DynamicStrategy] Loading merged quarterly financial reports in batches...", flush=True)
+            codes_to_load = target_codes if target_codes else load_all_stock_codes_db(limit_to_csi300=False)
 
-            if target_codes and 0 < len(target_codes) <= 1000:
-                db_codes = [c.replace('.', '_') for c in target_codes] + [c.replace('_', '.') for c in target_codes]
-                unique_codes = list(set(db_codes))
-                format_strings = ','.join(['%s'] * len(unique_codes))
-                where_clause = f" WHERE p.code IN ({format_strings}) "
-                params = unique_codes
+            batch_size = 400
+            all_dfs = []
+            for i in range(0, len(codes_to_load), batch_size):
+                batch = codes_to_load[i:i+batch_size]
+                db_codes = tuple(set([c.replace('.', '_') for c in batch] + [c.replace('_', '.') for c in batch]))
+                query = """
+                SELECT 
+                    p.code, p.stat_date, p.pub_date, p.roe_avg,
+                    g.YOYNI,
+                    b.liabilityToAsset,
+                    c.CFOToNP
+                FROM stock_profit_quarterly p
+                LEFT JOIN stock_growth_quarterly g ON p.code = g.code AND p.stat_date = g.stat_date
+                LEFT JOIN stock_balance_quarterly b ON p.code = b.code AND p.stat_date = b.stat_date
+                LEFT JOIN stock_cash_flow_quarterly c ON p.code = c.code AND p.stat_date = c.stat_date
+                WHERE p.code IN %s
+                ORDER BY p.code, p.pub_date ASC
+                """
+                merged_batch, conn = safe_read_sql_with_retry(query, conn, params=(db_codes,))
+                if not merged_batch.empty:
+                    all_dfs.append(merged_batch)
 
-            query = f"""
-            SELECT 
-                p.code, p.stat_date, p.pub_date, p.roe_avg,
-                g.YOYNI,
-                b.liabilityToAsset,
-                c.CFOToNP
-            FROM stock_profit_quarterly p
-            LEFT JOIN stock_growth_quarterly g ON p.code = g.code AND p.stat_date = g.stat_date
-            LEFT JOIN stock_balance_quarterly b ON p.code = b.code AND p.stat_date = b.stat_date
-            LEFT JOIN stock_cash_flow_quarterly c ON p.code = c.code AND p.stat_date = c.stat_date
-            {where_clause}
-            ORDER BY p.code, p.pub_date ASC
-            """
-            merged, conn = safe_read_sql_with_retry(query, conn, params=params)
-            if merged.empty:
+            if not all_dfs:
                 self.financial_data = {}
                 return {}
+
+            merged = pd.concat(all_dfs, ignore_index=True)
 
             merged['pub_date'] = pd.to_datetime(merged['pub_date'])
             merged['code'] = merged['code'].str.replace('_', '.', regex=False)
@@ -331,9 +333,13 @@ class DynamicFactorStrategy(BaseStrategy):
         if self.enable_roe:
             buy_cond &= (df['fin_roe_avg'] >= self.roe_min)
         if self.enable_pe and 'peTTM' in df.columns:
-            buy_cond &= (df['peTTM'] >= self.pe_min) & (df['peTTM'] <= self.pe_max)
+            valid_pe = df['peTTM'].notna() & (df['peTTM'] > 0)
+            pe_cond = (df['peTTM'] >= self.pe_min) & (df['peTTM'] <= self.pe_max)
+            buy_cond &= np.where(valid_pe, pe_cond, True)
         if self.enable_pb and 'pbMRQ' in df.columns:
-            buy_cond &= (df['pbMRQ'] >= self.pb_min) & (df['pbMRQ'] <= self.pb_max)
+            valid_pb = df['pbMRQ'].notna() & (df['pbMRQ'] > 0)
+            pb_cond = (df['pbMRQ'] >= self.pb_min) & (df['pbMRQ'] <= self.pb_max)
+            buy_cond &= np.where(valid_pb, pb_cond, True)
         if self.enable_growth:
             buy_cond &= (df['fin_YOYNI'] >= self.growth_min)
         if self.enable_debt_limit:
