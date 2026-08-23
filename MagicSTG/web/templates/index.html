@@ -129,7 +129,49 @@
                     </div>
                 </div>
 
-                <!-- 关键绩效指标 6 大卡片 Grid -->
+                <!-- 1. 最上方: 当前持仓股票列表看板 (Active Holding Positions) -->
+                <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(0, 210, 196, 0.35); border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem;">
+                        <div style="display: flex; align-items: center; gap: 0.6rem;">
+                            <h3 style="font-size: 1.05rem; font-weight: 800; color: #f0f3fa; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fa-solid fa-cubes-stacked" style="color: #00d2c4;"></i> 当前持仓股票列表
+                            </h3>
+                            <span class="badge-tag" style="background: rgba(0, 210, 196, 0.15); color: #00d2c4; border: 1px solid rgba(0, 210, 196, 0.3); font-weight: 700;">
+                                持仓: <span id="topHoldingCountBadge">0</span> 只
+                            </span>
+                        </div>
+                        <div style="display: flex; gap: 1.25rem; font-size: 0.82rem; color: #8e95b2; flex-wrap: wrap;">
+                            <span>持仓总买入金额: <strong style="color: #f0f3fa;" id="topTotalBuyCost">¥ 0.00</strong></span>
+                            <span>当前最新总价值: <strong style="color: #38bdf8;" id="topTotalMarketValue">¥ 0.00</strong></span>
+                            <span>持仓总浮动盈亏: <strong id="topTotalFloatingPnl" class="up-val">¥ 0.00 (0.00%)</strong></span>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="custom-table data-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-left">标的代码</th>
+                                    <th class="text-left">标的名称</th>
+                                    <th class="text-center">买入日期</th>
+                                    <th class="text-right">持仓数量</th>
+                                    <th class="text-right">买入单价 (元)</th>
+                                    <th class="text-right">买入金额 (元)</th>
+                                    <th class="text-right">当前单价 (元)</th>
+                                    <th class="text-right">当前最新价值 (元)</th>
+                                    <th class="text-right">增长金额 (元)</th>
+                                    <th class="text-right">增长率 (%)</th>
+                                    <th class="text-center">仓位槽位</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableTaskActivePositions">
+                                <tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无活跃持仓股票</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 2. 关键绩效指标 6 大卡片 Grid -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.85rem; margin-bottom: 1.5rem;">
                     <div class="stat-card" style="background: rgba(26, 29, 54, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
                         <div style="font-size: 0.75rem; color: #8e95b2; margin-bottom: 0.3rem;"><i class="fa-solid fa-wallet"></i> 当前总资产 / 现金</div>
@@ -163,7 +205,7 @@
                     </div>
                 </div>
 
-                <!-- 收益曲线 Chart -->
+                <!-- 3. 收益曲线 Chart -->
                 <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.25rem; margin-bottom: 1.5rem;">
                     <h3 style="font-size: 0.95rem; font-weight: 700; color: #f0f3fa; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
                         <i class="fa-solid fa-chart-area" style="color: #00d2c4;"></i> 任务累计收益率走势图 (%)
@@ -173,13 +215,10 @@
                     </div>
                 </div>
 
-                <!-- 子 Tab: 当前持仓明细 / 交易调仓流水 -->
+                <!-- 4. 下方子 Tab: 交易调仓流水 / 已平仓历史记录 -->
                 <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.25rem;">
                     <div style="display: flex; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
-                        <button class="nav-btn active" id="taskSubTabActive" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('active')">
-                            <i class="fa-solid fa-briefcase"></i> 当前持仓明细 (<span id="taskCountActive">0</span>)
-                        </button>
-                        <button class="nav-btn" id="taskSubTabLogs" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('logs')">
+                        <button class="nav-btn active" id="taskSubTabLogs" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('logs')">
                             <i class="fa-solid fa-receipt"></i> 交易明细与调仓流水 (<span id="taskCountLogs">0</span>)
                         </button>
                         <button class="nav-btn" id="taskSubTabClosed" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="switchTaskDetailSubTab('closed')">
@@ -187,34 +226,8 @@
                         </button>
                     </div>
 
-                    <!-- 1. 当前持仓 -->
-                    <div id="taskSubSectionActive">
-                        <div class="table-responsive">
-                            <table class="custom-table data-table">
-                                <thead>
-                                    <tr>
-                                        <th class="text-left">标的代码</th>
-                                        <th class="text-left">名称</th>
-                                        <th class="text-center">建仓日期</th>
-                                        <th class="text-right">买入成本价</th>
-                                        <th class="text-right">最新价格</th>
-                                        <th class="text-right">持仓数量</th>
-                                        <th class="text-right">投入成本 (元)</th>
-                                        <th class="text-right">最新市值 (元)</th>
-                                        <th class="text-right">浮动盈亏 (元)</th>
-                                        <th class="text-right">盈亏比例 (%)</th>
-                                        <th class="text-center">槽位</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tableTaskActivePositions">
-                                    <tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">暂无活跃持仓</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
                     <!-- 2. 交易调仓明细流水 -->
-                    <div id="taskSubSectionLogs" style="display: none;">
+                    <div id="taskSubSectionLogs">
                         <div class="table-responsive">
                             <table class="custom-table data-table">
                                 <thead>

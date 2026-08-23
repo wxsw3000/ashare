@@ -1918,26 +1918,55 @@ function renderPortfolioTaskDetail(data) {
 
     // Tables
     const activePositions = data.active_positions || [];
-    document.getElementById('taskCountActive').textContent = activePositions.length;
+    const totalBuyCost = activePositions.reduce((sum, p) => sum + (p.cost_total || 0), 0);
+    const totalMarketVal = activePositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
+    const totalFloatingPnl = totalMarketVal - totalBuyCost;
+    const totalFloatingPnlPct = totalBuyCost > 0 ? (totalFloatingPnl / totalBuyCost * 100.0) : 0.0;
+
+    const topCountBadge = document.getElementById('topHoldingCountBadge');
+    if (topCountBadge) topCountBadge.textContent = activePositions.length;
+
+    const elTopBuyCost = document.getElementById('topTotalBuyCost');
+    if (elTopBuyCost) elTopBuyCost.textContent = '¥ ' + totalBuyCost.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const elTopMv = document.getElementById('topTotalMarketValue');
+    if (elTopMv) elTopMv.textContent = '¥ ' + totalMarketVal.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const elTopPnl = document.getElementById('topTotalFloatingPnl');
+    if (elTopPnl) {
+        const pnlSign = totalFloatingPnl > 0 ? '+' : (totalFloatingPnl < 0 ? '-' : '');
+        const retSign = totalFloatingPnlPct > 0 ? '+' : '';
+        const pnlClass = totalFloatingPnl > 0 ? 'up-val' : (totalFloatingPnl < 0 ? 'down-val' : '');
+        elTopPnl.className = pnlClass;
+        if (activePositions.length === 0) {
+            elTopPnl.innerHTML = '<span style="color: #8e95b2;">¥ 0.00 (空仓)</span>';
+        } else {
+            elTopPnl.textContent = `${pnlSign}¥ ${Math.abs(totalFloatingPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${retSign}${totalFloatingPnlPct.toFixed(2)}%)`;
+        }
+    }
+
     const activeTable = document.getElementById('tableTaskActivePositions');
     if (activePositions.length === 0) {
-        activeTable.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;">当前无活跃持仓</td></tr>`;
+        activeTable.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#8e95b2; padding:2rem;"><i class="fa-solid fa-box-open" style="font-size: 1.3rem; margin-bottom: 0.5rem; display: block; color: #64748b;"></i>当前无活跃持仓股票（处于 100% 空仓/现金状态）</td></tr>`;
     } else {
         activeTable.innerHTML = activePositions.map(pos => {
-            const pnlClass = pos.pnl >= 0 ? 'up-val' : 'down-val';
-            const pnlSign = pos.pnl >= 0 ? '+' : '';
+            const pnl = (pos.pnl !== undefined && pos.pnl !== null) ? pos.pnl : (pos.market_value - pos.cost_total);
+            const pnlPct = (pos.pnl_pct !== undefined && pos.pnl_pct !== null) ? pos.pnl_pct : (pos.cost_total > 0 ? (pnl / pos.cost_total * 100) : 0);
+            const pnlClass = pnl > 0 ? 'up-val' : (pnl < 0 ? 'down-val' : '');
+            const pnlSign = pnl > 0 ? '+' : (pnl < 0 ? '-' : '');
+            const retSign = pnlPct > 0 ? '+' : '';
             return `
                 <tr>
                     <td class="text-left"><strong style="color: #00d2c4;">${pos.stock_code}</strong></td>
-                    <td class="text-left" style="font-weight: 700;">${pos.stock_name}</td>
-                    <td class="text-center">${pos.buy_date}</td>
+                    <td class="text-left" style="font-weight: 700; color: #f0f3fa;">${pos.stock_name}</td>
+                    <td class="text-center" style="color: #8e95b2;">${pos.buy_date}</td>
+                    <td class="text-right" style="font-weight: 700;">${pos.shares.toLocaleString()}</td>
                     <td class="text-right">¥ ${pos.buy_price.toFixed(2)}</td>
-                    <td class="text-right">¥ ${pos.current_price.toFixed(2)}</td>
-                    <td class="text-right">${pos.shares.toLocaleString()}</td>
-                    <td class="text-right">¥ ${pos.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="text-right">¥ ${pos.market_value.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="text-right ${pnlClass}">${pnlSign}¥ ${pos.pnl.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="text-right ${pnlClass}">${pnlSign}${pos.pnl_pct.toFixed(2)}%</td>
+                    <td class="text-right" style="font-weight: 600;">¥ ${pos.cost_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right" style="font-weight: 700; color: #38bdf8;">¥ ${pos.current_price.toFixed(2)}</td>
+                    <td class="text-right" style="font-weight: 700; color: #f0f3fa;">¥ ${pos.market_value.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}" style="font-weight: 700;">${pnlSign}¥ ${Math.abs(pnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-right ${pnlClass}" style="font-weight: 800;">${retSign}${pnlPct.toFixed(2)}%</td>
                     <td class="text-center"><span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">槽位 #${pos.slot_idx + 1}</span></td>
                 </tr>
             `;
@@ -2083,23 +2112,22 @@ function renderTaskPortfolioChart(equityCurve) {
 }
 
 function switchTaskDetailSubTab(subTabName) {
-    document.getElementById('taskSubTabActive').classList.remove('active');
-    document.getElementById('taskSubTabLogs').classList.remove('active');
-    document.getElementById('taskSubTabClosed').classList.remove('active');
+    const tabLogs = document.getElementById('taskSubTabLogs');
+    const tabClosed = document.getElementById('taskSubTabClosed');
+    const secLogs = document.getElementById('taskSubSectionLogs');
+    const secClosed = document.getElementById('taskSubSectionClosed');
 
-    document.getElementById('taskSubSectionActive').style.display = 'none';
-    document.getElementById('taskSubSectionLogs').style.display = 'none';
-    document.getElementById('taskSubSectionClosed').style.display = 'none';
+    if (tabLogs) tabLogs.classList.remove('active');
+    if (tabClosed) tabClosed.classList.remove('active');
+    if (secLogs) secLogs.style.display = 'none';
+    if (secClosed) secClosed.style.display = 'none';
 
-    if (subTabName === 'active') {
-        document.getElementById('taskSubTabActive').classList.add('active');
-        document.getElementById('taskSubSectionActive').style.display = 'block';
-    } else if (subTabName === 'logs') {
-        document.getElementById('taskSubTabLogs').classList.add('active');
-        document.getElementById('taskSubSectionLogs').style.display = 'block';
-    } else if (subTabName === 'closed') {
-        document.getElementById('taskSubTabClosed').classList.add('active');
-        document.getElementById('taskSubSectionClosed').style.display = 'block';
+    if (subTabName === 'closed') {
+        if (tabClosed) tabClosed.classList.add('active');
+        if (secClosed) secClosed.style.display = 'block';
+    } else {
+        if (tabLogs) tabLogs.classList.add('active');
+        if (secLogs) secLogs.style.display = 'block';
     }
 }
 
