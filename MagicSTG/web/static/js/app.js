@@ -1765,7 +1765,7 @@ function renderPortfolioTaskCards() {
                     <div style="font-size: 1.1rem; font-weight: 800; color: #f0f3fa; margin: 0.4rem 0;">${t.task_name}</div>
                     <div style="font-size: 0.78rem; color: #8e95b2; margin-bottom: 0.75rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.3rem;">
                         <span><i class="fa-regular fa-clock"></i> 创建: ${t.created_at || '-'}</span>
-                        <span>本金: <strong style="color: #f0f3fa;">¥ ${t.initial_capital.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
+                        <span>初始本金: <strong style="color: #f0f3fa;">¥ ${t.initial_capital.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
                     </div>
 
                     <!-- 4 大核心资产与持仓盈亏看板 -->
@@ -1822,10 +1822,12 @@ function renderPortfolioTaskCards() {
                         <div>
                             <div style="font-size: 0.7rem; color: #8e95b2;">当前总资产</div>
                             <div style="font-size: 0.88rem; font-weight: 700; color: #f0f3fa;">¥ ${t.current_equity.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                            <div style="font-size: 0.7rem; color: #38bdf8; margin-top: 0.15rem;"><i class="fa-solid fa-money-bill-wave"></i> 可用现金: ¥ ${(t.cash || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.7rem; color: #8e95b2;">年化收益率</div>
                             <div style="font-size: 0.88rem; font-weight: 700;" class="${annClass}">${annSign}${annRet.toFixed(2)}%</div>
+                            <div style="font-size: 0.7rem; color: #8e95b2; margin-top: 0.15rem;">初始本金: ¥ ${t.initial_capital.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.7rem; color: #8e95b2;">夏普比率 (Sharpe)</div>
@@ -1888,7 +1890,7 @@ function backToPortfolioTaskMaster() {
 
 function renderPortfolioTaskDetail(data) {
     document.getElementById('taskDetailTitleHeader').textContent = data.task_name;
-    document.getElementById('taskDetailSubHeader').textContent = `绑定策略: ${data.strategy_name} (${data.strategy_code}) | 任务 ID: ${data.task_id}`;
+    document.getElementById('taskDetailSubHeader').textContent = `绑定策略: ${data.strategy_name} (${data.strategy_code}) | 初始本金: ¥ ${(data.initial_capital || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} | 可用现金: ¥ ${(data.cash || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} | 任务 ID: ${data.task_id}`;
 
     // Stats
     document.getElementById('taskPortTotalEquity').textContent = '¥ ' + (data.current_equity || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1931,6 +1933,9 @@ function renderPortfolioTaskDetail(data) {
 
     const elTopMv = document.getElementById('topTotalMarketValue');
     if (elTopMv) elTopMv.textContent = '¥ ' + totalMarketVal.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const elTopCash = document.getElementById('topAvailableCash');
+    if (elTopCash) elTopCash.textContent = '¥ ' + (data.cash || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     const elTopPnl = document.getElementById('topTotalFloatingPnl');
     if (elTopPnl) {
