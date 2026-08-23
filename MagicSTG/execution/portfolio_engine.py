@@ -67,11 +67,15 @@ def init_portfolio_db():
                 )
             """)
 
-            # Add start_date column to portfolio_tasks if missing
+            # Add start_date, holding_pnl, holding_pnl_pct columns to portfolio_tasks if missing
             cursor.execute("DESCRIBE portfolio_tasks")
             pt_cols = [r[0] for r in cursor.fetchall()]
             if 'start_date' not in pt_cols:
                 cursor.execute("ALTER TABLE portfolio_tasks ADD COLUMN start_date VARCHAR(20) DEFAULT NULL AFTER status")
+            if 'holding_pnl' not in pt_cols:
+                cursor.execute("ALTER TABLE portfolio_tasks ADD COLUMN holding_pnl DECIMAL(20, 4) NOT NULL DEFAULT 0.0 AFTER market_value")
+            if 'holding_pnl_pct' not in pt_cols:
+                cursor.execute("ALTER TABLE portfolio_tasks ADD COLUMN holding_pnl_pct DECIMAL(12, 6) NOT NULL DEFAULT 0.0 AFTER holding_pnl")
 
             # 2. Check and add columns to positions table
             cursor.execute("DESCRIBE positions")
@@ -320,8 +324,23 @@ class PortfolioEngine:
                     SELECT t.id, t.task_id, t.task_name, t.strategy_code, COALESCE(s.name, t.strategy_code) AS strategy_name,
                            t.initial_capital, t.current_equity, t.cash, t.market_value, t.cum_pnl, t.cum_return,
                            t.annual_return, t.sharpe_ratio, t.max_drawdown, t.win_rate, t.holding_count, t.status,
-                           t.portfolio_config, t.created_at, t.updated_at, t.start_date
+                           t.portfolio_config, t.created_at, t.updated_at, t.start_date,
+                           COALESCE(pos_agg.holding_pnl, t.holding_pnl, 0.0) AS holding_pnl,
+                           COALESCE(pos_agg.holding_pnl_pct, t.holding_pnl_pct, 0.0) AS holding_pnl_pct,
+                           COALESCE(pos_agg.holding_mv, t.market_value, 0.0) AS live_market_value,
+                           COALESCE(pos_agg.holding_cnt, t.holding_count, 0) AS live_holding_count
                     FROM portfolio_tasks t
+                    LEFT JOIN (
+                        SELECT task_id,
+                               SUM(market_value) AS holding_mv,
+                               SUM(cost_total) AS holding_cost,
+                               SUM(pnl) AS holding_pnl,
+                               CASE WHEN SUM(cost_total) > 0 THEN (SUM(pnl) / SUM(cost_total)) * 100.0 ELSE 0.0 END AS holding_pnl_pct,
+                               COUNT(*) AS holding_cnt
+                        FROM positions
+                        WHERE status = 'HOLDING'
+                        GROUP BY task_id
+                    ) pos_agg ON t.task_id = pos_agg.task_id
                     LEFT JOIN custom_strategies s ON (t.strategy_code = s.strategy_id OR t.strategy_code = CAST(s.id AS CHAR))
                     WHERE t.status != 'DELETED'
                     ORDER BY t.id DESC
@@ -348,19 +367,21 @@ class PortfolioEngine:
                     'initial_capital': float(r[5]) if r[5] is not None else 0.0,
                     'current_equity': float(r[6]) if r[6] is not None else 0.0,
                     'cash': float(r[7]) if r[7] is not None else 0.0,
-                    'market_value': float(r[8]) if r[8] is not None else 0.0,
+                    'market_value': float(r[23]) if r[23] is not None else (float(r[8]) if r[8] is not None else 0.0),
                     'cum_pnl': float(r[9]) if r[9] is not None else 0.0,
                     'cum_return': float(r[10]) if r[10] is not None else 0.0,
                     'annual_return': float(r[11]) if r[11] is not None else 0.0,
                     'sharpe_ratio': float(r[12]) if r[12] is not None else 0.0,
                     'max_drawdown': float(r[13]) if r[13] is not None else 0.0,
                     'win_rate': float(r[14]) if r[14] is not None else None,
-                    'holding_count': int(r[15]) if r[15] is not None else 0,
+                    'holding_count': int(r[24]) if r[24] is not None else (int(r[15]) if r[15] is not None else 0),
                     'status': r[16],
                     'portfolio_config': p_cfg,
                     'created_at': r[18].strftime('%Y-%m-%d %H:%M') if hasattr(r[18], 'strftime') else str(r[18] or ''),
                     'updated_at': r[19].strftime('%Y-%m-%d %H:%M') if hasattr(r[19], 'strftime') else str(r[19] or ''),
-                    'start_date': str(r[20]) if r[20] else None
+                    'start_date': str(r[20]) if r[20] else None,
+                    'holding_pnl': float(r[21]) if r[21] is not None else 0.0,
+                    'holding_pnl_pct': float(r[22]) if r[22] is not None else 0.0
                 })
             return tasks
         finally:
@@ -435,6 +456,16 @@ class PortfolioEngine:
                         'slot_idx': int(r[11]) if r[11] is not None else -1,
                         'extra_data': json.loads(r[12]) if r[12] else {}
                     })
+
+                holding_mv = sum(p['market_value'] for p in active_positions)
+                holding_cost = sum(p['cost_total'] for p in active_positions)
+                holding_pnl = sum(p['pnl'] for p in active_positions)
+                holding_pnl_pct = (holding_pnl / holding_cost * 100.0) if holding_cost > 0 else 0.0
+
+                task_summary['holding_pnl'] = round(holding_pnl, 4)
+                task_summary['holding_pnl_pct'] = round(holding_pnl_pct, 4)
+                task_summary['market_value'] = round(holding_mv, 4)
+                task_summary['holding_count'] = len(active_positions)
 
                 # Closed trades
                 cur.execute("""
@@ -763,6 +794,10 @@ class PortfolioEngine:
             cum_pnl = latest_equity - initial_capital
             holding_count = len(active_positions)
 
+            holding_pnl = sum(p.get('pnl', 0.0) for p in active_positions.values())
+            holding_cost = sum(p.get('cost_total', 0.0) for p in active_positions.values())
+            holding_pnl_pct = (holding_pnl / holding_cost * 100.0) if holding_cost > 0 else 0.0
+
             # 8. Persist to TiDB Cloud
             with conn.cursor() as cur:
                 # Clear and insert positions for task_id
@@ -807,12 +842,12 @@ class PortfolioEngine:
                 # Update portfolio_tasks summary record
                 cur.execute("""
                     UPDATE portfolio_tasks
-                    SET current_equity = %s, cash = %s, market_value = %s, cum_pnl = %s,
+                    SET current_equity = %s, cash = %s, market_value = %s, holding_pnl = %s, holding_pnl_pct = %s, cum_pnl = %s,
                         cum_return = %s, annual_return = %s, sharpe_ratio = %s, max_drawdown = %s, win_rate = %s,
                         holding_count = %s, updated_at = NOW()
                     WHERE task_id = %s
                 """, (
-                    latest_equity, latest_cash, latest_mv, cum_pnl,
+                    latest_equity, latest_cash, latest_mv, holding_pnl, holding_pnl_pct, cum_pnl,
                     metrics['cum_return'], metrics['annual_return'], metrics['sharpe_ratio'],
                     metrics['max_drawdown'], (metrics['win_rate'] if metrics['win_rate'] is not None else 0.0), holding_count, task_id
                 ))

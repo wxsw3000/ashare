@@ -1731,10 +1731,22 @@ function renderPortfolioTaskCards() {
     grid.innerHTML = filtered.map(t => {
         const cumRet = t.cum_return || 0;
         const annRet = t.annual_return || 0;
-        const cumSign = cumRet >= 0 ? '+' : '';
-        const annSign = annRet >= 0 ? '+' : '';
-        const cumClass = cumRet >= 0 ? 'up-val' : 'down-val';
-        const annClass = annRet >= 0 ? 'up-val' : 'down-val';
+        const cumPnl = t.cum_pnl || 0;
+        const holdingPnl = t.holding_pnl || 0;
+        const holdingPnlPct = t.holding_pnl_pct || 0;
+        const marketValue = t.market_value || 0;
+        const holdingCount = t.holding_count || 0;
+
+        const cumRetSign = cumRet > 0 ? '+' : '';
+        const cumPnlSign = cumPnl > 0 ? '+' : (cumPnl < 0 ? '-' : '');
+        const cumClass = cumPnl > 0 ? 'up-val' : (cumPnl < 0 ? 'down-val' : '');
+
+        const annSign = annRet > 0 ? '+' : '';
+        const annClass = annRet > 0 ? 'up-val' : (annRet < 0 ? 'down-val' : '');
+
+        const hPnlSign = holdingPnl > 0 ? '+' : (holdingPnl < 0 ? '-' : '');
+        const hRetSign = holdingPnlPct > 0 ? '+' : '';
+        const hPnlClass = holdingPnl > 0 ? 'up-val' : (holdingPnl < 0 ? 'down-val' : '');
 
         const sharpeVal = (t.sharpe_ratio !== undefined && t.sharpe_ratio !== null) ? t.sharpe_ratio.toFixed(2) : '0.00';
         const maxDdVal = (t.max_drawdown !== undefined && t.max_drawdown !== null) ? t.max_drawdown.toFixed(2) : '0.00';
@@ -1751,37 +1763,79 @@ function renderPortfolioTaskCards() {
                     </div>
 
                     <div style="font-size: 1.1rem; font-weight: 800; color: #f0f3fa; margin: 0.4rem 0;">${t.task_name}</div>
-                    <div style="font-size: 0.78rem; color: #8e95b2; margin-bottom: 0.75rem;">
-                        <i class="fa-regular fa-clock"></i> 创建时间: ${t.created_at || '-'}
+                    <div style="font-size: 0.78rem; color: #8e95b2; margin-bottom: 0.75rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.3rem;">
+                        <span><i class="fa-regular fa-clock"></i> 创建: ${t.created_at || '-'}</span>
+                        <span>本金: <strong style="color: #f0f3fa;">¥ ${t.initial_capital.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
                     </div>
 
-                    <!-- 6 核心量化指标 Grid -->
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; background: rgba(15, 17, 32, 0.6); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.85rem;">
-                        <div>
-                            <div style="font-size: 0.72rem; color: #8e95b2;">累计回报率</div>
-                            <div style="font-size: 1.05rem; font-weight: 800;" class="${cumClass}">${cumSign}${cumRet.toFixed(2)}%</div>
-                        </div>
-                        <div>
-                            <div style="font-size: 0.72rem; color: #8e95b2;">年化收益率</div>
-                            <div style="font-size: 1.05rem; font-weight: 800;" class="${annClass}">${annSign}${annRet.toFixed(2)}%</div>
-                        </div>
-                        <div>
-                            <div style="font-size: 0.72rem; color: #8e95b2;">夏普比率 (Sharpe)</div>
-                            <div style="font-size: 0.95rem; font-weight: 700; color: #f59e0b;">${sharpeVal}</div>
-                        </div>
-                        <div>
-                            <div style="font-size: 0.72rem; color: #8e95b2;">最大回撤 / 胜率</div>
-                            <div style="font-size: 0.85rem; font-weight: 600;">
-                                <span class="down-val">-${maxDdVal}%</span> / <span style="color:#10b981;">${winRateVal}</span>
+                    <!-- 4 大核心资产与持仓盈亏看板 -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; background: rgba(15, 17, 32, 0.75); padding: 0.75rem 0.85rem; border-radius: 8px; border: 1px solid rgba(0, 210, 196, 0.22); margin-bottom: 0.65rem;">
+                        <!-- 1. 当前总盈亏 -->
+                        <div style="border-right: 1px solid rgba(255,255,255,0.06); padding-right: 0.4rem;">
+                            <div style="font-size: 0.72rem; color: #8e95b2; margin-bottom: 0.15rem;">
+                                <i class="fa-solid fa-coins" style="color: #f59e0b;"></i> 当前总盈亏
+                            </div>
+                            <div style="font-size: 1.02rem; font-weight: 800;" class="${cumClass}">
+                                ${cumPnlSign}¥ ${Math.abs(cumPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                            </div>
+                            <div style="font-size: 0.75rem;" class="${cumClass}">
+                                ${cumRetSign}${cumRet.toFixed(2)}% (累计)
                             </div>
                         </div>
+
+                        <!-- 2. 当前持仓盈亏 -->
+                        <div style="padding-left: 0.4rem;">
+                            <div style="font-size: 0.72rem; color: #8e95b2; margin-bottom: 0.15rem;">
+                                <i class="fa-solid fa-chart-line" style="color: #00d2c4;"></i> 当前持仓盈亏
+                            </div>
+                            <div style="font-size: 1.02rem; font-weight: 800;" class="${hPnlClass}">
+                                ${holdingCount > 0 ? `${hPnlSign}¥ ${Math.abs(holdingPnl).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '¥ 0.00'}
+                            </div>
+                            <div style="font-size: 0.75rem;" class="${hPnlClass}">
+                                ${holdingCount > 0 ? `${hRetSign}${holdingPnlPct.toFixed(2)}% (浮动)` : '<span style="color: #64748b;">(空仓)</span>'}
+                            </div>
+                        </div>
+
+                        <!-- 3. 当前持仓金额 -->
+                        <div style="border-right: 1px solid rgba(255,255,255,0.06); padding-right: 0.4rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.45rem;">
+                            <div style="font-size: 0.72rem; color: #8e95b2; margin-bottom: 0.15rem;">
+                                <i class="fa-solid fa-wallet" style="color: #38bdf8;"></i> 当前持仓金额
+                            </div>
+                            <div style="font-size: 0.95rem; font-weight: 700; color: #f0f3fa;">
+                                ¥ ${marketValue.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                            </div>
+                        </div>
+
+                        <!-- 4. 当前持仓股票数 -->
+                        <div style="padding-left: 0.4rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.45rem;">
+                            <div style="font-size: 0.72rem; color: #8e95b2; margin-bottom: 0.15rem;">
+                                <i class="fa-solid fa-cubes-stacked" style="color: #a855f7;"></i> 当前持仓股票数
+                            </div>
+                            <div style="font-size: 0.95rem; font-weight: 700; color: ${holdingCount > 0 ? '#00d2c4' : '#8e95b2'};">
+                                ${holdingCount} <span style="font-size: 0.75rem; font-weight: normal; color: #8e95b2;">只股票</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 核心量化指标与风控表现 -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; background: rgba(15, 17, 32, 0.45); padding: 0.55rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.85rem;">
                         <div>
-                            <div style="font-size: 0.72rem; color: #8e95b2;">当前总资产</div>
+                            <div style="font-size: 0.7rem; color: #8e95b2;">当前总资产</div>
                             <div style="font-size: 0.88rem; font-weight: 700; color: #f0f3fa;">¥ ${t.current_equity.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         </div>
                         <div>
-                            <div style="font-size: 0.72rem; color: #8e95b2;">持仓只数</div>
-                            <div style="font-size: 0.88rem; font-weight: 700; color: #a855f7;">${t.holding_count} 只</div>
+                            <div style="font-size: 0.7rem; color: #8e95b2;">年化收益率</div>
+                            <div style="font-size: 0.88rem; font-weight: 700;" class="${annClass}">${annSign}${annRet.toFixed(2)}%</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.7rem; color: #8e95b2;">夏普比率 (Sharpe)</div>
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #f59e0b;">${sharpeVal}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.7rem; color: #8e95b2;">最大回撤 / 胜率</div>
+                            <div style="font-size: 0.82rem; font-weight: 600;">
+                                <span class="down-val">-${maxDdVal}%</span> / <span style="color:#10b981;">${winRateVal}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
