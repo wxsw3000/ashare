@@ -874,7 +874,7 @@ class PortfolioEngine:
             if conn:
                 conn.close()
 
-    def sync_portfolio_history() -> dict:
+    def sync_portfolio_history(self) -> dict:
         """
         Legacy fallback method for single strategy sync. Finds or creates a task for self.strategy_id and syncs it.
         """
@@ -886,10 +886,11 @@ class PortfolioEngine:
             if row:
                 return self.sync_task(row[0])
             else:
+                init_cap = float(self.config.get('initial_capital', 100000.0)) if isinstance(self.config, dict) else 100000.0
                 task_detail = self.create_task(
                     task_name=f"{self.strategy_id} 策略实盘任务",
                     strategy_code=self.strategy_id,
-                    initial_capital=self.initial_capital
+                    initial_capital=init_cap
                 )
                 return {'status': 'success', 'task_id': task_detail.get('task_id')}
         finally:
