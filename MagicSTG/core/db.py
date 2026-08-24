@@ -70,31 +70,29 @@ def ensure_connection_alive(conn: pymysql.Connection) -> pymysql.Connection:
         return get_connection()
 
 
-def safe_read_sql_with_retry(query: str, conn: Optional[pymysql.Connection] = None, params: Optional[Any] = None, max_retries: int = 3) -> Tuple[pd.DataFrame, pymysql.Connection]:
+def safe_read_sql_with_retry(query: str, conn, params=None, max_retries: int = 5) -> Tuple[pd.DataFrame, Any]:
     """
     Executes pd.read_sql safely with automatic reconnect and exponential backoff retry.
+    Guarantees that no data is silently lost due to transient network glitches.
     Returns (df, updated_connection).
     """
+    last_err = None
     for attempt in range(1, max_retries + 1):
         try:
             conn = ensure_connection_alive(conn)
             batch_df = pd.read_sql(query, conn, params=params)
             return batch_df, conn
         except (pymysql.err.OperationalError, pymysql.err.InterfaceError, Exception) as e:
-            print(f"  [DB Read ⚠️] SQL query attempt ({attempt}/{max_retries}) failed: {e}. Reconnecting...", flush=True)
-            time.sleep(0.5 * attempt)
+            last_err = e
+            wait_sec = min(1.0 * (2 ** (attempt - 1)), 10.0)
+            print(f"  [DB Read ⚠️] SQL query attempt ({attempt}/{max_retries}) failed: {e}. Retrying in {wait_sec:.1f}s...", flush=True)
+            time.sleep(wait_sec)
             try:
                 conn = get_connection_with_retry()
             except Exception:
                 conn = None
 
-    try:
-        conn = get_connection_with_retry()
-        batch_df = pd.read_sql(query, conn, params=params)
-        return batch_df, conn
-    except Exception as e:
-        print(f"  [DB Read ❌] Final SQL query attempt failed: {e}", flush=True)
-        return pd.DataFrame(), conn
+    raise RuntimeError(f"Database read query failed after {max_retries} attempts. Aborting to prevent silent stock loss: {last_err}")
 
 
 def load_all_stock_codes_db(limit_to_csi300: bool = False) -> List[str]:
