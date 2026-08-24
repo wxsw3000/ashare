@@ -852,6 +852,7 @@ function getPortfolioConfigFromForm() {
     const portType = document.getElementById('stg_portfolio_type') ? document.getElementById('stg_portfolio_type').value : 'equal_slot';
     const initCapital = document.getElementById('stg_initial_capital') ? parseFloat(document.getElementById('stg_initial_capital').value || 100000.0) : 100000.0;
     const maxHoldings = document.getElementById('stg_max_holdings') ? parseInt(document.getElementById('stg_max_holdings').value || 5) : 5;
+    const execTiming = document.getElementById('stg_execution_timing') ? document.getElementById('stg_execution_timing').value : 'T+1_OPEN';
     let stopLoss = -8.0;
     const slEl = document.getElementById('stg_stop_loss_pct');
     if (slEl) {
