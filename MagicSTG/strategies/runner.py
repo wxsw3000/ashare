@@ -122,7 +122,13 @@ def run_dynamic_factor_recommendation(target_date: str, strategy_id: str = 'dyna
             gc.collect()
 
         # 针对全局批次筛选出的符合条件候选标的，按主因子进行排序并截取 Top N 推荐
-        all_buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=strategy.reverse)
+        all_buy_candidates.sort(
+            key=lambda x: (
+                x[2] if not pd.isna(x[2]) else (-9999.0 if strategy.reverse else 999999.0),
+                str(x[0])
+            ),
+            reverse=strategy.reverse
+        )
         top_n = config.get('top_n', 10) if config else 10
         if top_n and len(all_buy_candidates) > top_n:
             all_buy_candidates = all_buy_candidates[:top_n]

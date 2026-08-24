@@ -88,24 +88,40 @@ class DynamicFactorStrategy(BaseStrategy):
         self.ranking_config = self.config.get('ranking', {})
         sort_by = self.config.get('sort_by')
         if sort_by:
-            if sort_by == 'roe_desc':
+            sort_by_lower = str(sort_by).strip().lower()
+            if sort_by_lower in ('roe', 'roe_desc'):
                 self.primary_factor = 'roe'
                 self.reverse = True
-            elif sort_by == 'pe_asc':
+            elif sort_by_lower == 'roe_asc':
+                self.primary_factor = 'roe'
+                self.reverse = False
+            elif sort_by_lower in ('pe', 'pe_asc'):
                 self.primary_factor = 'pe'
                 self.reverse = False
-            elif sort_by == 'pb_asc':
+            elif sort_by_lower == 'pe_desc':
+                self.primary_factor = 'pe'
+                self.reverse = True
+            elif sort_by_lower in ('pb', 'pb_asc'):
                 self.primary_factor = 'pb'
                 self.reverse = False
-            elif sort_by == 'price_asc':
+            elif sort_by_lower == 'pb_desc':
+                self.primary_factor = 'pb'
+                self.reverse = True
+            elif sort_by_lower in ('price', 'price_asc'):
                 self.primary_factor = 'price'
                 self.reverse = False
-            elif sort_by == 'growth_desc':
+            elif sort_by_lower == 'price_desc':
+                self.primary_factor = 'price'
+                self.reverse = True
+            elif sort_by_lower in ('growth', 'growth_desc'):
                 self.primary_factor = 'growth'
                 self.reverse = True
-            else:
-                self.primary_factor = 'price'
+            elif sort_by_lower == 'growth_asc':
+                self.primary_factor = 'growth'
                 self.reverse = False
+            else:
+                self.primary_factor = self.ranking_config.get('primary_factor', 'price')
+                self.reverse = self.ranking_config.get('reverse', False)
         else:
             self.primary_factor = self.ranking_config.get('primary_factor', 'price')
             self.reverse = self.ranking_config.get('reverse', False)
@@ -405,7 +421,13 @@ class DynamicFactorStrategy(BaseStrategy):
                 if row.get('buy_signal', False):
                     buy_candidates.append((code, price, row.get('rank_val', price)))
 
-            buy_candidates.sort(key=lambda x: x[2] if not pd.isna(x[2]) else -9999.0, reverse=self.reverse)
+            buy_candidates.sort(
+                key=lambda x: (
+                    x[2] if not pd.isna(x[2]) else (-9999.0 if self.reverse else 999999.0),
+                    str(x[0])
+                ),
+                reverse=self.reverse
+            )
             return buy_candidates, sell_signals
         finally:
             self.clear_cache(clear_financial=False)

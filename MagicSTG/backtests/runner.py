@@ -50,11 +50,13 @@ def main(args_list: Optional[list] = None):
     except Exception as db_err:
         print(f"  [*] 读取 TiDB 策略因子配置提示: {db_err}")
 
+    stg_universe = config.get('stock_scope') or args.universe
+
     print("=" * 70)
     print("  [*] MagicSTG CLI 回测引擎启动 (GitHub Actions Node)")
     print(f"  [*] 策略代码: {args.strategy}")
     print(f"  [*] 回测区间: {args.start} ~ {args.end}")
-    print(f"  [*] 股票池:   {args.universe.upper()}")
+    print(f"  [*] 股票池:   {str(stg_universe).upper()}")
     print("=" * 70)
 
     res = run_backtest_engine(
@@ -62,7 +64,7 @@ def main(args_list: Optional[list] = None):
         start_date_str=args.start,
         end_date_str=args.end,
         strategy_name=args.strategy,
-        universe=args.universe,
+        universe=stg_universe,
         save_to_db=args.save_db
     )
 

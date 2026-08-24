@@ -127,7 +127,8 @@ def run_backtest_engine(
 
     else:
         # Stock Strategy Signal Generation
-        limit_to_csi300 = (universe == 'csi300')
+        stg_scope = config.get('stock_scope') or universe
+        limit_to_csi300 = (stg_scope == 'csi300')
         all_stock_codes = load_all_stock_codes_db(limit_to_csi300=limit_to_csi300)
         trading_dates = get_trading_dates_db(start_date_str, end_date_str)
         backtest_dates = [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)[:10] for d in trading_dates]
@@ -201,7 +202,13 @@ def run_backtest_engine(
         for d_s in backtest_dates:
             cands = daily_buy_cands[d_s]
             if cands:
-                cands.sort(key=lambda x: x[2] if len(x) > 2 and not pd.isna(x[2]) else -9999.0, reverse=reverse_sort)
+                cands.sort(
+                    key=lambda x: (
+                        x[2] if len(x) > 2 and not pd.isna(x[2]) else (-9999.0 if reverse_sort else 999999.0),
+                        str(x[0])
+                    ),
+                    reverse=reverse_sort
+                )
                 cands = cands[:top_n]
             buy_list = [{'code': c[0], 'price': c[1], 'reason': '选股因子建仓'} for c in cands]
             sell_list = [{'code': c[0], 'price': c[1], 'reason': '技术指标平仓'} for c in daily_sell_sigs[d_s]]

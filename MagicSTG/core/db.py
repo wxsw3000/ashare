@@ -347,7 +347,7 @@ def load_cb_data_db(start_date=None, end_date=None) -> Dict[str, pd.DataFrame]:
     """
     Load convertible bond indicators and master info from TiDB Cloud database.
     """
-    conn = get_connection()
+    conn = get_connection_with_retry()
     try:
         query = """
         SELECT code, date, cb_price, stock_code, stock_price, convert_price, convert_value, convert_premium_rate, db_low_value

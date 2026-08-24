@@ -183,6 +183,55 @@ class TestCodebaseIntegrity(unittest.TestCase):
         self.assertEqual(len(closed), 1, "Should have 1 closed trade")
         self.assertAlmostEqual(tot_eq4, sum(slot_cash), places=2)
 
+    def test_04_sort_by_factor_direction_and_determinism(self):
+        """Verifies that sort_by handles factor aliases (roe, roe_desc, pe, pb, price, growth) and sorts deterministically."""
+        from MagicSTG.strategies.dynamic_factor import DynamicFactorStrategy
+
+        # 1. Alias direction mapping
+        cases = [
+            ('roe', 'roe', True),
+            ('roe_desc', 'roe', True),
+            ('roe_asc', 'roe', False),
+            ('pe', 'pe', False),
+            ('pe_asc', 'pe', False),
+            ('pe_desc', 'pe', True),
+            ('pb', 'pb', False),
+            ('pb_asc', 'pb', False),
+            ('pb_desc', 'pb', True),
+            ('price', 'price', False),
+            ('price_asc', 'price', False),
+            ('price_desc', 'price', True),
+            ('growth', 'growth', True),
+            ('growth_desc', 'growth', True),
+            ('growth_asc', 'growth', False),
+        ]
+        for sort_val, expected_factor, expected_rev in cases:
+            stg = DynamicFactorStrategy('test', {'sort_by': sort_val})
+            self.assertEqual(stg.primary_factor, expected_factor, f"sort_by='{sort_val}' should set primary_factor to '{expected_factor}'")
+            self.assertEqual(stg.reverse, expected_rev, f"sort_by='{sort_val}' should set reverse to {expected_rev}")
+
+        # 2. Secondary tie-breaking determinism test
+        stg_roe = DynamicFactorStrategy('test_det', {'sort_by': 'roe'})
+        # Create identical ROE score items in arbitrary order
+        candidates = [
+            ('sz.000002', 10.0, 15.0),
+            ('sh.600000', 8.0, 15.0),
+            ('sz.000001', 12.0, 15.0),
+            ('sh.600036', 30.0, 20.0), # Higher ROE -> should be first
+        ]
+        candidates.sort(
+            key=lambda x: (
+                x[2] if not pd.isna(x[2]) else (-9999.0 if stg_roe.reverse else 999999.0),
+                str(x[0])
+            ),
+            reverse=stg_roe.reverse
+        )
+        # Expected: 20.0 first ('sh.600036'), then tied 15.0 sorted deterministically
+        self.assertEqual(candidates[0][0], 'sh.600036')
+        tied_codes = [c[0] for c in candidates[1:]]
+        # With reverse=True, strings are sorted descending ('sz.000002', 'sz.000001', 'sh.600000')
+        self.assertEqual(tied_codes, ['sz.000002', 'sz.000001', 'sh.600000'])
+
 
 if __name__ == '__main__':
     unittest.main()
