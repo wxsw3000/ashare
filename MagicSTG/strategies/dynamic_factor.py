@@ -128,6 +128,7 @@ class DynamicFactorStrategy(BaseStrategy):
 
         self._indicator_cache = {}
         self.financial_data = None
+        self._financial_data_cached = None
         self.index_data = None
 
     def load_financial_data(self, target_codes: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -138,12 +139,12 @@ class DynamicFactorStrategy(BaseStrategy):
             self._financial_data_cached = {}
             return {}
 
-        if hasattr(self, '_financial_data_cached') and self._financial_data_cached:
+        if self._financial_data_cached:
             if not target_codes or all(c in self._financial_data_cached for c in target_codes):
                 return self._financial_data_cached
 
-        from MagicSTG.core.db import safe_read_sql_with_retry, load_all_stock_codes_db
-        conn = get_connection()
+        from MagicSTG.core.db import safe_read_sql_with_retry, load_all_stock_codes_db, get_connection_with_retry
+        conn = get_connection_with_retry()
         try:
             print("  [DynamicStrategy] Loading merged quarterly financial reports in batches...", flush=True)
             codes_to_load = target_codes if target_codes else load_all_stock_codes_db(limit_to_csi300=False)
@@ -172,6 +173,7 @@ class DynamicFactorStrategy(BaseStrategy):
 
             if not all_dfs:
                 self.financial_data = {}
+                self._financial_data_cached = {}
                 return {}
 
             merged = pd.concat(all_dfs, ignore_index=True)
@@ -183,7 +185,7 @@ class DynamicFactorStrategy(BaseStrategy):
                 if col in merged.columns:
                     merged[col] = pd.to_numeric(merged[col], errors='coerce').astype(np.float32)
 
-            financial_dict = getattr(self, '_financial_data_cached', {}) or {}
+            financial_dict = {}
             for code, group in merged.groupby('code'):
                 group = group.sort_values('pub_date')
                 pub_dates = group['pub_date'].values
@@ -421,13 +423,10 @@ class DynamicFactorStrategy(BaseStrategy):
                 if row.get('buy_signal', False):
                     buy_candidates.append((code, price, row.get('rank_val', price)))
 
-            buy_candidates.sort(
-                key=lambda x: (
-                    x[2] if not pd.isna(x[2]) else (-9999.0 if self.reverse else 999999.0),
-                    str(x[0])
-                ),
-                reverse=self.reverse
-            )
+            if self.reverse:
+                buy_candidates.sort(key=lambda x: (-x[2] if not pd.isna(x[2]) else 999999.0, str(x[0])))
+            else:
+                buy_candidates.sort(key=lambda x: (x[2] if not pd.isna(x[2]) else 999999.0, str(x[0])))
             return buy_candidates, sell_signals
         finally:
             self.clear_cache(clear_financial=False)

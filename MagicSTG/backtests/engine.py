@@ -202,13 +202,12 @@ def run_backtest_engine(
         for d_s in backtest_dates:
             cands = daily_buy_cands[d_s]
             if cands:
-                cands.sort(
-                    key=lambda x: (
-                        x[2] if len(x) > 2 and not pd.isna(x[2]) else (-9999.0 if reverse_sort else 999999.0),
-                        str(x[0])
-                    ),
-                    reverse=reverse_sort
-                )
+                if reverse_sort:
+                    # Primary factor highest-first (descending), secondary stock code A-to-Z (ascending)
+                    cands.sort(key=lambda x: (-x[2] if len(x) > 2 and not pd.isna(x[2]) else 999999.0, str(x[0])))
+                else:
+                    # Primary factor lowest-first (ascending), secondary stock code A-to-Z (ascending)
+                    cands.sort(key=lambda x: (x[2] if len(x) > 2 and not pd.isna(x[2]) else 999999.0, str(x[0])))
                 cands = cands[:top_n]
             buy_list = [{'code': c[0], 'price': c[1], 'reason': '选股因子建仓'} for c in cands]
             sell_list = [{'code': c[0], 'price': c[1], 'reason': '技术指标平仓'} for c in daily_sell_sigs[d_s]]
