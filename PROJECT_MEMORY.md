@@ -725,3 +725,24 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   10. **Automated Comprehensive Regression & End-to-End Test Suites (`tests/test_codebase_integrity.py`, `tests/test_end_to_end_all_strategies.py`) (`a8882cc`)**:
      - Tested parameter fidelity, cross-stock price isolation, strict ledger conservation, full multi-strategy execution, and database persistence round-trips with automatic teardown cleanup (16/16 tests pass 100% OK).
 
+
+---
+
+## 43. Session Summary & Memory (2026-08-24) - Deterministic Backtest Execution, Factor Sorting & UI Save Fix
+
+* **Root Causes Diagnosed for Backtest Discrepancies (stg_1787563369 vs stg_1787406807)**:
+  1. **Stock Scope Bypassed**: Backtest engine defaulted to universe = 'all' (5,215 stocks) instead of reading strategy JSON config.get('stock_scope').
+  2. **Factor Sort Alias Mismatch**: DynamicFactorStrategy.__init__ checked for 'roe_desc', falling back to 'price' ascending order when 'roe' was passed.
+  3. **Tie-Breaker Inconsistency**: Penny stocks with identical prices lacked a deterministic secondary sort key, causing boundary fluctuations based on DB chunk arrival order.
+
+* **Fixes Implemented**:
+  1. **Auto-Binding stock_scope**: Updated MagicSTG/backtests/engine.py and MagicSTG/backtests/runner.py to auto-resolve config.get('stock_scope') or universe.
+  2. **Deterministic Tie-Breaking**: Enforced (factor_val, str(code)) secondary sorting in DynamicFactorStrategy, engine.py, and 
+unner.py.
+  3. **Factor Sorting Aliases**: Expanded parser to handle 
+oe, 
+oe_desc, 
+oe_asc, pe, pe_asc, pe_desc, pb, price, growth.
+  4. **Database Retry**: Updated load_cb_data_db in MagicSTG/core/db.py to use get_connection_with_retry().
+  5. **UI Strategy Save Fix**: Added missing execTiming declaration in getPortfolioConfigFromForm in MagicSTG/web/static/js/app.js to resolve modal save button click issue.
+  6. **Unit Test Suite**: Added 	est_04_sort_by_factor_direction_and_determinism to 	ests/test_codebase_integrity.py. All unit and end-to-end tests pass 100%.
