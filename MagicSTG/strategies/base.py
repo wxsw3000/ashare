@@ -40,6 +40,5 @@ class BaseStrategy(ABC):
 
     def clear_cache(self):
         """Clears temporary indicator and memory caches."""
-        if hasattr(self, '_indicator_cache') and self._indicator_cache:
-            self._indicator_cache.clear()
+        pass
 

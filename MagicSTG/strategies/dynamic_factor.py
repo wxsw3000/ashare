@@ -126,7 +126,6 @@ class DynamicFactorStrategy(BaseStrategy):
             self.primary_factor = self.ranking_config.get('primary_factor', 'price')
             self.reverse = self.ranking_config.get('reverse', False)
 
-        self._indicator_cache = {}
         self.financial_data = None
         self._financial_data_cached = None
         self.index_data = None
@@ -165,7 +164,7 @@ class DynamicFactorStrategy(BaseStrategy):
                 LEFT JOIN stock_balance_quarterly b ON p.code = b.code AND p.stat_date = b.stat_date
                 LEFT JOIN stock_cash_flow_quarterly c ON p.code = c.code AND p.stat_date = c.stat_date
                 WHERE p.code IN %s
-                ORDER BY p.code, p.pub_date ASC
+                ORDER BY p.code ASC, p.pub_date ASC, p.stat_date ASC
                 """
                 merged_batch, conn = safe_read_sql_with_retry(query, conn, params=(db_codes,))
                 if not merged_batch.empty:
@@ -179,15 +178,18 @@ class DynamicFactorStrategy(BaseStrategy):
             merged = pd.concat(all_dfs, ignore_index=True)
 
             merged['pub_date'] = pd.to_datetime(merged['pub_date'])
+            merged['stat_date'] = pd.to_datetime(merged['stat_date'])
             merged['code'] = merged['code'].str.replace('_', '.', regex=False)
 
             for col in ['roe_avg', 'YOYNI', 'liabilityToAsset', 'CFOToNP']:
                 if col in merged.columns:
                     merged[col] = pd.to_numeric(merged[col], errors='coerce').astype(np.float32)
 
+            merged.sort_values(['code', 'pub_date', 'stat_date'], ascending=[True, True, True], inplace=True)
+            merged.drop_duplicates(subset=['code', 'pub_date', 'stat_date'], keep='last', inplace=True)
+
             financial_dict = {}
-            for code, group in merged.groupby('code'):
-                group = group.sort_values('pub_date')
+            for code, group in merged.groupby('code', sort=False):
                 pub_dates = group['pub_date'].values
                 records = group.to_dict('records')
                 financial_dict[code] = (pub_dates, records)
@@ -240,10 +242,6 @@ class DynamicFactorStrategy(BaseStrategy):
         """Computes technical indicators and pre-aligns financial reports."""
         if 'buy_signal' in df.columns:
             return df
-
-        df_id = id(df)
-        if df_id in self._indicator_cache:
-            return self._indicator_cache[df_id]
 
         if self.financial_data is None:
             self.financial_data = self.load_financial_data(target_codes=[code] if code else None)
@@ -379,7 +377,6 @@ class DynamicFactorStrategy(BaseStrategy):
         else:
             df['rank_val'] = df['close']
 
-        self._indicator_cache[df_id] = df
         return df
 
     def generate_signals(self, date: pd.Timestamp, data: Dict[str, pd.DataFrame], exclude_codes: List[str] = None) -> Tuple[List[Tuple], List[Tuple]]:
@@ -433,8 +430,6 @@ class DynamicFactorStrategy(BaseStrategy):
 
     def clear_cache(self, clear_financial: bool = True):
         """Clears in-memory indicator and financial caches to free RAM."""
-        if hasattr(self, '_indicator_cache') and self._indicator_cache:
-            self._indicator_cache.clear()
         if clear_financial:
             self.financial_data = None
             if hasattr(self, '_financial_data_cached'):

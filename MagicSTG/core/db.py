@@ -166,7 +166,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 if max_date_str is not None:
                     query += " AND date <= %s"
                     params.append(max_date_str)
-                query += " ORDER BY date ASC"
+                query += " ORDER BY code ASC, date ASC"
 
                 batch_df, conn = safe_read_sql_with_retry(query, conn, params=params)
                 if not batch_df.empty:
@@ -193,7 +193,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 if max_date_str is not None:
                     query += " AND date <= %s"
                     params.append(max_date_str)
-                query += " ORDER BY date ASC"
+                query += " ORDER BY code ASC, date ASC"
 
                 batch_df, conn = safe_read_sql_with_retry(query, conn, params=params)
                 if not batch_df.empty:
@@ -218,7 +218,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
                 if max_date_str is not None:
                     query += " AND date <= %s"
                     params.append(max_date_str)
-                query += " ORDER BY date ASC"
+                query += " ORDER BY code ASC, date ASC"
 
                 batch_df, conn = safe_read_sql_with_retry(query, conn, params=params)
                 if not batch_df.empty:
@@ -244,6 +244,7 @@ def load_all_data_db(start_date=None, end_date=None, limit_days=250, limit_to_cs
             df['volume'] = pd.to_numeric(df['volume'], errors='coerce').astype(np.float32)
 
         df.sort_values(['code', 'date'], inplace=True)
+        df.drop_duplicates(subset=['code', 'date'], keep='last', inplace=True)
 
         codes = df['code'].values
         dates = df['date'].values

@@ -210,7 +210,8 @@ def run_backtest_engine(
                     cands.sort(key=lambda x: (x[2] if len(x) > 2 and not pd.isna(x[2]) else 999999.0, str(x[0])))
                 cands = cands[:top_n]
             buy_list = [{'code': c[0], 'price': c[1], 'reason': '选股因子建仓'} for c in cands]
-            sell_list = [{'code': c[0], 'price': c[1], 'reason': '技术指标平仓'} for c in daily_sell_sigs[d_s]]
+            sorted_sells = sorted(daily_sell_sigs[d_s], key=lambda x: str(x[0]))
+            sell_list = [{'code': c[0], 'price': c[1], 'reason': '技术指标平仓'} for c in sorted_sells]
             day_recs[d_s] = {'BUY': buy_list, 'SELL': sell_list}
 
     # =========================================================================
@@ -248,7 +249,8 @@ def run_backtest_engine(
 
         # Log newly opened positions (BUY trades)
         for slot_idx, pos in active_positions.items():
-            if pos.get('buy_date') == d_str and slot_idx not in prev_active_slots:
+            if pos.get('buy_date') == d_str and not pos.get('buy_logged', False):
+                pos['buy_logged'] = True
                 fee = float(pos.get('fee', 0.0))
                 total_fees += fee
                 trade_log.append({

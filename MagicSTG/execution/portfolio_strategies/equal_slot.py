@@ -173,6 +173,10 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
                 pos['pnl_pct'] = round((pos['pnl'] / pos['cost_total']) * 100.0, 4) if pos['cost_total'] > 0 else 0.0
                 pos['holding_days'] = pos.get('holding_days', 0) + 1
 
+            # Under A-share T+1 trading rules, stocks opened today cannot be sold on the same day (T+0 forbidden)
+            if pos.get('buy_date') == d_str and not is_convertible_bond(code):
+                continue
+
             # Check Hard Stop Loss
             if self.stop_loss_pct is not None and pos['pnl_pct'] <= self.stop_loss_pct:
                 sell_price = round(curr_price * (1.0 - self.slippage), 4) if curr_price > 0 else pos['buy_price']
@@ -238,8 +242,10 @@ class EqualSlotPortfolioStrategy(BasePortfolioStrategy):
 
         if self.execution_timing == 'T+1_OPEN':
             # Queue signals to pending_orders for T+1 morning execution
+            held_codes = {p['stock_code'] for p in active_positions.values()}
             for sig in sell_signals:
-                new_pending_orders.append({'action': 'SELL', 'code': sig['code'], 'reason': sig.get('reason', '策略卖出信号')})
+                if sig['code'] in held_codes:
+                    new_pending_orders.append({'action': 'SELL', 'code': sig['code'], 'reason': sig.get('reason', '策略卖出信号')})
             for sig in buy_signals:
                 new_pending_orders.append({'action': 'BUY', 'code': sig['code'], 'reason': sig.get('reason', '策略买入信号')})
 
