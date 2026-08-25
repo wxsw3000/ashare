@@ -737,12 +737,25 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 * **Fixes Implemented**:
   1. **Auto-Binding stock_scope**: Updated MagicSTG/backtests/engine.py and MagicSTG/backtests/runner.py to auto-resolve config.get('stock_scope') or universe.
-  2. **Deterministic Tie-Breaking**: Enforced (factor_val, str(code)) secondary sorting in DynamicFactorStrategy, engine.py, and 
-unner.py.
-  3. **Factor Sorting Aliases**: Expanded parser to handle 
-oe, 
-oe_desc, 
-oe_asc, pe, pe_asc, pe_desc, pb, price, growth.
+  2. **Deterministic Tie-Breaking**: Enforced (factor_val, str(code)) secondary sorting in DynamicFactorStrategy, engine.py, and runner.py.
+  3. **Factor Sorting Aliases**: Expanded parser to handle roe, roe_desc, roe_asc, pe, pe_asc, pe_desc, pb, price, growth.
   4. **Database Retry**: Updated load_cb_data_db in MagicSTG/core/db.py to use get_connection_with_retry().
   5. **UI Strategy Save Fix**: Added missing execTiming declaration in getPortfolioConfigFromForm in MagicSTG/web/static/js/app.js to resolve modal save button click issue.
-  6. **Unit Test Suite**: Added 	est_04_sort_by_factor_direction_and_determinism to 	ests/test_codebase_integrity.py. All unit and end-to-end tests pass 100%.
+  6. **Unit Test Suite**: Added test_04_sort_by_factor_direction_and_determinism to tests/test_codebase_integrity.py. All unit and end-to-end tests pass 100%.
+
+---
+
+## 44. Session Summary & Memory (2026-08-25) - Clean-Room Testing & Pure Data Source Specification
+
+* **Verification of Determinism**:
+  - Confirmed user verified repeated backtests produced 100% identical results across runs with no randomness or jitter.
+
+* **Clean-Room Testing & Documentation Specifications**:
+  1. **AI Developer & Standalone Backtest Handbook ([`DATA_SOURCE_AND_BACKTEST_HANDBOOK_FOR_AI.md`](file:///E:/ashare/DATA_SOURCE_AND_BACKTEST_HANDBOOK_FOR_AI.md))**:
+     - Standardized database connection (TiDB Cloud SSL, 5-retry exponential backoff), full table schemas (`stock_kline_day`, quarterly financials, `cb_basic`, `cb_kline_day`, `cb_daily_indicator`, `index_kline_day`), and future-data leak prevention rules via `pub_date <= trade_date` binary search.
+  2. **Pure Clean-Room Data Specification ([`PURE_DATA_SOURCE_SPEC.md`](file:///E:/ashare/PURE_DATA_SOURCE_SPEC.md))**:
+     - Stripped all MagicSTG internal architecture/module names for 100% clean-room testing by external AI models in isolated directories (`.env` + `isrgrootx1.pem` + standalone script).
+     - Defined A-Share market constraints (T+1 for stocks, commission/stamp tax, limit-up/down rules, deterministic tie-breaking).
+  3. **Visualization Architecture Clarification**:
+     - Clarified architectural distinction between MagicSTG's lightweight browser-side Chart.js rendering (zero backend image dependencies) vs standalone script matplotlib desktop plotting.
+
