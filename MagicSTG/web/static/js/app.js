@@ -2513,11 +2513,15 @@ async function handleLogout() {
 // 修改密码 Modal 功能
 function openChangePasswordModal() {
     document.getElementById('changePasswordForm').reset();
-    document.getElementById('changePasswordModal').style.display = 'flex';
+    const modal = document.getElementById('changePasswordModal');
+    modal.style.display = 'flex';
+    modal.classList.add('active');
 }
 
 function closeChangePasswordModal() {
-    document.getElementById('changePasswordModal').style.display = 'none';
+    const modal = document.getElementById('changePasswordModal');
+    modal.classList.remove('active');
+    modal.style.display = 'none';
 }
 
 async function submitChangePassword(e) {
@@ -2551,13 +2555,18 @@ async function submitChangePassword(e) {
 
 // 管理员控制台 Modal 功能
 function openAdminModal() {
-    document.getElementById('adminModal').style.display = 'flex';
+    const modal = document.getElementById('adminModal');
+    modal.style.display = 'flex';
+    modal.classList.add('active');
     switchAdminTab('invites');
 }
 
 function closeAdminModal() {
-    document.getElementById('adminModal').style.display = 'none';
+    const modal = document.getElementById('adminModal');
+    modal.classList.remove('active');
+    modal.style.display = 'none';
 }
+
 
 function switchAdminTab(tabName) {
     const btnInvites = document.getElementById('adminTabBtnInvites');
