@@ -761,22 +761,27 @@ The codebase has been refactored into a highly modular, plugin-based architectur
 
 ---
 
-## 45. Session Summary & Memory (2026-09-08) - Multi-User Authentication & Security Interceptor System
+## 45. Session Summary & Memory (2026-09-08) - RBAC Enterprise Authentication, Invite Codes, Account Freezing & Multi-Tenant Data Isolation
 
-* **Security & Auth Architecture Implementation**:
-  1. **TiDB Cloud Users Database Table ([`MagicSTG/core/user_manager.py`](file:///E:/ashare/MagicSTG/core/user_manager.py))**:
-     - Created `users` table auto-initialization engine storing `id`, `username` (UNIQUE), `password_hash` (Werkzeug PBKDF2/SHA256 salted hash), and `created_at`.
-  2. **Global Auth Interceptor (`@app.before_request` in [`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
-     - Enforced strict session checking for all endpoints and page routes. Unauthenticated visitors are auto-redirected to `/login`, while unauthenticated `/api/*` calls receive HTTP 401 JSON responses with redirect paths.
-     - Whitelisted static assets (`/static/*`) and auth endpoints (`/login`, `/api/login`, `/api/register`).
-  3. **Auth Endpoints**:
-     - `/login` (Render glassmorphism auth page), `/api/login` (Verify credentials & issue Flask permanent session), `/api/register` (Validate username/password & hash), `/api/logout` (Clear session), `/api/me` (Session ping & identity check).
-  4. **Glassmorphism Auth UI & Dashboard User Badge**:
-     - Built [`MagicSTG/web/templates/login.html`](file:///E:/ashare/MagicSTG/web/templates/login.html) matching MagicSTG dark theme, tab toggle for Login vs Register, and AJAX form handler.
-     - Added user status badge and logout button to [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) header.
-  5. **Frontend Fetch Interceptor ([`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
-     - Added global `window.fetch` wrapper to intercept 401 status responses and auto-redirect to `/login`.
-  6. **Unit Test Verification ([`tests/test_user_auth.py`](file:///E:/ashare/tests/test_user_auth.py))**:
-     - Added tests for `users` table auto-creation, password hashing/verification, duplicate username handling, and authentication round-trips.
+* **Enterprise Security & RBAC Architecture**:
+  1. **Pre-Seeded Super Admin (`magicStarAdmin`)**:
+     - Pre-configured super admin account (`magicStarAdmin` / `Admin@MagicSTG2026`) auto-seeded into TiDB Cloud `users` table on startup.
+     - Protected from account freezing with full administrative privileges.
+  2. **Invite Code Mandatory Registration (`invite_codes` Table in [`MagicSTG/core/user_manager.py`](file:///E:/ashare/MagicSTG/core/user_manager.py))**:
+     - Standard users require an active admin-generated invite code (`STG-XXXXXX`) to register.
+     - Automatically burns codes upon registration (`status = 'USED'`), preventing reuse.
+  3. **Account Freezing & Status Lifecycle**:
+     - Admins can toggle account status (`active` vs `frozen`). Frozen accounts are denied login and existing sessions are immediately invalidated on next API call.
+  4. **Self-Service Password Modification (`POST /api/user/change-password`)**:
+     - Added password change endpoint for authenticated users with Werkzeug PBKDF2/SHA256 salted hash updates.
+  5. **Multi-Tenant Data Ownership & Isolation**:
+     - Added `created_by` columns to `custom_strategies`, `portfolio_tasks`, `backtest_records`, and `recommendations`.
+     - Non-admin users see only their own created strategies and backtest tasks, while super admins have global management access.
+  6. **Admin Console UI & Interactive Modals ([`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) & [`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - Built Admin Console Modal with Tab 1 (Invite Code Generation & Revocation) and Tab 2 (User List & Account Freezing/Activation).
+     - Added `.active` class overlay handling and updated frontend script tag version (`?v=20260908_v3`) for browser cache busting.
+  7. **Unit Test Verification ([`tests/test_user_auth.py`](file:///E:/ashare/tests/test_user_auth.py))**:
+     - Passed 100% of unit tests (`Ran 3 tests in 168s OK`) for admin pre-seeding, invite code redemption, password changing, and account status toggles.
+
 
 
