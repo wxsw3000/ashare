@@ -2472,8 +2472,57 @@ function switchPortfolioSubTab(tabName) {
     }
 }
 
+// 用户与鉴权辅助函数
+async function checkCurrentUserSession() {
+    try {
+        const res = await fetch('/api/me');
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+        const data = await res.json();
+        if (data.logged_in && data.username) {
+            const usernameElem = document.getElementById('currentUsername');
+            if (usernameElem) usernameElem.textContent = data.username;
+        } else {
+            window.location.href = '/login';
+        }
+    } catch (e) {
+        console.error('用户 Session 校验异常:', e);
+    }
+}
+
+async function handleLogout() {
+    if (!confirm('确定要退出登录并返回登录页吗？')) return;
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+    } catch (e) {
+        window.location.href = '/login';
+    }
+}
+
+// 拦截全局 fetch 响应以防 401 未登录
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const response = await originalFetch.apply(this, args);
+    if (response.status === 401) {
+        const cloned = response.clone();
+        try {
+            const data = await cloned.json();
+            if (data.redirect) {
+                window.location.href = data.redirect;
+            }
+        } catch(e) {
+            window.location.href = '/login';
+        }
+    }
+    return response;
+};
+
 // 初始化DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
+    checkCurrentUserSession();
     setInterval(() => {
         const now = new Date();
         const liveElem = document.getElementById('liveTime');
@@ -2482,3 +2531,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadStrategies();
 });
+

@@ -6,11 +6,13 @@ import time
 import pymysql
 import pandas as pd
 import numpy as np
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from datetime import datetime
 from dotenv import load_dotenv
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "magicstg_quant_secret_key_2026_tidb_security")
+
 
 
 def sanitize_json(obj):
@@ -128,11 +130,86 @@ def get_db_connection():
     return pymysql.connect(**conn_params)
 
 
-# ========== 路由 ==========
+# ========== 用户与权限管理 ==========
+from MagicSTG.core.user_manager import init_users_table, register_user, authenticate_user
+
+
+@app.before_request
+def require_login():
+    """全局登录保护拦截器"""
+    allowed_endpoints = {'login_page', 'api_login', 'api_register', 'static'}
+    if request.endpoint in allowed_endpoints or (request.path and request.path.startswith('/static/')):
+        return None
+
+    if 'user_id' not in session:
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Unauthorized', 'message': '未登录或会话已过期，请重新登录', 'redirect': '/login'}), 401
+        return redirect(url_for('login_page'))
+
+
+# ========== 认证路由 ==========
+@app.route('/login')
+def login_page():
+    """登录 / 注册 页面"""
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    """用户登录接口"""
+    data = request.get_json() or {}
+    username = data.get('username')
+    password = data.get('password')
+
+    success, user, msg = authenticate_user(username, password)
+    if success and user:
+        session['user_id'] = user['id']
+        session['username'] = user['username']
+        session.permanent = True
+        return jsonify({'success': True, 'message': msg, 'username': user['username']})
+    else:
+        return jsonify({'success': False, 'message': msg}), 400
+
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    """新账号注册接口"""
+    data = request.get_json() or {}
+    username = data.get('username')
+    password = data.get('password')
+
+    success, msg = register_user(username, password)
+    if success:
+        return jsonify({'success': True, 'message': msg})
+    else:
+        return jsonify({'success': False, 'message': msg}), 400
+
+
+@app.route('/api/logout', methods=['GET', 'POST'])
+def api_logout():
+    """退出登录接口"""
+    session.clear()
+    if request.method == 'POST':
+        return jsonify({'success': True, 'message': '已安全退出登录'})
+    return redirect(url_for('login_page'))
+
+
+@app.route('/api/me', methods=['GET'])
+def api_me():
+    """获取当前登录用户信息"""
+    if 'user_id' in session:
+        return jsonify({'logged_in': True, 'username': session.get('username')})
+    return jsonify({'logged_in': False}), 401
+
+
+# ========== 页面路由 ==========
 @app.route('/')
 def index():
     """首页"""
     return render_template('index.html')
+
 
 
 def validate_and_sanitize_factors_config(category: str, config: dict) -> tuple[bool, str, dict]:

@@ -759,3 +759,24 @@ The codebase has been refactored into a highly modular, plugin-based architectur
   3. **Visualization Architecture Clarification**:
      - Clarified architectural distinction between MagicSTG's lightweight browser-side Chart.js rendering (zero backend image dependencies) vs standalone script matplotlib desktop plotting.
 
+---
+
+## 45. Session Summary & Memory (2026-09-08) - Multi-User Authentication & Security Interceptor System
+
+* **Security & Auth Architecture Implementation**:
+  1. **TiDB Cloud Users Database Table ([`MagicSTG/core/user_manager.py`](file:///E:/ashare/MagicSTG/core/user_manager.py))**:
+     - Created `users` table auto-initialization engine storing `id`, `username` (UNIQUE), `password_hash` (Werkzeug PBKDF2/SHA256 salted hash), and `created_at`.
+  2. **Global Auth Interceptor (`@app.before_request` in [`server.py`](file:///E:/ashare/MagicSTG/web/server.py))**:
+     - Enforced strict session checking for all endpoints and page routes. Unauthenticated visitors are auto-redirected to `/login`, while unauthenticated `/api/*` calls receive HTTP 401 JSON responses with redirect paths.
+     - Whitelisted static assets (`/static/*`) and auth endpoints (`/login`, `/api/login`, `/api/register`).
+  3. **Auth Endpoints**:
+     - `/login` (Render glassmorphism auth page), `/api/login` (Verify credentials & issue Flask permanent session), `/api/register` (Validate username/password & hash), `/api/logout` (Clear session), `/api/me` (Session ping & identity check).
+  4. **Glassmorphism Auth UI & Dashboard User Badge**:
+     - Built [`MagicSTG/web/templates/login.html`](file:///E:/ashare/MagicSTG/web/templates/login.html) matching MagicSTG dark theme, tab toggle for Login vs Register, and AJAX form handler.
+     - Added user status badge and logout button to [`index.html`](file:///E:/ashare/MagicSTG/web/templates/index.html) header.
+  5. **Frontend Fetch Interceptor ([`app.js`](file:///E:/ashare/MagicSTG/web/static/js/app.js))**:
+     - Added global `window.fetch` wrapper to intercept 401 status responses and auto-redirect to `/login`.
+  6. **Unit Test Verification ([`tests/test_user_auth.py`](file:///E:/ashare/tests/test_user_auth.py))**:
+     - Added tests for `users` table auto-creation, password hashing/verification, duplicate username handling, and authentication round-trips.
+
+

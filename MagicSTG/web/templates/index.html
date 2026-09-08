@@ -20,12 +20,22 @@
                 <h1><i class="fa-solid fa-wand-magic-sparkles"></i> MagicSTG 策略系统</h1>
                 <div class="subtitle">A股 / 可转债 量化策略管理、回测与选股推荐</div>
             </div>
-            <div class="header-status">
-                <i class="fa-solid fa-circle online"></i>
-                <span>TiDB Cloud 数据库连通</span>
-                <span style="margin-left: 0.5rem; opacity: 0.5;" id="liveTime"></span>
+            <div class="header-status" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <div>
+                    <i class="fa-solid fa-circle online"></i>
+                    <span>TiDB Cloud 数据库连通</span>
+                    <span style="margin-left: 0.5rem; opacity: 0.5;" id="liveTime"></span>
+                </div>
+                <div id="userInfoBadge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.08); padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.85rem;">
+                    <i class="fa-solid fa-user-circle" style="color: #00d2c4;"></i>
+                    <span id="currentUsername">加载中...</span>
+                    <button onclick="handleLogout()" title="安全退出登录" style="background: none; border: none; color: #ff5252; cursor: pointer; margin-left: 0.4rem; font-size: 0.9rem;">
+                        <i class="fa-solid fa-right-from-bracket"></i> 退出
+                    </button>
+                </div>
             </div>
         </div>
+
 
         <!-- 顶部四大主 Tab 导航 -->
         <div class="main-nav">
