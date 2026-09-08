@@ -29,10 +29,17 @@
                 <div id="userInfoBadge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.08); padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.85rem;">
                     <i class="fa-solid fa-user-circle" style="color: #00d2c4;"></i>
                     <span id="currentUsername">加载中...</span>
-                    <button onclick="handleLogout()" title="安全退出登录" style="background: none; border: none; color: #ff5252; cursor: pointer; margin-left: 0.4rem; font-size: 0.9rem;">
+                    <button id="btnAdminConsole" onclick="openAdminModal()" title="管理控制台" style="display: none; background: rgba(123, 44, 191, 0.3); border: 1px solid rgba(123, 44, 191, 0.6); color: #e0aaff; cursor: pointer; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.78rem; margin-left: 0.2rem;">
+                        <i class="fa-solid fa-user-shield"></i> 管理控制台
+                    </button>
+                    <button onclick="openChangePasswordModal()" title="修改密码" style="background: none; border: none; color: #8e95b2; cursor: pointer; margin-left: 0.3rem; font-size: 0.85rem;">
+                        <i class="fa-solid fa-key"></i> 修改密码
+                    </button>
+                    <button onclick="handleLogout()" title="安全退出登录" style="background: none; border: none; color: #ff5252; cursor: pointer; margin-left: 0.3rem; font-size: 0.85rem;">
                         <i class="fa-solid fa-right-from-bracket"></i> 退出
                     </button>
                 </div>
+
             </div>
         </div>
 
@@ -1033,6 +1040,105 @@
                     <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> 创建持仓实例并建仓</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ==================== 修改密码 Modal ==================== -->
+    <div id="changePasswordModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-key" style="color: #00d2c4;"></i> 安全修改密码</h3>
+                <button class="modal-close" onclick="closeChangePasswordModal()">&times;</button>
+            </div>
+            <form id="changePasswordForm" onsubmit="submitChangePassword(event)">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.85rem; color: #8e95b2;">当前原密码</label>
+                    <input type="password" id="oldPasswordInput" class="form-control" placeholder="请输入原密码" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.85rem; color: #8e95b2;">新密码 (至少6位)</label>
+                    <input type="password" id="newPasswordInput" class="form-control" placeholder="请输入新密码" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label style="font-size: 0.85rem; color: #8e95b2;">确认新密码</label>
+                    <input type="password" id="confirmNewPasswordInput" class="form-control" placeholder="再次输入新密码" required>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeChangePasswordModal()">取消</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> 提交修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== 管理员控制台 Modal ==================== -->
+    <div id="adminModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card" style="max-width: 800px; width: 90%;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-user-shield" style="color: #7b2cbf;"></i> 超级管理员控制台</h3>
+                <button class="modal-close" onclick="closeAdminModal()">&times;</button>
+            </div>
+
+            <!-- 子 Tab 导航 -->
+            <div class="auth-tabs" style="display: flex; gap: 0.5rem; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; margin-bottom: 1.2rem;">
+                <button class="nav-btn active" id="adminTabBtnInvites" onclick="switchAdminTab('invites')" style="flex: 1; padding: 0.5rem;">
+                    <i class="fa-solid fa-ticket"></i> 邀请码管理
+                </button>
+                <button class="nav-btn" id="adminTabBtnUsers" onclick="switchAdminTab('users')" style="flex: 1; padding: 0.5rem;">
+                    <i class="fa-solid fa-users-gear"></i> 用户账号与冻结管控
+                </button>
+            </div>
+
+            <!-- Tab 1: 邀请码管理 -->
+            <div id="adminTabSectionInvites">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <span style="font-size: 0.9rem; color: #8e95b2;">使用邀请码可允许新用户完成注册</span>
+                    <button class="btn btn-primary" onclick="generateNewInviteCode()">
+                        <i class="fa-solid fa-plus"></i> 生成新随机邀请码
+                    </button>
+                </div>
+                <div style="max-height: 360px; overflow-y: auto;">
+                    <table class="stg-table" style="width: 100%; text-align: left;">
+                        <thead>
+                            <tr>
+                                <th>邀请码</th>
+                                <th>状态</th>
+                                <th>生成管理员</th>
+                                <th>使用用户</th>
+                                <th>生成时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inviteCodesTableBody">
+                            <tr><td colspan="6" style="text-align: center; color: #8e95b2;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 2: 用户账号与冻结管控 -->
+            <div id="adminTabSectionUsers" style="display: none;">
+                <div style="margin-bottom: 1rem; font-size: 0.9rem; color: #8e95b2;">
+                    管控系统内的所有注册账号，冻结账号将无法登录系统或访问任何 API。
+                </div>
+                <div style="max-height: 360px; overflow-y: auto;">
+                    <table class="stg-table" style="width: 100%; text-align: left;">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>角色</th>
+                                <th>状态</th>
+                                <th>注册时间</th>
+                                <th>账号管控</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr><td colspan="6" style="text-align: center; color: #8e95b2;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 

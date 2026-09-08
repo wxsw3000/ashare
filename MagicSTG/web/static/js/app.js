@@ -2473,6 +2473,8 @@ function switchPortfolioSubTab(tabName) {
 }
 
 // 用户与鉴权辅助函数
+let currentUserRole = 'user';
+
 async function checkCurrentUserSession() {
     try {
         const res = await fetch('/api/me');
@@ -2484,6 +2486,12 @@ async function checkCurrentUserSession() {
         if (data.logged_in && data.username) {
             const usernameElem = document.getElementById('currentUsername');
             if (usernameElem) usernameElem.textContent = data.username;
+            currentUserRole = data.role || 'user';
+            
+            const btnAdmin = document.getElementById('btnAdminConsole');
+            if (btnAdmin) {
+                btnAdmin.style.display = currentUserRole === 'admin' ? 'inline-flex' : 'none';
+            }
         } else {
             window.location.href = '/login';
         }
@@ -2499,6 +2507,218 @@ async function handleLogout() {
         window.location.href = '/login';
     } catch (e) {
         window.location.href = '/login';
+    }
+}
+
+// 修改密码 Modal 功能
+function openChangePasswordModal() {
+    document.getElementById('changePasswordForm').reset();
+    document.getElementById('changePasswordModal').style.display = 'flex';
+}
+
+function closeChangePasswordModal() {
+    document.getElementById('changePasswordModal').style.display = 'none';
+}
+
+async function submitChangePassword(e) {
+    e.preventDefault();
+    const old_password = document.getElementById('oldPasswordInput').value;
+    const new_password = document.getElementById('newPasswordInput').value;
+    const confirm_password = document.getElementById('confirmNewPasswordInput').value;
+
+    if (new_password !== confirm_password) {
+        alert('两次输入的新密码不一致');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/user/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ old_password, new_password })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            alert('密码修改成功，请牢记您的新密码！');
+            closeChangePasswordModal();
+        } else {
+            alert(data.message || '密码修改失败');
+        }
+    } catch (err) {
+        alert('修改密码请求异常: ' + err.message);
+    }
+}
+
+// 管理员控制台 Modal 功能
+function openAdminModal() {
+    document.getElementById('adminModal').style.display = 'flex';
+    switchAdminTab('invites');
+}
+
+function closeAdminModal() {
+    document.getElementById('adminModal').style.display = 'none';
+}
+
+function switchAdminTab(tabName) {
+    const btnInvites = document.getElementById('adminTabBtnInvites');
+    const btnUsers = document.getElementById('adminTabBtnUsers');
+    const secInvites = document.getElementById('adminTabSectionInvites');
+    const secUsers = document.getElementById('adminTabSectionUsers');
+
+    if (tabName === 'invites') {
+        btnInvites.classList.add('active');
+        btnUsers.classList.remove('active');
+        secInvites.style.display = 'block';
+        secUsers.style.display = 'none';
+        loadAdminInviteCodes();
+    } else {
+        btnUsers.classList.add('active');
+        btnInvites.classList.remove('active');
+        secUsers.style.display = 'block';
+        secInvites.style.display = 'none';
+        loadAdminUsers();
+    }
+}
+
+async function loadAdminInviteCodes() {
+    const tbody = document.getElementById('inviteCodesTableBody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #8e95b2;">加载算法秘钥列表中...</td></tr>';
+    try {
+        const res = await fetch('/api/admin/invite-codes');
+        const data = await res.json();
+        if (res.ok && data.success) {
+            if (!data.invite_codes || data.invite_codes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #8e95b2;">暂无邀请码，请点击右上角生成</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.invite_codes.map(c => {
+                let statusBadge = c.status === 'ACTIVE' 
+                    ? '<span class="badge badge-success" style="background: rgba(0,230,118,0.2); color:#69f0ae; padding:0.2rem 0.5rem; border-radius:10px;">可用 ACTIVE</span>'
+                    : (c.status === 'USED' 
+                        ? '<span class="badge badge-secondary" style="background: rgba(255,255,255,0.1); color:#8e95b2; padding:0.2rem 0.5rem; border-radius:10px;">已使用 USED</span>'
+                        : '<span class="badge badge-danger" style="background: rgba(255,82,82,0.2); color:#ff8a8a; padding:0.2rem 0.5rem; border-radius:10px;">已作废 REVOKED</span>');
+                
+                let copyBtn = c.status === 'ACTIVE' 
+                    ? `<button class="btn btn-sm btn-outline-info" onclick="navigator.clipboard.writeText('${c.code}');alert('邀请码已复制到剪贴板: ${c.code}');" style="padding:0.2rem 0.5rem; font-size:0.75rem; margin-right:0.3rem;"><i class="fa-solid fa-copy"></i> 复制</button>`
+                    : '';
+                let revokeBtn = c.status === 'ACTIVE' 
+                    ? `<button class="btn btn-sm btn-outline-danger" onclick="revokeInviteCode(${c.id})" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:#ff5252; border:1px solid #ff5252; background:none; border-radius:6px; cursor:pointer;"><i class="fa-solid fa-ban"></i> 作废</button>`
+                    : '-';
+
+                return `
+                    <tr>
+                        <td style="font-family: monospace; font-weight: bold; color: #00d2c4;">${c.code}</td>
+                        <td>${statusBadge}</td>
+                        <td>${c.created_by || '-'}</td>
+                        <td>${c.used_by || '-'}</td>
+                        <td>${c.created_at || '-'}</td>
+                        <td>${copyBtn}${revokeBtn}</td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ff5252;">加载失败: ${data.message}</td></tr>`;
+        }
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ff5252;">网络开小差了: ${e.message}</td></tr>`;
+    }
+}
+
+async function generateNewInviteCode() {
+    try {
+        const res = await fetch('/api/admin/invite-codes/generate', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            alert(`生成邀请码成功！\n邀请码: ${data.code}\n已自动更新至列表`);
+            loadAdminInviteCodes();
+        } else {
+            alert(data.message || '生成失败');
+        }
+    } catch (e) {
+        alert('请求异常: ' + e.message);
+    }
+}
+
+async function revokeInviteCode(codeId) {
+    if (!confirm('确定要作废该邀请码吗？')) return;
+    try {
+        const res = await fetch('/api/admin/invite-codes/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code_id: codeId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            loadAdminInviteCodes();
+        } else {
+            alert(data.message || '作废失败');
+        }
+    } catch (e) {
+        alert('请求异常: ' + e.message);
+    }
+}
+
+async function loadAdminUsers() {
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #8e95b2;">加载系统用户列表中...</td></tr>';
+    try {
+        const res = await fetch('/api/admin/users');
+        const data = await res.json();
+        if (res.ok && data.success) {
+            tbody.innerHTML = data.users.map(u => {
+                let roleBadge = u.role === 'admin' 
+                    ? '<span class="badge" style="background: rgba(123,44,191,0.3); color:#e0aaff; padding:0.2rem 0.5rem; border-radius:10px;"><i class="fa-solid fa-user-shield"></i> 超级管理员</span>'
+                    : '<span class="badge" style="background: rgba(255,255,255,0.1); color:#8e95b2; padding:0.2rem 0.5rem; border-radius:10px;">普通用户</span>';
+
+                let statusBadge = u.status === 'active'
+                    ? '<span class="badge" style="background: rgba(0,230,118,0.2); color:#69f0ae; padding:0.2rem 0.5rem; border-radius:10px;"><i class="fa-solid fa-circle-check"></i> 正常 active</span>'
+                    : '<span class="badge" style="background: rgba(255,82,82,0.2); color:#ff8a8a; padding:0.2rem 0.5rem; border-radius:10px;"><i class="fa-solid fa-snowflake"></i> 已冻结 frozen</span>';
+
+                let actionBtn = '';
+                if (u.username === 'magicStarAdmin') {
+                    actionBtn = '<span style="color:#8e95b2; font-size:0.8rem;">超级账号不受限</span>';
+                } else if (u.status === 'active') {
+                    actionBtn = `<button class="btn btn-sm" onclick="toggleUserAccountStatus(${u.id}, 'frozen')" style="background: rgba(255,82,82,0.2); border:1px solid rgba(255,82,82,0.5); color:#ff8a8a; padding:0.2rem 0.6rem; border-radius:6px; font-size:0.75rem; cursor:pointer;"><i class="fa-solid fa-snowflake"></i> 冻结账号</button>`;
+                } else {
+                    actionBtn = `<button class="btn btn-sm" onclick="toggleUserAccountStatus(${u.id}, 'active')" style="background: rgba(0,230,118,0.2); border:1px solid rgba(0,230,118,0.5); color:#69f0ae; padding:0.2rem 0.6rem; border-radius:6px; font-size:0.75rem; cursor:pointer;"><i class="fa-solid fa-sun"></i> 解冻账号</button>`;
+                }
+
+                return `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td style="font-weight: bold; color: #f0f3fe;">${u.username}</td>
+                        <td>${roleBadge}</td>
+                        <td>${statusBadge}</td>
+                        <td>${u.created_at || '-'}</td>
+                        <td>${actionBtn}</td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ff5252;">加载失败: ${data.message}</td></tr>`;
+        }
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ff5252;">网络开小差了: ${e.message}</td></tr>`;
+    }
+}
+
+async function toggleUserAccountStatus(userId, newStatus) {
+    const actionText = newStatus === 'frozen' ? '冻结' : '解冻';
+    if (!confirm(`确定要${actionText}该用户账号吗？`)) return;
+    try {
+        const res = await fetch('/api/admin/users/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, status: newStatus })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            loadAdminUsers();
+        } else {
+            alert(data.message || '状态更新失败');
+        }
+    } catch (e) {
+        alert('请求异常: ' + e.message);
     }
 }
 
@@ -2531,4 +2751,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadStrategies();
 });
+
 

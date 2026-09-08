@@ -131,7 +131,26 @@ def get_db_connection():
 
 
 # ========== 用户与权限管理 ==========
-from MagicSTG.core.user_manager import init_users_table, register_user, authenticate_user
+from MagicSTG.core.user_manager import (
+    init_users_and_invites_tables,
+    ensure_ownership_columns,
+    register_user,
+    authenticate_user,
+    change_password,
+    generate_invite_code,
+    list_invite_codes,
+    revoke_invite_code,
+    list_all_users,
+    toggle_user_status,
+    DEFAULT_ADMIN_USERNAME
+)
+
+# 服务启动时初始化用户表、邀请码表与多租户归属列
+try:
+    init_users_and_invites_tables()
+    ensure_ownership_columns()
+except Exception as e:
+    print(f"[Server ⚠️] Auto-init tables error: {e}", flush=True)
 
 
 @app.before_request
@@ -167,20 +186,27 @@ def api_login():
     if success and user:
         session['user_id'] = user['id']
         session['username'] = user['username']
+        session['role'] = user.get('role', 'user')
         session.permanent = True
-        return jsonify({'success': True, 'message': msg, 'username': user['username']})
+        return jsonify({
+            'success': True,
+            'message': msg,
+            'username': user['username'],
+            'role': user.get('role', 'user')
+        })
     else:
         return jsonify({'success': False, 'message': msg}), 400
 
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
-    """新账号注册接口"""
+    """新账号注册接口（须校验邀请码）"""
     data = request.get_json() or {}
     username = data.get('username')
     password = data.get('password')
+    invite_code = data.get('invite_code')
 
-    success, msg = register_user(username, password)
+    success, msg = register_user(username, password, invite_code)
     if success:
         return jsonify({'success': True, 'message': msg})
     else:
@@ -200,8 +226,103 @@ def api_logout():
 def api_me():
     """获取当前登录用户信息"""
     if 'user_id' in session:
-        return jsonify({'logged_in': True, 'username': session.get('username')})
+        return jsonify({
+            'logged_in': True,
+            'username': session.get('username'),
+            'role': session.get('role', 'user')
+        })
     return jsonify({'logged_in': False}), 401
+
+
+@app.route('/api/user/change-password', methods=['POST'])
+def api_change_password():
+    """用户安全修改自身密码"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+    
+    data = request.get_json() or {}
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    username = session.get('username')
+
+    success, msg = change_password(username, old_password, new_password)
+    if success:
+        return jsonify({'success': True, 'message': msg})
+    else:
+        return jsonify({'success': False, 'message': msg}), 400
+
+
+# ========== 管理员专用管控路由 ==========
+def is_admin():
+    return session.get('role') == 'admin'
+
+
+@app.route('/api/admin/invite-codes', methods=['GET'])
+def api_admin_list_invite_codes():
+    """获取所有邀请码列表 (仅管理员)"""
+    if not is_admin():
+        return jsonify({'error': 'Forbidden', 'message': '仅超级管理员有权访问此功能'}), 403
+    codes = list_invite_codes()
+    return jsonify({'success': True, 'invite_codes': codes})
+
+
+@app.route('/api/admin/invite-codes/generate', methods=['POST'])
+def api_admin_generate_invite_code():
+    """生成新邀请码 (仅管理员)"""
+    if not is_admin():
+        return jsonify({'error': 'Forbidden', 'message': '仅超级管理员有权访问此功能'}), 403
+    admin_name = session.get('username')
+    success, msg, code = generate_invite_code(admin_name)
+    if success:
+        return jsonify({'success': True, 'message': msg, 'code': code})
+    else:
+        return jsonify({'success': False, 'message': msg}), 400
+
+
+@app.route('/api/admin/invite-codes/revoke', methods=['POST'])
+def api_admin_revoke_invite_code():
+    """作废邀请码 (仅管理员)"""
+    if not is_admin():
+        return jsonify({'error': 'Forbidden', 'message': '仅超级管理员有权访问此功能'}), 403
+    data = request.get_json() or {}
+    code_id = data.get('code_id')
+    if not code_id:
+        return jsonify({'success': False, 'message': '缺少 code_id 参数'}), 400
+
+    success, msg = revoke_invite_code(code_id)
+    if success:
+        return jsonify({'success': True, 'message': msg})
+    else:
+        return jsonify({'success': False, 'message': msg}), 400
+
+
+@app.route('/api/admin/users', methods=['GET'])
+def api_admin_list_users():
+    """获取所有用户列表 (仅管理员)"""
+    if not is_admin():
+        return jsonify({'error': 'Forbidden', 'message': '仅超级管理员有权访问此功能'}), 403
+    users = list_all_users()
+    return jsonify({'success': True, 'users': users})
+
+
+@app.route('/api/admin/users/status', methods=['POST'])
+def api_admin_toggle_user_status():
+    """冻结或解冻用户账号 (仅管理员)"""
+    if not is_admin():
+        return jsonify({'error': 'Forbidden', 'message': '仅超级管理员有权访问此功能'}), 403
+    data = request.get_json() or {}
+    user_id = data.get('user_id')
+    new_status = data.get('status')  # 'active' or 'frozen'
+
+    if not user_id or not new_status:
+        return jsonify({'success': False, 'message': '缺少必要的校验参数'}), 400
+
+    success, msg = toggle_user_status(user_id, new_status)
+    if success:
+        return jsonify({'success': True, 'message': msg})
+    else:
+        return jsonify({'success': False, 'message': msg}), 400
+
 
 
 # ========== 页面路由 ==========
@@ -355,15 +476,21 @@ def validate_and_sanitize_factors_config(category: str, config: dict) -> tuple[b
 # ========== 策略管理 API (v1.0 架构) ==========
 @app.route('/api/strategies', methods=['GET'])
 def get_strategies():
-    """获取策略列表（支持搜索名称及分类筛选）"""
+    """获取策略列表（支持多租户所有权过滤及管理员切换）"""
     search = request.args.get('search', '').strip()
     category = request.args.get('category', '').strip()
+    current_user = session.get('username')
+    user_role = session.get('role', 'user')
 
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        query = "SELECT id, strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, created_at, updated_at, is_active FROM custom_strategies WHERE 1=1"
+        query = "SELECT id, strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, created_at, updated_at, is_active, created_by FROM custom_strategies WHERE 1=1"
         params = []
+
+        if user_role != 'admin':
+            query += " AND (created_by = %s OR created_by IS NULL OR created_by = %s)"
+            params.extend([current_user, DEFAULT_ADMIN_USERNAME])
 
         if search:
             query += " AND (name LIKE %s OR strategy_id LIKE %s)"
@@ -387,6 +514,7 @@ def get_strategies():
                     pass
 
             is_act = bool(r[10]) if len(r) > 10 and r[10] is not None else True
+            created_by_val = r[11] if len(r) > 11 else DEFAULT_ADMIN_USERNAME
 
             strategies.append({
                 'id': r[0],
@@ -399,7 +527,8 @@ def get_strategies():
                 'sell_signals_rule': r[7],
                 'created_at': r[8].strftime('%Y-%m-%d %H:%M:%S') if r[8] else None,
                 'updated_at': r[9].strftime('%Y-%m-%d %H:%M:%S') if r[9] else None,
-                'is_active': is_act
+                'is_active': is_act,
+                'created_by': created_by_val
             })
 
         return jsonify({'status': 'success', 'data': strategies})
@@ -411,7 +540,7 @@ def get_strategies():
 
 @app.route('/api/strategies', methods=['POST'])
 def create_strategy():
-    """创建新策略"""
+    """创建新策略（自动绑定当前登录用户）"""
     data = request.json or {}
     strategy_id = data.get('strategy_id', '').strip()
     name = data.get('name', '').strip()
@@ -421,6 +550,7 @@ def create_strategy():
     buy_signals_rule = data.get('buy_signals_rule', '').strip()
     sell_signals_rule = data.get('sell_signals_rule', '').strip()
     is_active = 1 if data.get('is_active', True) else 0
+    current_user = session.get('username') or DEFAULT_ADMIN_USERNAME
 
     if not strategy_id:
         import time
@@ -443,12 +573,12 @@ def create_strategy():
 
         cursor.execute("""
             INSERT INTO custom_strategies 
-            (strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (strategy_id, name, category, description, factors_config, buy_signals_rule, sell_signals_rule, is_active, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             strategy_id, name, category, description,
             json.dumps(clean_config, ensure_ascii=False),
-            buy_signals_rule, sell_signals_rule, is_active
+            buy_signals_rule, sell_signals_rule, is_active, current_user
         ))
         new_id = cursor.lastrowid
         conn.commit()
@@ -459,6 +589,7 @@ def create_strategy():
         return jsonify({'status': 'error', 'message': str(e)})
     finally:
         conn.close()
+
 
 
 @app.route('/api/strategies/<int:stg_id>', methods=['PUT'])

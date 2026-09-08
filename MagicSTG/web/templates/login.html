@@ -284,6 +284,12 @@
                     <input type="password" id="regConfirmPassword" class="form-control" placeholder="再次输入密码" required autocomplete="new-password">
                     <i class="fa-solid fa-check-double"></i>
                 </div>
+            <div class="form-group">
+                <label for="regInviteCode">注册邀请码</label>
+                <div class="input-wrapper">
+                    <input type="text" id="regInviteCode" class="form-control" placeholder="请输入管理员生成的邀请码" required autocomplete="off">
+                    <i class="fa-solid fa-ticket"></i>
+                </div>
             </div>
 
             <button type="submit" id="btnRegSubmit" class="btn-submit">
@@ -293,7 +299,7 @@
         </form>
 
         <div class="auth-footer">
-            <i class="fa-solid fa-shield-halved"></i> TiDB Cloud 秘钥与 SSL 节点保护机制已开启
+            <i class="fa-solid fa-shield-halved"></i> TiDB Cloud 秘钥与 RBAC 权限隔离保护机制已开启
         </div>
     </div>
 
@@ -380,6 +386,7 @@
                 const username = document.getElementById('regUsername').value.trim();
                 const password = document.getElementById('regPassword').value;
                 const confirmPassword = document.getElementById('regConfirmPassword').value;
+                const inviteCode = document.getElementById('regInviteCode').value.trim();
                 const btn = document.getElementById('btnRegSubmit');
 
                 if (password !== confirmPassword) {
@@ -387,20 +394,24 @@
                     return;
                 }
 
+                if (!inviteCode) {
+                    showAlert('请输入管理员生成的注册邀请码');
+                    return;
+                }
+
                 btn.disabled = true;
-                btn.querySelector('span').textContent = '正在创建账号...';
+                btn.querySelector('span').textContent = '正在验证邀请码并创建账号...';
 
                 try {
                     const res = await fetch('/api/register', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, password })
+                        body: JSON.stringify({ username, password, invite_code: inviteCode })
                     });
                     const data = await res.json();
 
                     if (res.ok && data.success) {
                         showAlert('注册成功！正在为您自动登录...', true);
-                        // 自动用新注册账号发起登录
                         const loginRes = await fetch('/api/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -424,6 +435,7 @@
                 }
             }
         }
+
     </script>
 </body>
 </html>
